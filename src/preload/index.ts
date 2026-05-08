@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 import type {
+  AdminScanResult,
   ArtifactDetail,
   ArtifactSummary,
   ChatConversation,
@@ -165,7 +166,18 @@ const coder = {
   }
 }
 
-const api = { settings, tuleap, generation, marp, chat, auth, coder }
+type AdminSummaryResult =
+  | { ok: true; markdown: string; model: string; usage: { totalTokens?: number } | null }
+  | { ok: false; error: string; kind: string }
+
+const admin = {
+  scan: (args?: { windowDays?: number }): Promise<AdminScanResult> =>
+    ipcRenderer.invoke('admin:scan', args),
+  summarize: (scan: AdminScanResult): Promise<AdminSummaryResult> =>
+    ipcRenderer.invoke('admin:summarize', scan)
+}
+
+const api = { settings, tuleap, generation, marp, chat, auth, coder, admin }
 
 if (process.contextIsolated) {
   try {

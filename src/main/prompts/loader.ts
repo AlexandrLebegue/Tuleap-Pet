@@ -6,6 +6,7 @@
  * at runtime — this also keeps the templates immutable for end users.
  */
 import sprintReviewSource from '../../../docs/prompts/sprint_review.md?raw'
+import adminSummarySource from '../../../docs/prompts/admin_summary.md?raw'
 
 export type PromptTemplate = {
   /** Logical name (matches the file basename). */
@@ -48,7 +49,8 @@ export function interpolate(template: string, vars: Record<string, string | numb
 }
 
 const templates: Record<string, PromptTemplate> = {
-  sprint_review: buildTemplate('sprint_review', sprintReviewSource)
+  sprint_review: buildTemplate('sprint_review', sprintReviewSource),
+  admin_summary: buildTemplate('admin_summary', adminSummarySource)
 }
 
 export function getPrompt(name: keyof typeof templates): PromptTemplate {

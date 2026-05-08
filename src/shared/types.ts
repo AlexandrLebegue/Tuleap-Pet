@@ -158,6 +158,27 @@ export type CoderContextResult = {
   contextMarkdown: string
 }
 
+// ---- Admin (Phase 4) ----
+
+export type AdminTrackerActivity = {
+  trackerId: number
+  trackerLabel: string
+  itemName: string
+  total: number
+  recent: number
+  recentArtifacts: ArtifactSummary[]
+}
+
+export type AdminScanResult = {
+  scannedAt: number
+  windowDays: number
+  projectId: number
+  projectLabel: string
+  totalArtifactsRecent: number
+  trackers: AdminTrackerActivity[]
+  openSprints: MilestoneSummary[]
+}
+
 export type ChatStreamEvent =
   | { type: 'started'; conversationId: number; assistantMessageId: number }
   | { type: 'delta'; conversationId: number; assistantMessageId: number; delta: string }
