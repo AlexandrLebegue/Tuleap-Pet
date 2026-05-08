@@ -35,16 +35,30 @@ function Settings(): React.JSX.Element {
   const testConnection = useSettings((s) => s.testConnection)
   const loadProjects = useSettings((s) => s.loadProjects)
   const setProjectId = useSettings((s) => s.setProjectId)
+  const llmStatus = useSettings((s) => s.llmStatus)
+  const llmLastResult = useSettings((s) => s.llmLastResult)
+  const setLlmKey = useSettings((s) => s.setLlmKey)
+  const clearLlmKey = useSettings((s) => s.clearLlmKey)
+  const setLlmModel = useSettings((s) => s.setLlmModel)
+  const testLlm = useSettings((s) => s.testLlm)
 
   const [urlDraft, setUrlDraft] = useState(config.tuleapUrl ?? '')
   const [tokenDraft, setTokenDraft] = useState('')
   const [savingUrl, setSavingUrl] = useState(false)
   const [savingToken, setSavingToken] = useState(false)
   const [projectError, setProjectError] = useState<string | null>(null)
+  const [llmKeyDraft, setLlmKeyDraft] = useState('')
+  const [llmModelDraft, setLlmModelDraft] = useState(config.llmModel)
+  const [savingLlmKey, setSavingLlmKey] = useState(false)
+  const [savingLlmModel, setSavingLlmModel] = useState(false)
 
   useEffect(() => {
     setUrlDraft(config.tuleapUrl ?? '')
   }, [config.tuleapUrl])
+
+  useEffect(() => {
+    setLlmModelDraft(config.llmModel)
+  }, [config.llmModel])
 
   const onSaveUrl = async (): Promise<void> => {
     setSavingUrl(true)
@@ -84,8 +98,33 @@ function Settings(): React.JSX.Element {
     await setProjectId(value === '' ? null : Number(value))
   }
 
+  const onSaveLlmKey = async (): Promise<void> => {
+    if (!llmKeyDraft.trim()) return
+    setSavingLlmKey(true)
+    try {
+      await setLlmKey(llmKeyDraft.trim())
+      setLlmKeyDraft('')
+    } finally {
+      setSavingLlmKey(false)
+    }
+  }
+
+  const onSaveLlmModel = async (): Promise<void> => {
+    setSavingLlmModel(true)
+    try {
+      await setLlmModel(llmModelDraft.trim() || null)
+    } finally {
+      setSavingLlmModel(false)
+    }
+  }
+
+  const onTestLlm = async (): Promise<void> => {
+    await testLlm()
+  }
+
   const canTest = Boolean(config.tuleapUrl) && config.hasToken
   const canLoadProjects = canTest && status === 'ok'
+  const canTestLlm = config.hasLlmKey
 
   return (
     <div className="mx-auto max-w-3xl px-8 py-10 space-y-6">
@@ -238,6 +277,105 @@ function Settings(): React.JSX.Element {
               La connexion doit être validée avant de charger la liste des projets.
             </p>
           )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>OpenRouter (LLM)</CardTitle>
+          <CardDescription>
+            Clé API et modèle utilisés par les onglets Génération IA / Chatbot. La clé est chiffrée
+            via <code>safeStorage</code>. La variable d&apos;environnement{' '}
+            <code className="rounded bg-muted px-1.5 py-0.5 text-xs">OPENROUTER_API_KEY</code>, si
+            définie, prend le pas sur la valeur enregistrée.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-1">
+            <Label htmlFor="openrouter-key">Clé API</Label>
+            <div className="flex gap-2">
+              <Input
+                id="openrouter-key"
+                type="password"
+                placeholder={
+                  config.llmKeyFromEnv
+                    ? 'Clé fournie via OPENROUTER_API_KEY'
+                    : config.hasLlmKey
+                      ? '•••••••••• (déjà enregistrée)'
+                      : 'sk-or-v1-…'
+                }
+                value={llmKeyDraft}
+                onChange={(e) => setLlmKeyDraft(e.target.value)}
+                disabled={config.llmKeyFromEnv}
+                autoComplete="off"
+              />
+              <Button
+                onClick={onSaveLlmKey}
+                disabled={savingLlmKey || !llmKeyDraft.trim() || config.llmKeyFromEnv}
+              >
+                Enregistrer
+              </Button>
+            </div>
+            {config.llmKeyFromEnv && (
+              <p className="pt-1 text-xs text-muted-foreground">
+                <Badge variant="secondary">Source : env</Badge>{' '}
+                <span>La clé locale est ignorée tant que la variable d&apos;env est définie.</span>
+              </p>
+            )}
+            {!config.llmKeyFromEnv && config.hasLlmKey && (
+              <div className="flex items-center gap-2 pt-1 text-xs text-muted-foreground">
+                <Badge variant="success">Clé chiffrée présente</Badge>
+                <Button variant="ghost" size="sm" onClick={() => clearLlmKey()}>
+                  Supprimer
+                </Button>
+              </div>
+            )}
+          </div>
+
+          <div className="space-y-1">
+            <Label htmlFor="openrouter-model">Modèle</Label>
+            <div className="flex gap-2">
+              <Input
+                id="openrouter-model"
+                placeholder={config.llmDefaultModel}
+                value={llmModelDraft}
+                onChange={(e) => setLlmModelDraft(e.target.value)}
+                spellCheck={false}
+                autoComplete="off"
+              />
+              <Button onClick={onSaveLlmModel} variant="secondary" disabled={savingLlmModel}>
+                Enregistrer
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Slug OpenRouter, par ex.{' '}
+              <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
+                {config.llmDefaultModel}
+              </code>
+              . Vide = défaut.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Button onClick={onTestLlm} disabled={!canTestLlm || llmStatus === 'testing'}>
+              {llmStatus === 'testing' ? 'Test en cours…' : 'Tester le LLM'}
+            </Button>
+            {llmLastResult?.ok && (
+              <div className="rounded-md border border-success/30 bg-success/10 px-3 py-2 text-sm">
+                <p>
+                  Modèle <code className="text-xs">{llmLastResult.model}</code> a répondu :
+                </p>
+                <p className="mt-1 whitespace-pre-wrap text-xs italic text-muted-foreground">
+                  {llmLastResult.sample || '(réponse vide)'}
+                </p>
+              </div>
+            )}
+            {llmLastResult && !llmLastResult.ok && (
+              <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm">
+                {llmLastResult.error}
+              </div>
+            )}
+          </div>
         </CardContent>
       </Card>
     </div>

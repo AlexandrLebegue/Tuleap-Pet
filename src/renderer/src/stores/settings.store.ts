@@ -5,12 +5,20 @@ import type { SettingsState } from '../../../preload'
 
 type ConnectionStatus = 'unknown' | 'testing' | 'ok' | 'error'
 
+type LlmTestResult =
+  | { ok: true; model: string; sample: string }
+  | { ok: false; error: string; kind: string }
+
 type Store = {
   config: SettingsState
   status: ConnectionStatus
   lastResult: ConnectionTestResult | null
   projects: ProjectSummary[]
   loadingProjects: boolean
+
+  llmStatus: ConnectionStatus
+  llmLastResult: LlmTestResult | null
+
   refresh: () => Promise<void>
   testConnection: () => Promise<ConnectionTestResult>
   setUrl: (url: string) => Promise<void>
@@ -18,6 +26,11 @@ type Store = {
   clearToken: () => Promise<void>
   loadProjects: () => Promise<void>
   setProjectId: (id: number | null) => Promise<void>
+
+  setLlmKey: (key: string) => Promise<void>
+  clearLlmKey: () => Promise<void>
+  setLlmModel: (model: string | null) => Promise<void>
+  testLlm: () => Promise<LlmTestResult>
 }
 
 const emptyConfig: SettingsState = {
@@ -88,5 +101,39 @@ export const useSettings = create<Store>((set, get) => ({
   setProjectId: async (id: number | null) => {
     const config = await api.settings.setProjectId(id)
     set({ config })
+  },
+
+  llmStatus: 'unknown',
+  llmLastResult: null,
+
+  setLlmKey: async (key: string) => {
+    const config = await api.settings.setLlmKey(key)
+    set({ config, llmStatus: 'unknown', llmLastResult: null })
+  },
+
+  clearLlmKey: async () => {
+    const config = await api.settings.clearLlmKey()
+    set({ config, llmStatus: 'unknown', llmLastResult: null })
+  },
+
+  setLlmModel: async (model: string | null) => {
+    const config = await api.settings.setLlmModel(model)
+    set({ config, llmStatus: 'unknown', llmLastResult: null })
+  },
+
+  testLlm: async () => {
+    if (!get().config.hasLlmKey) {
+      const result: LlmTestResult = {
+        ok: false,
+        kind: 'auth',
+        error: 'Aucune clé OpenRouter enregistrée.'
+      }
+      set({ llmStatus: 'error', llmLastResult: result })
+      return result
+    }
+    set({ llmStatus: 'testing' })
+    const result = await api.generation.testLlm()
+    set({ llmStatus: result.ok ? 'ok' : 'error', llmLastResult: result })
+    return result
   }
 }))
