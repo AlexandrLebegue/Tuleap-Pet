@@ -56,6 +56,26 @@ export function formatArtifactContext(detail: ArtifactDetail): string {
 }
 
 function renderFieldValue(type: string, value: unknown): string | null {
+  void type
+  // The mapper wraps every field's payload into { value, values, links, ... }
+  // — unwrap the most common shapes before recursing.
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    const obj = value as Record<string, unknown>
+    if ('value' in obj) return renderFieldValue(type, obj['value'])
+    if (Array.isArray(obj['values'])) {
+      const arr = obj['values'] as unknown[]
+      const labels = arr
+        .map((v) => {
+          if (v && typeof v === 'object' && 'label' in v) {
+            return String((v as { label?: unknown }).label ?? '')
+          }
+          return typeof v === 'string' || typeof v === 'number' ? String(v) : ''
+        })
+        .filter((s) => s.length > 0)
+      if (labels.length === 0) return null
+      return labels.slice(0, 6).join(', ')
+    }
+  }
   if (value === null || value === undefined) return null
   if (typeof value === 'string') {
     const trimmed = value.trim()
@@ -71,10 +91,8 @@ function renderFieldValue(type: string, value: unknown): string | null {
       .join(', ')
   }
   if (typeof value === 'object') {
-    // Heuristic: arrays of {label} or {value} get summarised, otherwise skip.
     const json = JSON.stringify(value)
     if (json.length > 400) return null
-    void type
     return json
   }
   return null

@@ -31,41 +31,89 @@
 
 Le renderer n'effectue **aucun** appel sortant. Tout passe par le preload bridge → IPC → main → fetch.
 
-## IPC surface (Phase 0 + Phase 1)
+## IPC surface (Phases 0 → 4)
 
-| Canal | Direction | Payload | Réponse |
-|---|---|---|---|
-| `settings:get` | renderer → main | — | `SettingsState` |
-| `settings:set-tuleap-url` | renderer → main | `string \| null` | `SettingsState` |
-| `settings:set-token` | renderer → main | `string` (jamais retourné) | `SettingsState` |
-| `settings:clear-token` | renderer → main | — | `SettingsState` |
-| `settings:set-project-id` | renderer → main | `number \| null` | `SettingsState` |
-| `settings:set-llm-key` | renderer → main | `string` (jamais retourné) | `SettingsState` |
-| `settings:clear-llm-key` | renderer → main | — | `SettingsState` |
-| `settings:set-llm-model` | renderer → main | `string \| null` | `SettingsState` |
-| `settings:reset` | renderer → main | — | `SettingsState` |
-| `tuleap:test-connection` | renderer → main | — | `ConnectionTestResult` |
-| `tuleap:list-projects` | renderer → main | `string?` (query) | `ProjectSummary[]` |
-| `tuleap:list-trackers` | renderer → main | `number?` (override projectId) | `TrackerSummary[]` |
-| `tuleap:list-artifacts` | renderer → main | `{ trackerId, limit?, offset? }` | `Page<ArtifactSummary>` |
-| `tuleap:get-artifact` | renderer → main | `number` | `ArtifactDetail` |
-| `generation:list-sprints` | renderer → main | `MilestoneStatus?` (`'open'`) | `MilestoneSummary[]` |
-| `generation:get-sprint-content` | renderer → main | `number` | `SprintContent` |
-| `generation:test-llm` | renderer → main | — | `LlmTestResult` |
-| `generation:generate-sprint-review` | renderer → main | `{ milestoneId, language? }` | `{ markdown, model, finishReason, usage }` |
-| `marp:render-preview` | renderer → main | `string` (markdown) | `{ html }` (sandboxed) |
-| `marp:export-pptx` | renderer → main | `{ markdown, suggestedName? }` | `MarpExportResult` (ok / cancelled / error) |
+### Settings + auth
 
-`SettingsState` = `{ tuleapUrl, projectId, hasToken, secretStorageAvailable, llmModel, llmDefaultModel, hasLlmKey, llmKeyFromEnv }`. Ni le token Tuleap ni la clé OpenRouter n'apparaissent jamais dans les réponses IPC.
+| Canal | Payload | Réponse |
+|---|---|---|
+| `settings:get` | — | `SettingsState` |
+| `settings:set-tuleap-url` | `string \| null` | `SettingsState` |
+| `settings:set-token` | `string` (jamais retourné) | `SettingsState` |
+| `settings:clear-token` | — | `SettingsState` |
+| `settings:set-project-id` | `number \| null` | `SettingsState` |
+| `settings:set-llm-key` | `string` (jamais retourné) | `SettingsState` |
+| `settings:clear-llm-key` | — | `SettingsState` |
+| `settings:set-llm-model` | `string \| null` | `SettingsState` |
+| `settings:reset` | — | `SettingsState` |
+| `auth:set-mode` | `'token' \| 'oauth2'` | `{ ok }` |
+| `auth:set-oauth-client` | `{ clientId, scope }` | `{ ok }` |
+| `auth:start-oauth` | — | `StartOAuthResult` (ok / error) |
+| `auth:clear-oauth` | — | `{ ok }` |
+| `auth:has-oauth` | — | `{ hasOAuth }` |
+
+### Tuleap (Phase 0)
+
+| Canal | Payload | Réponse |
+|---|---|---|
+| `tuleap:test-connection` | — | `ConnectionTestResult` |
+| `tuleap:list-projects` | `string?` (query) | `ProjectSummary[]` |
+| `tuleap:list-trackers` | `number?` | `TrackerSummary[]` |
+| `tuleap:list-artifacts` | `{ trackerId, limit?, offset? }` | `Page<ArtifactSummary>` |
+| `tuleap:get-artifact` | `number` | `ArtifactDetail` |
+
+### Génération (Phase 1)
+
+| Canal | Payload | Réponse |
+|---|---|---|
+| `generation:list-sprints` | `MilestoneStatus?` (`'open'`) | `MilestoneSummary[]` |
+| `generation:get-sprint-content` | `number` | `SprintContent` |
+| `generation:test-llm` | — | `LlmTestResult` |
+| `generation:generate-sprint-review` | `{ milestoneId, language? }` | `{ markdown, model, finishReason, usage }` |
+| `marp:render-preview` | `string` (markdown) | `{ html }` (sandboxed) |
+| `marp:export-pptx` | `{ markdown, suggestedName? }` | `MarpExportResult` |
+
+### Chat (Phase 2)
+
+| Canal | Payload | Réponse |
+|---|---|---|
+| `chat:list-conversations` | — | `ChatConversation[]` |
+| `chat:get-conversation` | `number` | `{ conversation, messages }` |
+| `chat:create-conversation` | `{ title?, projectId? }` | `ChatConversation` |
+| `chat:rename-conversation` | `{ id, title }` | `ChatConversation \| null` |
+| `chat:delete-conversation` | `number` | `{ ok }` |
+| `chat:send-message` | `{ conversationId, content }` | `ChatSendResult` |
+| `chat:stream` (event) | — | `ChatStreamEvent` (started / delta / tool-call / tool-result / done / error) |
+
+### Coder (Phase 3)
+
+| Canal | Payload | Réponse |
+|---|---|---|
+| `coder:build-context` | `number` (artifactId) | `CoderContextResult` |
+| `coder:set-binary` | `{ path }` | `{ ok, path }` |
+| `coder:choose-cwd` | — | `{ ok, path } \| { ok: false, cancelled }` |
+| `coder:run` | `{ prompt, cwd?, binaryPath?, extraArgs? }` | `{ ok, sessionId, pid } \| { ok: false, error }` |
+| `coder:kill` | `string` (sessionId) | `{ ok }` |
+| `coder:stream` (event) | — | `CoderStreamEvent` (started / stdout / stderr / exit / error) |
+
+### Admin (Phase 4)
+
+| Canal | Payload | Réponse |
+|---|---|---|
+| `admin:scan` | `{ windowDays? }` | `AdminScanResult` |
+| `admin:summarize` | `AdminScanResult` | `AdminSummaryResult` |
+
+`SettingsState` ne contient JAMAIS de secret en clair — uniquement des booléens (`hasToken`, `hasLlmKey`, `hasOAuth`, `llmKeyFromEnv`) qui décrivent la présence des secrets sans en révéler la valeur.
 
 ## Stockage
 
 | Donnée | Emplacement | Format |
 |---|---|---|
-| URL Tuleap, projectId, modèle LLM | `<userData>/config.json` (electron-store) | JSON |
+| URL Tuleap, projectId, modèle LLM, mode auth, client OAuth2, binaire OpenCode | `<userData>/config.json` (electron-store) | JSON |
 | Token API perso Tuleap | `<userData>/secrets/tuleap-token.bin` | Buffer chiffré via `safeStorage` |
 | Clé API OpenRouter | `<userData>/secrets/openrouter-key.bin` | Buffer chiffré via `safeStorage` |
-| Audit log | `<userData>/data/tuleap-companion.db` | SQLite (table `audit_log`) |
+| Bundle OAuth2 (access + refresh + expiresAt + scope) | `<userData>/secrets/tuleap-oauth.bin` | JSON sérialisé puis chiffré via `safeStorage` |
+| Audit log + conversations + messages | `<userData>/data/tuleap-companion.db` | SQLite (migrations #1 + #2) |
 | Templates de prompts | bundlés via Vite `?raw` depuis `docs/prompts/*.md` | (read-only à l'exécution) |
 
 `<userData>` est résolu par Electron : `~/.config/tuleap-ai-companion/` sur Linux, etc.
@@ -162,3 +210,76 @@ MarpPreviewFrame                 <iframe sandbox="" srcDoc={html}>
 ```
 
 Chaque étape (start, done, marp.export-pptx) émet une ligne `audit_log`.
+
+## Pipeline Chat (Phase 2)
+
+```
+ChatTab.tsx                      send() → ipcRenderer.invoke('chat:send-message')
+       │
+       ▼
+ipc/chat.ts                      addMessage(user) puis addMessage(assistant, '')
+                                 broadcast('started', { assistantMessageId })
+                                 provider.stream(messages + tools, onChunk)
+       │
+       ▼ (chunk après chunk)
+llm/openrouter.ts                streamText(...).fullStream
+                                   ├─ text-delta → broadcast('delta')
+                                   ├─ tool-call  → broadcast('tool-call')  + appendToolEvent
+                                   ├─ tool-result → broadcast('tool-result') + appendToolEvent
+                                   └─ finish     → broadcast('done')
+       │
+       ▼
+chat manager                     updateMessageContent(id, finalText)
+                                 audit('chat.message.done', { usage })
+       │
+       ▼ (event sur 'chat:stream')
+useChat.handleEvent              applique delta sur le bubble assistant en cours
+```
+
+## Authentification (Phases 0 + 3)
+
+Deux modes coexistent, sélectionnables dans Réglages :
+
+```
+Mode 'token' (défaut)            Mode 'oauth2' (Phase 3)
+       │                                │
+       ▼                                ▼
+secrets/tuleap-token.bin         auth/oauth.ts → runOAuthFlow()
+(safeStorage)                       │  loopback HTTP + shell.openExternal
+                                    │  PKCE S256 + state validation
+                                    │  POST /oauth2/token
+                                    ▼
+                                 secrets/tuleap-oauth.bin (access + refresh + exp)
+                                    │
+                                    ▼
+                                 resolver.ts auto-refresh à 60s du expiry
+       │                                │
+       └────────────┬───────────────────┘
+                    ▼
+        tuleap/build.ts (async)
+                    │
+                    ▼
+           TuleapClient { authHeader: 'X-Auth-AccessKey' | 'Authorization' }
+```
+
+## Coder (Phase 3)
+
+```
+Coder.tsx                        build() → coder:build-context(id)
+       │                          → buildArtifactContext = client.getArtifact + formatArtifactContext
+       │
+       ▼
+context.ts                       Markdown : titre, statut, dates, html_url,
+                                 description, champs, liens parents/enfants
+       │
+       ▼ (édité par l'utilisateur, copié au presse-papier au choix)
+Coder.tsx                        run() → coder:run({ prompt, cwd, binaryPath })
+       │
+       ▼
+runner.ts                        spawn(binary, ['run', prompt], { shell: false })
+                                 broadcast('coder:stream') sur stdout / stderr / exit
+       │
+       ▼
+useCoder.handleEvent             accumule la sortie dans `log`, met à jour le statut
+```
+
