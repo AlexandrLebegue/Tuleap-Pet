@@ -4,8 +4,11 @@ import type {
   ArtifactDetail,
   ArtifactSummary,
   ConnectionTestResult,
+  MilestoneStatus,
+  MilestoneSummary,
   Page,
   ProjectSummary,
+  SprintContent,
   TrackerSummary
 } from '@shared/types'
 
@@ -51,7 +54,42 @@ const tuleap = {
   getArtifact: (id: number): Promise<ArtifactDetail> => ipcRenderer.invoke('tuleap:get-artifact', id)
 }
 
-const api = { settings, tuleap }
+type LlmTestResult =
+  | { ok: true; model: string; sample: string }
+  | { ok: false; error: string; kind: string }
+
+type GenerationResult = {
+  markdown: string
+  model: string
+  finishReason: string | null
+  usage: { inputTokens?: number; outputTokens?: number; totalTokens?: number } | null
+}
+
+type MarpExportResult =
+  | { ok: true; outputPath: string }
+  | { ok: false; cancelled: true }
+  | { ok: false; error: string }
+
+const generation = {
+  listSprints: (status?: MilestoneStatus): Promise<MilestoneSummary[]> =>
+    ipcRenderer.invoke('generation:list-sprints', status),
+  getSprintContent: (milestoneId: number): Promise<SprintContent> =>
+    ipcRenderer.invoke('generation:get-sprint-content', milestoneId),
+  testLlm: (): Promise<LlmTestResult> => ipcRenderer.invoke('generation:test-llm'),
+  generateSprintReview: (args: {
+    milestoneId: number
+    language?: 'fr' | 'en'
+  }): Promise<GenerationResult> => ipcRenderer.invoke('generation:generate-sprint-review', args)
+}
+
+const marp = {
+  renderPreview: (markdown: string): Promise<{ html: string }> =>
+    ipcRenderer.invoke('marp:render-preview', markdown),
+  exportPptx: (args: { markdown: string; suggestedName?: string }): Promise<MarpExportResult> =>
+    ipcRenderer.invoke('marp:export-pptx', args)
+}
+
+const api = { settings, tuleap, generation, marp }
 
 if (process.contextIsolated) {
   try {
