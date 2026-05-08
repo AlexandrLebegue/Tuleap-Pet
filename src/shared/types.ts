@@ -101,3 +101,59 @@ export type GenerationOptions = {
   includeLinks?: boolean
   language?: 'fr' | 'en'
 }
+
+// ---- Chat (Phase 2) ----
+
+export type ChatRole = 'user' | 'assistant' | 'system' | 'tool'
+
+export type ChatToolEvent =
+  | { kind: 'call'; name: string; toolCallId: string; args: unknown }
+  | { kind: 'result'; name: string; toolCallId: string; result: unknown; error?: string }
+
+export type ChatMessage = {
+  id: number
+  conversationId: number
+  role: ChatRole
+  content: string
+  toolEvents?: ChatToolEvent[]
+  createdAt: number
+}
+
+export type ChatConversation = {
+  id: number
+  title: string
+  createdAt: number
+  updatedAt: number
+  model: string | null
+  projectId: number | null
+}
+
+export type ChatStreamEvent =
+  | { type: 'started'; conversationId: number; assistantMessageId: number }
+  | { type: 'delta'; conversationId: number; assistantMessageId: number; delta: string }
+  | {
+      type: 'tool-call'
+      conversationId: number
+      assistantMessageId: number
+      toolCallId: string
+      name: string
+      args: unknown
+    }
+  | {
+      type: 'tool-result'
+      conversationId: number
+      assistantMessageId: number
+      toolCallId: string
+      name: string
+      result: unknown
+      error?: string
+    }
+  | {
+      type: 'done'
+      conversationId: number
+      assistantMessageId: number
+      finishReason: string | null
+      usage: { inputTokens?: number; outputTokens?: number; totalTokens?: number } | null
+      model: string
+    }
+  | { type: 'error'; conversationId: number; assistantMessageId: number; error: string }

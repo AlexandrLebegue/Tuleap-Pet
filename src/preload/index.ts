@@ -3,6 +3,9 @@ import { electronAPI } from '@electron-toolkit/preload'
 import type {
   ArtifactDetail,
   ArtifactSummary,
+  ChatConversation,
+  ChatMessage,
+  ChatStreamEvent,
   ConnectionTestResult,
   MilestoneStatus,
   MilestoneSummary,
@@ -89,7 +92,35 @@ const marp = {
     ipcRenderer.invoke('marp:export-pptx', args)
 }
 
-const api = { settings, tuleap, generation, marp }
+type ChatSendResult =
+  | { ok: true; assistantMessageId: number }
+  | { ok: false; error: string; kind: string; assistantMessageId: number }
+
+const chat = {
+  listConversations: (): Promise<ChatConversation[]> => ipcRenderer.invoke('chat:list-conversations'),
+  getConversation: (
+    id: number
+  ): Promise<{ conversation: ChatConversation; messages: ChatMessage[] }> =>
+    ipcRenderer.invoke('chat:get-conversation', id),
+  createConversation: (args?: {
+    title?: string
+    projectId?: number | null
+  }): Promise<ChatConversation> => ipcRenderer.invoke('chat:create-conversation', args),
+  renameConversation: (id: number, title: string): Promise<ChatConversation | null> =>
+    ipcRenderer.invoke('chat:rename-conversation', { id, title }),
+  deleteConversation: (id: number): Promise<{ ok: true }> =>
+    ipcRenderer.invoke('chat:delete-conversation', id),
+  sendMessage: (args: { conversationId: number; content: string }): Promise<ChatSendResult> =>
+    ipcRenderer.invoke('chat:send-message', args),
+  /** Subscribe to streaming events; returns an unsubscribe function. */
+  subscribe: (handler: (event: ChatStreamEvent) => void): (() => void) => {
+    const wrapped = (_e: unknown, payload: ChatStreamEvent): void => handler(payload)
+    ipcRenderer.on('chat:stream', wrapped)
+    return () => ipcRenderer.removeListener('chat:stream', wrapped)
+  }
+}
+
+const api = { settings, tuleap, generation, marp, chat }
 
 if (process.contextIsolated) {
   try {
