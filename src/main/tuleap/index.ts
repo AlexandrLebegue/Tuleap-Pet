@@ -9,4 +9,4 @@ export {
   TuleapServerError
 } from './errors'
 export type { ErrorKind } from './errors'
-export { mapArtifactDetail, mapArtifactSummary, mapProject, mapTracker } from './mappers'
+export { mapArtifactDetail, mapArtifactSummary, mapMilestone, mapProject, mapTracker } from './mappers'

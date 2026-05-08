@@ -3,6 +3,7 @@ import type {
   ArtifactFieldValue,
   ArtifactLink,
   ArtifactSummary,
+  MilestoneSummary,
   ProjectSummary,
   TrackerSummary
 } from '@shared/types'
@@ -10,6 +11,7 @@ import type {
   ArtifactDetailRaw,
   ArtifactFieldValueRaw,
   ArtifactSummaryRaw,
+  MilestoneRaw,
   ProjectRaw,
   TrackerRaw
 } from './schemas'
@@ -111,5 +113,26 @@ export function mapArtifactDetail(raw: ArtifactDetailRaw): ArtifactDetail {
     description: extractDescription(values),
     values: values.map(rawToFieldValue),
     links: extractLinks(values)
+  }
+}
+
+function normalizeMilestoneStatus(value: string | null | undefined): 'open' | 'closed' | null {
+  if (!value) return null
+  const lower = value.toLowerCase()
+  if (lower === 'open') return 'open'
+  if (lower === 'closed') return 'closed'
+  return null
+}
+
+export function mapMilestone(raw: MilestoneRaw): MilestoneSummary {
+  return {
+    id: raw.id,
+    label: raw.label,
+    status: normalizeMilestoneStatus(raw.status ?? null),
+    semanticStatus: normalizeMilestoneStatus(raw.semantic_status ?? null),
+    startDate: raw.start_date ?? null,
+    endDate: raw.end_date ?? null,
+    uri: raw.uri,
+    htmlUrl: raw.html_url ?? null
   }
 }

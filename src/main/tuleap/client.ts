@@ -11,11 +11,13 @@ import {
   artifactDetailSchema,
   artifactSummarySchema,
   arrayOf,
+  milestoneSchema,
   projectSchema,
   trackerSchema,
   userSelfSchema,
   type ArtifactDetailRaw,
   type ArtifactSummaryRaw,
+  type MilestoneRaw,
   type ProjectRaw,
   type TrackerRaw,
   type UserSelf
@@ -213,5 +215,38 @@ export class TuleapClient {
 
   countArtifacts(trackerId: number): Promise<number | null> {
     return this.listArtifacts(trackerId, { limit: 1, offset: 0 }).then((page) => page.total)
+  }
+
+  listMilestones(
+    projectId: number,
+    opts?: Pagination & { status?: 'open' | 'closed' | 'all' }
+  ): Promise<PaginatedResponse<MilestoneRaw>> {
+    const params: Record<string, unknown> = {
+      limit: opts?.limit ?? DEFAULT_PAGE_LIMIT,
+      offset: opts?.offset ?? 0
+    }
+    const status = opts?.status ?? 'open'
+    if (status !== 'all') {
+      params['query'] = JSON.stringify({ status })
+    }
+    return this.paginated(milestoneSchema, `/api/projects/${projectId}/milestones`, params)
+  }
+
+  getMilestone(id: number): Promise<MilestoneRaw> {
+    return this.json(milestoneSchema, `/api/milestones/${id}`)
+  }
+
+  /**
+   * Items linked to a milestone (user stories, tasks, …).
+   * Tuleap exposes them as artifacts on /api/milestones/{id}/content.
+   */
+  listMilestoneContent(
+    milestoneId: number,
+    opts?: Pagination
+  ): Promise<PaginatedResponse<ArtifactSummaryRaw>> {
+    return this.paginated(artifactSummarySchema, `/api/milestones/${milestoneId}/content`, {
+      limit: opts?.limit ?? DEFAULT_PAGE_LIMIT,
+      offset: opts?.offset ?? 0
+    })
   }
 }

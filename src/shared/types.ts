@@ -77,3 +77,27 @@ export type Page<T> = {
   limit: number
   offset: number
 }
+
+export type MilestoneStatus = 'open' | 'closed' | 'all'
+
+export type MilestoneSummary = {
+  id: number
+  label: string
+  status: 'open' | 'closed' | null
+  semanticStatus: 'open' | 'closed' | null
+  startDate: string | null
+  endDate: string | null
+  uri: string
+  htmlUrl: string | null
+}
+
+export type SprintContent = {
+  milestone: MilestoneSummary
+  artifacts: ArtifactSummary[]
+}
+
+export type GenerationOptions = {
+  milestoneId: number
+  includeLinks?: boolean
+  language?: 'fr' | 'en'
+}

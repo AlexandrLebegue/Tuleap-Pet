@@ -91,4 +91,19 @@ export const artifactDetailSchema = baseArtifactSchema.extend({
 
 export type ArtifactDetailRaw = z.infer<typeof artifactDetailSchema>
 
+export const milestoneSchema = z
+  .object({
+    id: z.number(),
+    uri: z.string(),
+    label: z.string(),
+    status: z.string().nullable().optional(),
+    semantic_status: z.string().nullable().optional(),
+    start_date: z.string().nullable().optional(),
+    end_date: z.string().nullable().optional(),
+    html_url: z.string().nullable().optional()
+  })
+  .passthrough()
+
+export type MilestoneRaw = z.infer<typeof milestoneSchema>
+
 export const arrayOf = <T extends z.ZodTypeAny>(schema: T): z.ZodArray<T> => z.array(schema)
