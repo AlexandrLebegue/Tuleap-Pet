@@ -24,7 +24,11 @@ const emptyConfig: SettingsState = {
   tuleapUrl: null,
   projectId: null,
   hasToken: false,
-  secretStorageAvailable: true
+  secretStorageAvailable: true,
+  llmModel: 'minimax/minimax-m2:free',
+  llmDefaultModel: 'minimax/minimax-m2:free',
+  hasLlmKey: false,
+  llmKeyFromEnv: false
 }
 
 export const useSettings = create<Store>((set, get) => ({

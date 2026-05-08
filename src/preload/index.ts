@@ -14,6 +14,10 @@ export type SettingsState = {
   projectId: number | null
   hasToken: boolean
   secretStorageAvailable: boolean
+  llmModel: string
+  llmDefaultModel: string
+  hasLlmKey: boolean
+  llmKeyFromEnv: boolean
 }
 
 const settings = {
@@ -25,6 +29,11 @@ const settings = {
   clearToken: (): Promise<SettingsState> => ipcRenderer.invoke('settings:clear-token'),
   setProjectId: (id: number | null): Promise<SettingsState> =>
     ipcRenderer.invoke('settings:set-project-id', id),
+  setLlmKey: (key: string): Promise<SettingsState> =>
+    ipcRenderer.invoke('settings:set-llm-key', key),
+  clearLlmKey: (): Promise<SettingsState> => ipcRenderer.invoke('settings:clear-llm-key'),
+  setLlmModel: (model: string | null): Promise<SettingsState> =>
+    ipcRenderer.invoke('settings:set-llm-model', model),
   reset: (): Promise<SettingsState> => ipcRenderer.invoke('settings:reset')
 }
 

@@ -1,9 +1,21 @@
 import { ipcMain } from 'electron'
-import { getConfig, setProjectId, setTuleapUrl, clearConfig } from '../store/config'
 import {
+  DEFAULT_LLM_MODEL,
+  clearConfig,
+  getConfig,
+  getLlmModel,
+  setLlmModel,
+  setProjectId,
+  setTuleapUrl
+} from '../store/config'
+import {
+  clearOpenRouterKey,
   clearTuleapToken,
+  hasOpenRouterKey,
   hasTuleapToken,
+  isOpenRouterKeyFromEnv,
   isSecretStorageAvailable,
+  setOpenRouterKey,
   setTuleapToken
 } from '../store/secrets'
 import { audit } from '../store/db'
@@ -13,6 +25,10 @@ export type SettingsState = {
   projectId: number | null
   hasToken: boolean
   secretStorageAvailable: boolean
+  llmModel: string
+  llmDefaultModel: string
+  hasLlmKey: boolean
+  llmKeyFromEnv: boolean
 }
 
 function buildState(): SettingsState {
@@ -21,7 +37,11 @@ function buildState(): SettingsState {
     tuleapUrl: config.tuleapUrl,
     projectId: config.projectId,
     hasToken: hasTuleapToken(),
-    secretStorageAvailable: isSecretStorageAvailable()
+    secretStorageAvailable: isSecretStorageAvailable(),
+    llmModel: getLlmModel(),
+    llmDefaultModel: DEFAULT_LLM_MODEL,
+    hasLlmKey: hasOpenRouterKey(),
+    llmKeyFromEnv: isOpenRouterKeyFromEnv()
   }
 }
 
@@ -61,8 +81,33 @@ export function registerSettingsHandlers(): void {
     return buildState()
   })
 
+  ipcMain.handle('settings:set-llm-key', (_event, key: unknown) => {
+    if (typeof key !== 'string' || key.trim().length === 0) {
+      throw new Error('Clé OpenRouter vide.')
+    }
+    setOpenRouterKey(key)
+    audit('settings.set-llm-key')
+    return buildState()
+  })
+
+  ipcMain.handle('settings:clear-llm-key', () => {
+    clearOpenRouterKey()
+    audit('settings.clear-llm-key')
+    return buildState()
+  })
+
+  ipcMain.handle('settings:set-llm-model', (_event, model: unknown) => {
+    if (model !== null && typeof model !== 'string') {
+      throw new Error("Le paramètre 'model' doit être une chaîne ou null.")
+    }
+    setLlmModel(model as string | null)
+    audit('settings.set-llm-model', (model as string | null) ?? null)
+    return buildState()
+  })
+
   ipcMain.handle('settings:reset', () => {
     clearTuleapToken()
+    clearOpenRouterKey()
     clearConfig()
     audit('settings.reset')
     return buildState()

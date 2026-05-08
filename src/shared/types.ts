@@ -6,6 +6,7 @@
 export type AppConfig = {
   tuleapUrl: string | null
   projectId: number | null
+  llmModel: string | null
 }
 
 export type ConnectionTestResult =
