@@ -640,7 +640,9 @@ function Settings(): React.JSX.Element {
             {llmLastResult?.ok && (
               <div className="rounded-md border border-success/30 bg-success/10 px-3 py-2 text-sm">
                 <p>
-                  Modèle <code className="text-xs">{llmLastResult.model}</code> a répondu :
+                  <Badge variant="success" className="mr-1">OK</Badge>
+                  Fournisseur <code className="text-xs">{llmLastResult.provider}</code>
+                  {' · '}Modèle <code className="text-xs">{llmLastResult.model}</code>
                 </p>
                 <p className="mt-1 whitespace-pre-wrap text-xs italic text-muted-foreground">
                   {llmLastResult.sample || '(réponse vide)'}
@@ -648,8 +650,23 @@ function Settings(): React.JSX.Element {
               </div>
             )}
             {llmLastResult && !llmLastResult.ok && (
-              <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm">
-                {llmLastResult.error}
+              <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm space-y-1">
+                <p className="font-medium">{llmLastResult.error}</p>
+                <details className="text-xs text-muted-foreground">
+                  <summary className="cursor-pointer hover:text-foreground">
+                    Informations de débogage
+                  </summary>
+                  <ul className="mt-1 space-y-0.5 list-disc list-inside">
+                    <li>Fournisseur : <code>{llmLastResult.provider ?? '(inconnu)'}</code></li>
+                    <li>Type d'erreur : <code>{llmLastResult.kind}</code></li>
+                    {llmLastResult.attemptedModel && (
+                      <li>Modèle tenté : <code>{llmLastResult.attemptedModel}</code></li>
+                    )}
+                    {llmLastResult.status && (
+                      <li>Code HTTP : <code>{llmLastResult.status}</code></li>
+                    )}
+                  </ul>
+                </details>
               </div>
             )}
           </div>

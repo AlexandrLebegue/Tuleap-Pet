@@ -5,7 +5,7 @@ import {
   mapArtifactSummary,
   mapMilestone
 } from '../tuleap'
-import { getConfig, getLlmModel } from '../store/config'
+import { getConfig, getLlmModel, getLlmProvider } from '../store/config'
 import { resolveLlmProvider, toLlmError } from '../llm'
 import { audit } from '../store/db'
 import { buildSprintReviewMessages } from '../prompts'
@@ -34,8 +34,8 @@ export type GenerationResult = {
 }
 
 export type LlmTestResult =
-  | { ok: true; model: string; sample: string }
-  | { ok: false; error: string; kind: string }
+  | { ok: true; model: string; sample: string; provider: string }
+  | { ok: false; error: string; kind: string; provider?: string; attemptedModel?: string; status?: number }
 
 export function registerGenerationHandlers(): void {
   ipcMain.handle(
@@ -65,8 +65,10 @@ export function registerGenerationHandlers(): void {
     }
   )
 
-  ipcMain.handle('generation:test-llm', async (): Promise<LlmTestResult> => {
-    audit('generation.test-llm', getLlmModel())
+ipcMain.handle('generation:test-llm', async (): Promise<LlmTestResult> => {
+    const resolvedProvider = getLlmProvider()
+    const resolvedModel = getLlmModel()
+    audit('generation.test-llm', `${resolvedProvider}:${resolvedModel}`)
     try {
       const provider = resolveLlmProvider()
       const result = await provider.generate({
@@ -77,10 +79,22 @@ export function registerGenerationHandlers(): void {
         maxOutputTokens: 64,
         temperature: 0
       })
-      return { ok: true, model: result.model, sample: result.text.trim().slice(0, 200) }
+      return {
+        ok: true,
+        model: result.model,
+        sample: result.text.trim().slice(0, 200),
+        provider: resolvedProvider
+      }
     } catch (err) {
       const e = toLlmError(err)
-      return { ok: false, error: e.message, kind: e.kind }
+      return {
+        ok: false,
+        error: e.message,
+        kind: e.kind,
+        provider: resolvedProvider,
+        attemptedModel: resolvedModel,
+        status: e.status
+      }
     }
   })
 

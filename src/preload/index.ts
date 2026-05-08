@@ -81,8 +81,8 @@ const tuleap = {
 }
 
 type LlmTestResult =
-  | { ok: true; model: string; sample: string }
-  | { ok: false; error: string; kind: string }
+  | { ok: true; model: string; sample: string; provider: string }
+  | { ok: false; error: string; kind: string; provider?: string; attemptedModel?: string; status?: number }
 
 type GenerationResult = {
   markdown: string

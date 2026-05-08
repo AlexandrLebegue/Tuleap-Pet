@@ -6,8 +6,8 @@ import type { SettingsState } from '../../../preload'
 type ConnectionStatus = 'unknown' | 'testing' | 'ok' | 'error'
 
 type LlmTestResult =
-  | { ok: true; model: string; sample: string }
-  | { ok: false; error: string; kind: string }
+  | { ok: true; model: string; sample: string; provider: string }
+  | { ok: false; error: string; kind: string; provider?: string; attemptedModel?: string; status?: number }
 
 type Store = {
   config: SettingsState
@@ -168,14 +168,38 @@ export const useSettings = create<Store>((set, get) => ({
   },
 
   testLlm: async () => {
-    if (!get().config.hasLlmKey) {
+    const cfg = get().config
+    if (cfg.llmProvider === 'openrouter' && !cfg.hasLlmKey) {
       const result: LlmTestResult = {
         ok: false,
         kind: 'auth',
-        error: 'Aucune clé OpenRouter enregistrée.'
+        error: 'Aucune clé OpenRouter enregistrée.',
+        provider: 'openrouter'
       }
       set({ llmStatus: 'error', llmLastResult: result })
       return result
+    }
+    if (cfg.llmProvider === 'local') {
+      if (!cfg.localBaseUrl) {
+        const result: LlmTestResult = {
+          ok: false,
+          kind: 'auth',
+          error: 'Aucune URL de base configurée pour le modèle local. Renseignez-la dans Réglages.',
+          provider: 'local'
+        }
+        set({ llmStatus: 'error', llmLastResult: result })
+        return result
+      }
+      if (!cfg.localModel) {
+        const result: LlmTestResult = {
+          ok: false,
+          kind: 'auth',
+          error: 'Aucun modèle local configuré. Renseignez-le dans Réglages.',
+          provider: 'local'
+        }
+        set({ llmStatus: 'error', llmLastResult: result })
+        return result
+      }
     }
     set({ llmStatus: 'testing' })
     const result = await api.generation.testLlm()
