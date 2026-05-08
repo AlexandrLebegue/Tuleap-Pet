@@ -1,0 +1,190 @@
+import * as React from 'react'
+import { useEffect, useMemo, useRef } from 'react'
+import { Link } from 'react-router-dom'
+import { useSettings } from '@renderer/stores/settings.store'
+import { useChat } from '@renderer/stores/chat.store'
+import { Card, CardDescription, CardHeader, CardTitle } from '@renderer/components/ui/card'
+import { Button } from '@renderer/components/ui/button'
+import { Input } from '@renderer/components/ui/input'
+import { Trash2, Plus, Send } from 'lucide-react'
+import { cn } from '@renderer/lib/utils'
+import ChatMessageBubble from '@renderer/components/ChatMessageBubble'
+
+function Chatbot(): React.JSX.Element {
+  const config = useSettings((s) => s.config)
+
+  const conversations = useChat((s) => s.conversations)
+  const selectedId = useChat((s) => s.selectedId)
+  const messages = useChat((s) => s.messages)
+  const status = useChat((s) => s.status)
+  const draft = useChat((s) => s.draft)
+  const errorMessage = useChat((s) => s.errorMessage)
+
+  const init = useChat((s) => s.init)
+  const shutdown = useChat((s) => s.shutdown)
+  const refresh = useChat((s) => s.refresh)
+  const open = useChat((s) => s.open)
+  const newConversation = useChat((s) => s.newConversation)
+  const remove = useChat((s) => s.remove)
+  const send = useChat((s) => s.send)
+  const setDraft = useChat((s) => s.setDraft)
+
+  const ready = config.tuleapUrl && config.hasToken && config.hasLlmKey
+
+  useEffect(() => {
+    init()
+    void refresh()
+    return () => shutdown()
+  }, [init, refresh, shutdown])
+
+  const scrollRef = useRef<HTMLDivElement | null>(null)
+  const messageCount = messages.length
+  useEffect(() => {
+    const el = scrollRef.current
+    if (el) el.scrollTop = el.scrollHeight
+  }, [messageCount, status])
+
+  const selectedConv = useMemo(
+    () => conversations.find((c) => c.id === selectedId) ?? null,
+    [conversations, selectedId]
+  )
+
+  if (!ready) {
+    return (
+      <div className="mx-auto max-w-3xl px-8 py-10">
+        <h2 className="text-2xl font-semibold tracking-tight">Chatbot</h2>
+        <Card className="mt-6">
+          <CardHeader>
+            <CardTitle>Configuration requise</CardTitle>
+            <CardDescription>
+              Renseignez le token Tuleap et la clé OpenRouter dans{' '}
+              <Link to="/settings" className="underline">
+                Réglages
+              </Link>{' '}
+              avant d&apos;ouvrir une conversation.
+            </CardDescription>
+          </CardHeader>
+        </Card>
+      </div>
+    )
+  }
+
+  const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>): void => {
+    if (e.key === 'Enter' && !e.shiftKey && status !== 'sending' && status !== 'streaming') {
+      e.preventDefault()
+      void send()
+    }
+  }
+
+  return (
+    <div className="flex h-full">
+      <aside className="flex h-full w-72 shrink-0 flex-col border-r border-border bg-muted/20">
+        <div className="flex items-center justify-between border-b border-border px-4 py-3">
+          <h3 className="text-sm font-semibold tracking-tight">Conversations</h3>
+          <Button size="icon" variant="ghost" onClick={() => newConversation()} aria-label="Nouvelle">
+            <Plus className="size-4" />
+          </Button>
+        </div>
+        <div className="flex-1 overflow-auto p-2">
+          {conversations.length === 0 && (
+            <p className="px-2 py-4 text-xs text-muted-foreground">
+              Aucune conversation. Cliquez sur + pour démarrer.
+            </p>
+          )}
+          {conversations.map((conv) => (
+            <button
+              key={conv.id}
+              onClick={() => open(conv.id)}
+              className={cn(
+                'group flex w-full items-center justify-between rounded-md px-2 py-2 text-left text-sm transition-colors',
+                conv.id === selectedId
+                  ? 'bg-accent text-accent-foreground'
+                  : 'hover:bg-accent/50'
+              )}
+            >
+              <div className="min-w-0 flex-1">
+                <p className="truncate" title={conv.title}>
+                  {conv.title}
+                </p>
+                <p className="text-[10px] text-muted-foreground">
+                  {new Date(conv.updatedAt).toLocaleString()}
+                </p>
+              </div>
+              <span
+                role="button"
+                tabIndex={0}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  void remove(conv.id)
+                }}
+                className="ml-2 hidden text-muted-foreground hover:text-destructive group-hover:inline-flex"
+                aria-label="Supprimer"
+              >
+                <Trash2 className="size-3.5" />
+              </span>
+            </button>
+          ))}
+        </div>
+      </aside>
+
+      <section className="flex h-full flex-1 flex-col">
+        <header className="border-b border-border px-6 py-3">
+          <h2 className="text-lg font-semibold tracking-tight">
+            {selectedConv ? selectedConv.title : 'Aucune conversation sélectionnée'}
+          </h2>
+          <p className="text-xs text-muted-foreground">
+            Modèle : <code>{config.llmModel}</code> · Tools : get_self, list_projects,
+            list_trackers, list_artifacts, get_artifact, list_milestones
+          </p>
+        </header>
+
+        <div ref={scrollRef} className="flex-1 space-y-3 overflow-auto px-6 py-4">
+          {!selectedConv && (
+            <p className="mt-10 text-center text-sm text-muted-foreground">
+              Sélectionnez une conversation à gauche ou cliquez sur + pour en créer une nouvelle.
+            </p>
+          )}
+          {messages
+            .filter((m) => m.role !== 'system')
+            .map((m) => (
+              <ChatMessageBubble key={m.id} message={m} />
+            ))}
+          {status === 'streaming' && (
+            <p className="text-xs text-muted-foreground">L&apos;assistant rédige…</p>
+          )}
+          {errorMessage && (
+            <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm">
+              {errorMessage}
+            </div>
+          )}
+        </div>
+
+        {selectedConv && (
+          <footer className="border-t border-border px-6 py-3">
+            <div className="flex gap-2">
+              <textarea
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={onKeyDown}
+                rows={2}
+                placeholder="Posez une question — Entrée pour envoyer, Maj+Entrée pour un saut de ligne."
+                className="flex-1 resize-none rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              />
+              <Button
+                onClick={() => send()}
+                disabled={!draft.trim() || status === 'sending' || status === 'streaming'}
+              >
+                <Send className="size-4" />
+              </Button>
+            </div>
+          </footer>
+        )}
+      </section>
+    </div>
+  )
+}
+
+// Keep an Input import to satisfy ESLint when we'll reuse it for the rename UX (backlog).
+void Input
+
+export default Chatbot
