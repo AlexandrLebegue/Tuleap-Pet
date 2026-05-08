@@ -23,6 +23,123 @@ function describeError(result: ConnectionTestResult & { ok: false }): string {
   }
 }
 
+function AuthModeSwitcher(): React.JSX.Element {
+  const config = useSettings((s) => s.config)
+  const setAuthMode = useSettings((s) => s.setAuthMode)
+  const setOAuthClient = useSettings((s) => s.setOAuthClient)
+  const startOAuth = useSettings((s) => s.startOAuth)
+  const clearOAuth = useSettings((s) => s.clearOAuth)
+
+  const [clientIdDraft, setClientIdDraft] = useState(config.oauthClientId ?? '')
+  const [scopeDraft, setScopeDraft] = useState(config.oauthScope)
+  const [oauthBusy, setOauthBusy] = useState(false)
+  const [oauthMessage, setOauthMessage] = useState<{ kind: 'ok' | 'err'; text: string } | null>(
+    null
+  )
+
+  useEffect(() => {
+    setClientIdDraft(config.oauthClientId ?? '')
+    setScopeDraft(config.oauthScope)
+  }, [config.oauthClientId, config.oauthScope])
+
+  const onLaunch = async (): Promise<void> => {
+    setOauthBusy(true)
+    setOauthMessage(null)
+    await setOAuthClient(clientIdDraft.trim() || null, scopeDraft.trim() || null)
+    const result = await startOAuth()
+    setOauthBusy(false)
+    if (result.ok) {
+      setOauthMessage({ kind: 'ok', text: 'Authentification OAuth2 réussie.' })
+    } else {
+      setOauthMessage({ kind: 'err', text: result.error ?? 'Erreur OAuth2.' })
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap gap-2">
+        <Button
+          variant={config.authMode === 'token' ? 'default' : 'outline'}
+          size="sm"
+          onClick={() => setAuthMode('token')}
+        >
+          Token API personnel
+        </Button>
+        <Button
+          variant={config.authMode === 'oauth2' ? 'default' : 'outline'}
+          size="sm"
+          onClick={() => setAuthMode('oauth2')}
+        >
+          OAuth2 + PKCE
+        </Button>
+        <span className="ml-2 text-xs text-muted-foreground">
+          {config.authMode === 'oauth2' ? 'Mode actif : OAuth2.' : 'Mode actif : token API.'}
+        </span>
+      </div>
+
+      {config.authMode === 'oauth2' && (
+        <div className="space-y-3 border-t border-border pt-3">
+          <div className="space-y-1">
+            <Label htmlFor="oauth-client">Client ID</Label>
+            <Input
+              id="oauth-client"
+              placeholder="tlp-client-…"
+              value={clientIdDraft}
+              onChange={(e) => setClientIdDraft(e.target.value)}
+              spellCheck={false}
+              autoComplete="off"
+            />
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="oauth-scope">Scopes</Label>
+            <Input
+              id="oauth-scope"
+              placeholder={config.oauthDefaultScope}
+              value={scopeDraft}
+              onChange={(e) => setScopeDraft(e.target.value)}
+              spellCheck={false}
+              autoComplete="off"
+            />
+            <p className="text-xs text-muted-foreground">
+              Espaces entre les scopes — vide pour réutiliser le défaut.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button onClick={onLaunch} disabled={oauthBusy || !clientIdDraft.trim()}>
+              {oauthBusy ? 'Connexion en cours…' : 'Se connecter via OAuth2'}
+            </Button>
+            {config.hasOAuth && (
+              <>
+                <Badge variant="success">Tokens OAuth2 présents</Badge>
+                <Button variant="ghost" size="sm" onClick={() => clearOAuth()}>
+                  Révoquer localement
+                </Button>
+              </>
+            )}
+          </div>
+          {oauthMessage && (
+            <div
+              className={
+                oauthMessage.kind === 'ok'
+                  ? 'rounded-md border border-success/30 bg-success/10 px-3 py-2 text-sm'
+                  : 'rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm'
+              }
+            >
+              {oauthMessage.text}
+            </div>
+          )}
+          <p className="text-xs text-muted-foreground">
+            Le navigateur système s&apos;ouvre sur la page Tuleap d&apos;autorisation. Une fois
+            consentie, l&apos;application reçoit le code via un serveur loopback éphémère, échange
+            le code contre un access_token + refresh_token (PKCE S256), puis chiffre le tout via
+            <code className="mx-1 rounded bg-muted px-1.5 py-0.5">safeStorage</code>.
+          </p>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function Settings(): React.JSX.Element {
   const config = useSettings((s) => s.config)
   const lastResult = useSettings((s) => s.lastResult)
@@ -277,6 +394,19 @@ function Settings(): React.JSX.Element {
               La connexion doit être validée avant de charger la liste des projets.
             </p>
           )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Authentification Tuleap</CardTitle>
+          <CardDescription>
+            Choisissez entre un token API personnel (par défaut) et OAuth2 + PKCE. L&apos;OAuth2
+            requiert une application enregistrée par un admin Tuleap.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <AuthModeSwitcher />
         </CardContent>
       </Card>
 

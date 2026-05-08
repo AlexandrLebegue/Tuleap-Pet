@@ -37,9 +37,13 @@ export type PaginatedResponse<T> = {
 
 type FetchLike = typeof globalThis.fetch
 
+export type TuleapAuthHeader = 'X-Auth-AccessKey' | 'Authorization'
+
 export type TuleapClientOptions = {
   baseUrl: string
   token: string
+  /** Defaults to 'X-Auth-AccessKey' (personal token); 'Authorization' for OAuth2 bearer. */
+  authHeader?: TuleapAuthHeader
   fetchImpl?: FetchLike
   timeoutMs?: number
 }
@@ -63,6 +67,7 @@ function buildUrl(baseUrl: string, path: string, params?: Record<string, unknown
 export class TuleapClient {
   private readonly baseUrl: string
   private readonly token: string
+  private readonly authHeader: TuleapAuthHeader
   private readonly fetchImpl: FetchLike
   private readonly timeoutMs: number
 
@@ -71,6 +76,7 @@ export class TuleapClient {
     if (!opts.token) throw new Error('token manquant')
     this.baseUrl = opts.baseUrl.replace(/\/+$/, '')
     this.token = opts.token
+    this.authHeader = opts.authHeader ?? 'X-Auth-AccessKey'
     this.fetchImpl = opts.fetchImpl ?? globalThis.fetch.bind(globalThis)
     this.timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS
   }
@@ -79,14 +85,17 @@ export class TuleapClient {
     const url = buildUrl(this.baseUrl, path, params)
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), this.timeoutMs)
+    const headers: Record<string, string> = { Accept: 'application/json' }
+    if (this.authHeader === 'Authorization') {
+      headers['Authorization'] = `Bearer ${this.token}`
+    } else {
+      headers['X-Auth-AccessKey'] = this.token
+    }
     let response: Response
     try {
       response = await this.fetchImpl(url, {
         method: 'GET',
-        headers: {
-          'X-Auth-AccessKey': this.token,
-          Accept: 'application/json'
-        },
+        headers,
         signal: controller.signal
       })
     } catch (err) {

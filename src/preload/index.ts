@@ -24,6 +24,12 @@ export type SettingsState = {
   llmDefaultModel: string
   hasLlmKey: boolean
   llmKeyFromEnv: boolean
+  authMode: 'token' | 'oauth2'
+  oauthClientId: string | null
+  oauthScope: string
+  oauthDefaultScope: string
+  hasOAuth: boolean
+  openCodeBinary: string | null
 }
 
 const settings = {
@@ -120,7 +126,21 @@ const chat = {
   }
 }
 
-const api = { settings, tuleap, generation, marp, chat }
+type StartOAuthResult =
+  | { ok: true; scope: string | null; expiresAt: number | null }
+  | { ok: false; error: string }
+
+const auth = {
+  setMode: (mode: 'token' | 'oauth2'): Promise<{ ok: true }> =>
+    ipcRenderer.invoke('auth:set-mode', mode),
+  setOAuthClient: (args: { clientId: string | null; scope: string | null }): Promise<{ ok: true }> =>
+    ipcRenderer.invoke('auth:set-oauth-client', args),
+  startOAuth: (): Promise<StartOAuthResult> => ipcRenderer.invoke('auth:start-oauth'),
+  clearOAuth: (): Promise<{ ok: true }> => ipcRenderer.invoke('auth:clear-oauth'),
+  hasOAuth: (): Promise<{ hasOAuth: boolean }> => ipcRenderer.invoke('auth:has-oauth')
+}
+
+const api = { settings, tuleap, generation, marp, chat, auth }
 
 if (process.contextIsolated) {
   try {

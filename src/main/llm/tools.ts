@@ -1,8 +1,8 @@
 import { z } from 'zod'
 import { tool, type Tool } from 'ai'
 import {
-  TuleapClient,
   TuleapError,
+  buildTuleapClient,
   mapArtifactDetail,
   mapArtifactSummary,
   mapMilestone,
@@ -10,16 +10,7 @@ import {
   mapTracker
 } from '../tuleap'
 import { getConfig } from '../store/config'
-import { getTuleapToken } from '../store/secrets'
 import { audit } from '../store/db'
-
-function buildClient(): TuleapClient {
-  const { tuleapUrl } = getConfig()
-  if (!tuleapUrl) throw new TuleapError('unknown', "URL Tuleap non configurée.")
-  const token = getTuleapToken()
-  if (!token) throw new TuleapError('auth', 'Token Tuleap absent.')
-  return new TuleapClient({ baseUrl: tuleapUrl, token })
-}
 
 function projectIdOrThrow(): number {
   const id = getConfig().projectId
@@ -31,7 +22,7 @@ function projectIdOrThrow(): number {
 
 /**
  * Tools exposed to the chat model. Every tool reuses the encrypted Tuleap
- * token from the main process — the LLM never sees the credentials.
+ * credentials from the main process — the LLM never sees the secret.
  *
  * The tool list is intentionally small and read-only for now: write
  * operations against Tuleap (creating artifacts, transitions) are deferred
@@ -45,7 +36,8 @@ export function buildTuleapTools(): Record<string, Tool> {
       inputSchema: z.object({}),
       async execute(): Promise<unknown> {
         audit('chat.tool', 'get_self')
-        const me = await buildClient().getSelf()
+        const client = await buildTuleapClient()
+        const me = await client.getSelf()
         return { id: me.id, username: me.username, real_name: me.real_name, email: me.email }
       }
     }),
@@ -58,7 +50,8 @@ export function buildTuleapTools(): Record<string, Tool> {
       async execute(input): Promise<unknown> {
         const args = input as { query?: string }
         audit('chat.tool', 'list_projects', args)
-        const page = await buildClient().listProjects({ limit: 50, query: args.query })
+        const client = await buildTuleapClient()
+        const page = await client.listProjects({ limit: 50, query: args.query })
         return page.items.map(mapProject)
       }
     }),
@@ -72,7 +65,8 @@ export function buildTuleapTools(): Record<string, Tool> {
         const args = input as { projectId?: number }
         audit('chat.tool', 'list_trackers', args)
         const id = args.projectId ?? projectIdOrThrow()
-        const page = await buildClient().listTrackers(id, { limit: 100 })
+        const client = await buildTuleapClient()
+        const page = await client.listTrackers(id, { limit: 100 })
         return page.items.map((t) => mapTracker(t, null))
       }
     }),
@@ -88,7 +82,8 @@ export function buildTuleapTools(): Record<string, Tool> {
       async execute(input): Promise<unknown> {
         const args = input as { trackerId: number; limit?: number; offset?: number }
         audit('chat.tool', 'list_artifacts', args)
-        const page = await buildClient().listArtifacts(args.trackerId, {
+        const client = await buildTuleapClient()
+        const page = await client.listArtifacts(args.trackerId, {
           limit: args.limit ?? 25,
           offset: args.offset ?? 0
         })
@@ -110,7 +105,8 @@ export function buildTuleapTools(): Record<string, Tool> {
       async execute(input): Promise<unknown> {
         const args = input as { id: number }
         audit('chat.tool', 'get_artifact', args)
-        const raw = await buildClient().getArtifact(args.id)
+        const client = await buildTuleapClient()
+        const raw = await client.getArtifact(args.id)
         return mapArtifactDetail(raw)
       }
     }),
@@ -125,7 +121,8 @@ export function buildTuleapTools(): Record<string, Tool> {
         const args = input as { projectId?: number; status?: 'open' | 'closed' | 'all' }
         audit('chat.tool', 'list_milestones', args)
         const id = args.projectId ?? projectIdOrThrow()
-        const page = await buildClient().listMilestones(id, {
+        const client = await buildTuleapClient()
+        const page = await client.listMilestones(id, {
           status: args.status ?? 'open',
           limit: 50
         })

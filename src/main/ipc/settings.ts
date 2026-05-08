@@ -1,16 +1,20 @@
 import { ipcMain } from 'electron'
 import {
   DEFAULT_LLM_MODEL,
+  DEFAULT_OAUTH_SCOPE,
   clearConfig,
   getConfig,
   getLlmModel,
+  getOAuthScope,
   setLlmModel,
   setProjectId,
   setTuleapUrl
 } from '../store/config'
 import {
+  clearOAuthBundle,
   clearOpenRouterKey,
   clearTuleapToken,
+  hasOAuthBundle,
   hasOpenRouterKey,
   hasTuleapToken,
   isOpenRouterKeyFromEnv,
@@ -29,6 +33,12 @@ export type SettingsState = {
   llmDefaultModel: string
   hasLlmKey: boolean
   llmKeyFromEnv: boolean
+  authMode: 'token' | 'oauth2'
+  oauthClientId: string | null
+  oauthScope: string
+  oauthDefaultScope: string
+  hasOAuth: boolean
+  openCodeBinary: string | null
 }
 
 function buildState(): SettingsState {
@@ -41,7 +51,13 @@ function buildState(): SettingsState {
     llmModel: getLlmModel(),
     llmDefaultModel: DEFAULT_LLM_MODEL,
     hasLlmKey: hasOpenRouterKey(),
-    llmKeyFromEnv: isOpenRouterKeyFromEnv()
+    llmKeyFromEnv: isOpenRouterKeyFromEnv(),
+    authMode: config.authMode,
+    oauthClientId: config.oauthClientId,
+    oauthScope: getOAuthScope(),
+    oauthDefaultScope: DEFAULT_OAUTH_SCOPE,
+    hasOAuth: hasOAuthBundle(),
+    openCodeBinary: config.openCodeBinary
   }
 }
 
@@ -108,6 +124,7 @@ export function registerSettingsHandlers(): void {
   ipcMain.handle('settings:reset', () => {
     clearTuleapToken()
     clearOpenRouterKey()
+    clearOAuthBundle()
     clearConfig()
     audit('settings.reset')
     return buildState()

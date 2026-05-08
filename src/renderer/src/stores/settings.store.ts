@@ -31,6 +31,11 @@ type Store = {
   clearLlmKey: () => Promise<void>
   setLlmModel: (model: string | null) => Promise<void>
   testLlm: () => Promise<LlmTestResult>
+
+  setAuthMode: (mode: 'token' | 'oauth2') => Promise<void>
+  setOAuthClient: (clientId: string | null, scope: string | null) => Promise<void>
+  startOAuth: () => Promise<{ ok: boolean; error?: string }>
+  clearOAuth: () => Promise<void>
 }
 
 const emptyConfig: SettingsState = {
@@ -41,7 +46,13 @@ const emptyConfig: SettingsState = {
   llmModel: 'minimax/minimax-m2:free',
   llmDefaultModel: 'minimax/minimax-m2:free',
   hasLlmKey: false,
-  llmKeyFromEnv: false
+  llmKeyFromEnv: false,
+  authMode: 'token',
+  oauthClientId: null,
+  oauthScope: 'read:user_membership read:project read:tracker',
+  oauthDefaultScope: 'read:user_membership read:project read:tracker',
+  hasOAuth: false,
+  openCodeBinary: null
 }
 
 export const useSettings = create<Store>((set, get) => ({
@@ -135,5 +146,29 @@ export const useSettings = create<Store>((set, get) => ({
     const result = await api.generation.testLlm()
     set({ llmStatus: result.ok ? 'ok' : 'error', llmLastResult: result })
     return result
+  },
+
+  setAuthMode: async (mode: 'token' | 'oauth2') => {
+    await api.auth.setMode(mode)
+    await get().refresh()
+    set({ status: 'unknown', lastResult: null })
+  },
+
+  setOAuthClient: async (clientId: string | null, scope: string | null) => {
+    await api.auth.setOAuthClient({ clientId, scope })
+    await get().refresh()
+  },
+
+  startOAuth: async () => {
+    const result = await api.auth.startOAuth()
+    await get().refresh()
+    if (!result.ok) return { ok: false, error: result.error }
+    set({ status: 'unknown', lastResult: null })
+    return { ok: true }
+  },
+
+  clearOAuth: async () => {
+    await api.auth.clearOAuth()
+    await get().refresh()
   }
 }))

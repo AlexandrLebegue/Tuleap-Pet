@@ -1,12 +1,11 @@
 import { ipcMain } from 'electron'
 import {
-  TuleapClient,
   TuleapError,
+  buildTuleapClient,
   mapArtifactSummary,
   mapMilestone
 } from '../tuleap'
 import { getConfig, getLlmModel } from '../store/config'
-import { getTuleapToken } from '../store/secrets'
 import { resolveLlmProvider, toLlmError } from '../llm'
 import { audit } from '../store/db'
 import { buildSprintReviewMessages } from '../prompts'
@@ -17,20 +16,8 @@ import type {
   SprintContent
 } from '@shared/types'
 
-function buildTuleapClient(): TuleapClient {
-  const { tuleapUrl } = getConfig()
-  if (!tuleapUrl) {
-    throw new TuleapError('unknown', "L'URL Tuleap n'est pas configurée.")
-  }
-  const token = getTuleapToken()
-  if (!token) {
-    throw new TuleapError('auth', 'Aucun token Tuleap enregistré.')
-  }
-  return new TuleapClient({ baseUrl: tuleapUrl, token })
-}
-
 async function fetchSprintContent(milestoneId: number): Promise<SprintContent> {
-  const client = buildTuleapClient()
+  const client = await buildTuleapClient()
   const milestoneRaw = await client.getMilestone(milestoneId)
   const contentPage = await client.listMilestoneContent(milestoneId, { limit: 200 })
   return {
@@ -61,7 +48,7 @@ export function registerGenerationHandlers(): void {
       const validStatus: MilestoneStatus =
         status === 'open' || status === 'closed' || status === 'all' ? status : 'open'
       audit('generation.list-sprints', `${projectId}:${validStatus}`)
-      const client = buildTuleapClient()
+      const client = await buildTuleapClient()
       const page = await client.listMilestones(projectId, { status: validStatus, limit: 100 })
       return page.items.map(mapMilestone)
     }
@@ -120,7 +107,7 @@ export function registerGenerationHandlers(): void {
         throw new TuleapError('unknown', "Aucun projet n'est sélectionné.")
       }
 
-      const client = buildTuleapClient()
+      const client = await buildTuleapClient()
       const project = await client.getProject(projectId)
       const content = await fetchSprintContent(milestoneId)
 

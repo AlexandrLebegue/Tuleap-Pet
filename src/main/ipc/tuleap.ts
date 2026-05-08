@@ -1,12 +1,12 @@
 import { ipcMain } from 'electron'
 import {
-  TuleapClient,
   TuleapAuthError,
   TuleapError,
   TuleapNetworkError,
   TuleapNotFoundError,
   TuleapSchemaError,
   TuleapServerError,
+  buildTuleapClient,
   mapArtifactDetail,
   mapArtifactSummary,
   mapProject,
@@ -14,7 +14,6 @@ import {
   type PaginatedResponse
 } from '../tuleap'
 import { getConfig } from '../store/config'
-import { getTuleapToken } from '../store/secrets'
 import { audit } from '../store/db'
 import type {
   ArtifactDetail,
@@ -25,17 +24,8 @@ import type {
   TrackerSummary
 } from '@shared/types'
 
-function buildClient(): TuleapClient {
-  const { tuleapUrl } = getConfig()
-  if (!tuleapUrl) {
-    throw new TuleapError('unknown', "L'URL Tuleap n'est pas configurée.")
-  }
-  const token = getTuleapToken()
-  if (!token) {
-    throw new TuleapError('auth', 'Aucun token Tuleap enregistré.')
-  }
-  return new TuleapClient({ baseUrl: tuleapUrl, token })
-}
+// buildTuleapClient is now the centralised builder shared with chat tools
+// and the generation handlers. It honours both auth modes (token / OAuth2).
 
 function toConnectionResult(err: unknown): ConnectionTestResult {
   if (err instanceof TuleapAuthError) {
@@ -72,7 +62,7 @@ export function registerTuleapHandlers(): void {
   ipcMain.handle('tuleap:test-connection', async (): Promise<ConnectionTestResult> => {
     audit('tuleap.test-connection')
     try {
-      const client = buildClient()
+      const client = await buildTuleapClient()
       const me = await client.getSelf()
       return {
         ok: true,
@@ -89,7 +79,7 @@ export function registerTuleapHandlers(): void {
     'tuleap:list-projects',
     async (_event, query?: unknown): Promise<ProjectSummary[]> => {
       const q = typeof query === 'string' ? query : undefined
-      const client = buildClient()
+      const client = await buildTuleapClient()
       audit('tuleap.list-projects', q ?? null)
       const page = await client.listProjects({ limit: 100, query: q })
       return page.items.map(mapProject)
@@ -104,7 +94,7 @@ export function registerTuleapHandlers(): void {
       if (typeof id !== 'number') {
         throw new TuleapError('unknown', "Aucun projet n'est sélectionné.")
       }
-      const client = buildClient()
+      const client = await buildTuleapClient()
       audit('tuleap.list-trackers', String(id))
       const page = await client.listTrackers(id, { limit: 100 })
       const trackers = await Promise.all(
@@ -139,7 +129,7 @@ export function registerTuleapHandlers(): void {
       if (typeof trackerId !== 'number' || !Number.isInteger(trackerId) || trackerId <= 0) {
         throw new TuleapError('unknown', "trackerId invalide.")
       }
-      const client = buildClient()
+      const client = await buildTuleapClient()
       audit('tuleap.list-artifacts', String(trackerId), { limit, offset })
       const page = await client.listArtifacts(trackerId, {
         limit: limit ?? 50,
@@ -153,7 +143,7 @@ export function registerTuleapHandlers(): void {
     if (typeof id !== 'number' || !Number.isInteger(id) || id <= 0) {
       throw new TuleapError('unknown', "id invalide.")
     }
-    const client = buildClient()
+    const client = await buildTuleapClient()
     audit('tuleap.get-artifact', String(id))
     const raw = await client.getArtifact(id)
     return mapArtifactDetail(raw)

@@ -10,6 +10,7 @@ import { join, dirname } from 'path'
 
 const TULEAP_TOKEN_FILE = 'tuleap-token.bin'
 const OPENROUTER_KEY_FILE = 'openrouter-key.bin'
+const OAUTH_TOKEN_FILE = 'tuleap-oauth.bin'
 
 function secretPath(file: string): string {
   return join(app.getPath('userData'), 'secrets', file)
@@ -98,4 +99,36 @@ export function isOpenRouterKeyFromEnv(): boolean {
 
 export function clearOpenRouterKey(): void {
   deleteSecret(OPENROUTER_KEY_FILE)
+}
+
+// ---- Tuleap OAuth2 tokens -------------------------------------------
+
+export type OAuthTokenBundle = {
+  accessToken: string
+  refreshToken: string | null
+  expiresAt: number | null
+  scope: string | null
+  obtainedAt: number
+}
+
+export function setOAuthBundle(bundle: OAuthTokenBundle): void {
+  writeSecret(OAUTH_TOKEN_FILE, JSON.stringify(bundle))
+}
+
+export function getOAuthBundle(): OAuthTokenBundle | null {
+  const raw = readSecret(OAUTH_TOKEN_FILE)
+  if (!raw) return null
+  try {
+    return JSON.parse(raw) as OAuthTokenBundle
+  } catch {
+    return null
+  }
+}
+
+export function hasOAuthBundle(): boolean {
+  return existsSync(secretPath(OAUTH_TOKEN_FILE))
+}
+
+export function clearOAuthBundle(): void {
+  deleteSecret(OAUTH_TOKEN_FILE)
 }

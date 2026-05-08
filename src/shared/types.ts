@@ -3,10 +3,17 @@
  * Doit rester sans imports d'API Electron / Node spécifiques.
  */
 
+export type TuleapAuthMode = 'token' | 'oauth2'
+
 export type AppConfig = {
   tuleapUrl: string | null
   projectId: number | null
   llmModel: string | null
+  authMode: TuleapAuthMode
+  oauthClientId: string | null
+  oauthScope: string | null
+  /** Path / command for the OpenCode binary used by the Coder tab. */
+  openCodeBinary: string | null
 }
 
 export type ConnectionTestResult =
