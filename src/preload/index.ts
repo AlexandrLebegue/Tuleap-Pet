@@ -1,5 +1,4 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import { electronAPI } from '@electron-toolkit/preload'
 import type {
   AdminScanResult,
   ArtifactDetail,
@@ -10,6 +9,7 @@ import type {
   CoderContextResult,
   CoderStreamEvent,
   ConnectionTestResult,
+  LlmProviderKind,
   MilestoneStatus,
   MilestoneSummary,
   Page,
@@ -23,10 +23,15 @@ export type SettingsState = {
   projectId: number | null
   hasToken: boolean
   secretStorageAvailable: boolean
+  llmProvider: LlmProviderKind
   llmModel: string
   llmDefaultModel: string
   hasLlmKey: boolean
   llmKeyFromEnv: boolean
+  localBaseUrl: string | null
+  localModel: string | null
+  hasLocalKey: boolean
+  localKeyFromEnv: boolean
   authMode: 'token' | 'oauth2'
   oauthClientId: string | null
   oauthScope: string
@@ -44,11 +49,20 @@ const settings = {
   clearToken: (): Promise<SettingsState> => ipcRenderer.invoke('settings:clear-token'),
   setProjectId: (id: number | null): Promise<SettingsState> =>
     ipcRenderer.invoke('settings:set-project-id', id),
+  setLlmProvider: (provider: LlmProviderKind): Promise<SettingsState> =>
+    ipcRenderer.invoke('settings:set-llm-provider', provider),
   setLlmKey: (key: string): Promise<SettingsState> =>
     ipcRenderer.invoke('settings:set-llm-key', key),
   clearLlmKey: (): Promise<SettingsState> => ipcRenderer.invoke('settings:clear-llm-key'),
   setLlmModel: (model: string | null): Promise<SettingsState> =>
     ipcRenderer.invoke('settings:set-llm-model', model),
+  setLocalBaseUrl: (url: string | null): Promise<SettingsState> =>
+    ipcRenderer.invoke('settings:set-local-base-url', url),
+  setLocalModel: (model: string | null): Promise<SettingsState> =>
+    ipcRenderer.invoke('settings:set-local-model', model),
+  setLocalKey: (key: string): Promise<SettingsState> =>
+    ipcRenderer.invoke('settings:set-local-key', key),
+  clearLocalKey: (): Promise<SettingsState> => ipcRenderer.invoke('settings:clear-local-key'),
   reset: (): Promise<SettingsState> => ipcRenderer.invoke('settings:reset')
 }
 
@@ -181,15 +195,12 @@ const api = { settings, tuleap, generation, marp, chat, auth, coder, admin }
 
 if (process.contextIsolated) {
   try {
-    contextBridge.exposeInMainWorld('electron', electronAPI)
     contextBridge.exposeInMainWorld('api', api)
   } catch (error) {
-    console.error(error)
+    console.error('Failed to expose app API:', error)
   }
 } else {
   // Should never happen with sandbox: true + contextIsolation: true.
-  // @ts-ignore (define in dts)
-  window.electron = electronAPI
   // @ts-ignore (define in dts)
   window.api = api
 }

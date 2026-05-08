@@ -4,35 +4,50 @@ import {
   DEFAULT_OAUTH_SCOPE,
   clearConfig,
   getConfig,
+  getLocalBaseUrl,
+  getLocalModel,
   getLlmModel,
   getOAuthScope,
+  setLocalBaseUrl,
+  setLocalModel,
   setLlmModel,
+  setLlmProvider,
   setProjectId,
   setTuleapUrl
 } from '../store/config'
 import {
+  clearLocalLlmKey,
   clearOAuthBundle,
   clearOpenRouterKey,
   clearTuleapToken,
+  hasLocalLlmKey,
   hasOAuthBundle,
   hasOpenRouterKey,
   hasTuleapToken,
+  isLocalLlmKeyFromEnv,
   isOpenRouterKeyFromEnv,
   isSecretStorageAvailable,
+  setLocalLlmKey,
   setOpenRouterKey,
   setTuleapToken
 } from '../store/secrets'
 import { audit } from '../store/db'
+import type { LlmProviderKind } from '@shared/types'
 
 export type SettingsState = {
   tuleapUrl: string | null
   projectId: number | null
   hasToken: boolean
   secretStorageAvailable: boolean
+  llmProvider: LlmProviderKind
   llmModel: string
   llmDefaultModel: string
   hasLlmKey: boolean
   llmKeyFromEnv: boolean
+  localBaseUrl: string | null
+  localModel: string | null
+  hasLocalKey: boolean
+  localKeyFromEnv: boolean
   authMode: 'token' | 'oauth2'
   oauthClientId: string | null
   oauthScope: string
@@ -48,10 +63,15 @@ function buildState(): SettingsState {
     projectId: config.projectId,
     hasToken: hasTuleapToken(),
     secretStorageAvailable: isSecretStorageAvailable(),
+    llmProvider: config.llmProvider,
     llmModel: getLlmModel(),
     llmDefaultModel: DEFAULT_LLM_MODEL,
     hasLlmKey: hasOpenRouterKey(),
     llmKeyFromEnv: isOpenRouterKeyFromEnv(),
+    localBaseUrl: getLocalBaseUrl(),
+    localModel: getLocalModel(),
+    hasLocalKey: hasLocalLlmKey(),
+    localKeyFromEnv: isLocalLlmKeyFromEnv(),
     authMode: config.authMode,
     oauthClientId: config.oauthClientId,
     oauthScope: getOAuthScope(),
@@ -97,6 +117,15 @@ export function registerSettingsHandlers(): void {
     return buildState()
   })
 
+  ipcMain.handle('settings:set-llm-provider', (_event, provider: unknown) => {
+    if (provider !== 'openrouter' && provider !== 'local') {
+      throw new Error("Le fournisseur doit être 'openrouter' ou 'local'.")
+    }
+    setLlmProvider(provider as LlmProviderKind)
+    audit('settings.set-llm-provider', provider)
+    return buildState()
+  })
+
   ipcMain.handle('settings:set-llm-key', (_event, key: unknown) => {
     if (typeof key !== 'string' || key.trim().length === 0) {
       throw new Error('Clé OpenRouter vide.')
@@ -121,9 +150,43 @@ export function registerSettingsHandlers(): void {
     return buildState()
   })
 
+  ipcMain.handle('settings:set-local-base-url', (_event, url: unknown) => {
+    if (url !== null && typeof url !== 'string') {
+      throw new Error("Le paramètre 'url' doit être une chaîne ou null.")
+    }
+    setLocalBaseUrl(url as string | null)
+    audit('settings.set-local-base-url', (url as string | null) ?? null)
+    return buildState()
+  })
+
+  ipcMain.handle('settings:set-local-model', (_event, model: unknown) => {
+    if (model !== null && typeof model !== 'string') {
+      throw new Error("Le paramètre 'model' doit être une chaîne ou null.")
+    }
+    setLocalModel(model as string | null)
+    audit('settings.set-local-model', (model as string | null) ?? null)
+    return buildState()
+  })
+
+  ipcMain.handle('settings:set-local-key', (_event, key: unknown) => {
+    if (typeof key !== 'string' || key.trim().length === 0) {
+      throw new Error('Clé locale vide.')
+    }
+    setLocalLlmKey(key)
+    audit('settings.set-local-key')
+    return buildState()
+  })
+
+  ipcMain.handle('settings:clear-local-key', () => {
+    clearLocalLlmKey()
+    audit('settings.clear-local-key')
+    return buildState()
+  })
+
   ipcMain.handle('settings:reset', () => {
     clearTuleapToken()
     clearOpenRouterKey()
+    clearLocalLlmKey()
     clearOAuthBundle()
     clearConfig()
     audit('settings.reset')

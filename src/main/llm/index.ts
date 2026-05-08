@@ -1,6 +1,7 @@
-import { getOpenRouterKey } from '../store/secrets'
-import { getLlmModel } from '../store/config'
+import { getLocalLlmKey, getOpenRouterKey } from '../store/secrets'
+import { getLocalBaseUrl, getLocalModel, getLlmModel, getLlmProvider } from '../store/config'
 import { createOpenRouterProvider } from './openrouter'
+import { createLocalProvider } from './local'
 import { LlmAuthError } from './errors'
 import type { LlmProvider } from './types'
 
@@ -13,6 +14,7 @@ export {
 } from './errors'
 export type { LlmErrorKind } from './errors'
 export { createOpenRouterProvider } from './openrouter'
+export { createLocalProvider } from './local'
 export { buildTuleapTools } from './tools'
 export type {
   LlmGenerateRequest,
@@ -23,12 +25,30 @@ export type {
   LlmUsage
 } from './types'
 
-/**
- * Resolve the active LLM provider from the current persistent state.
- * Currently always OpenRouter — other providers (Ollama, OpenAI…) will
- * plug in here in later phases.
- */
 export function resolveLlmProvider(): LlmProvider {
+  const provider = getLlmProvider()
+
+  if (provider === 'local') {
+    const baseUrl = getLocalBaseUrl()
+    const model = getLocalModel()
+    if (!baseUrl) {
+      throw new LlmAuthError(
+        "Aucune URL de base configurée pour le modèle local. Renseignez-la dans Réglages."
+      )
+    }
+    if (!model) {
+      throw new LlmAuthError(
+        "Aucun modèle local configuré. Renseignez-le dans Réglages."
+      )
+    }
+    return createLocalProvider({
+      baseUrl,
+      model,
+      apiKey: getLocalLlmKey()
+    })
+  }
+
+  // Default: OpenRouter
   const apiKey = getOpenRouterKey()
   if (!apiKey) {
     throw new LlmAuthError(

@@ -154,9 +154,14 @@ function Settings(): React.JSX.Element {
   const setProjectId = useSettings((s) => s.setProjectId)
   const llmStatus = useSettings((s) => s.llmStatus)
   const llmLastResult = useSettings((s) => s.llmLastResult)
+  const setLlmProvider = useSettings((s) => s.setLlmProvider)
   const setLlmKey = useSettings((s) => s.setLlmKey)
   const clearLlmKey = useSettings((s) => s.clearLlmKey)
   const setLlmModel = useSettings((s) => s.setLlmModel)
+  const setLocalBaseUrl = useSettings((s) => s.setLocalBaseUrl)
+  const setLocalModel = useSettings((s) => s.setLocalModel)
+  const setLocalKey = useSettings((s) => s.setLocalKey)
+  const clearLocalKey = useSettings((s) => s.clearLocalKey)
   const testLlm = useSettings((s) => s.testLlm)
 
   const [urlDraft, setUrlDraft] = useState(config.tuleapUrl ?? '')
@@ -168,6 +173,10 @@ function Settings(): React.JSX.Element {
   const [llmModelDraft, setLlmModelDraft] = useState(config.llmModel)
   const [savingLlmKey, setSavingLlmKey] = useState(false)
   const [savingLlmModel, setSavingLlmModel] = useState(false)
+  const [localUrlDraft, setLocalUrlDraft] = useState(config.localBaseUrl ?? '')
+  const [localModelDraft, setLocalModelDraft] = useState(config.localModel ?? '')
+  const [localKeyDraft, setLocalKeyDraft] = useState('')
+  const [savingLocal, setSavingLocal] = useState(false)
 
   useEffect(() => {
     setUrlDraft(config.tuleapUrl ?? '')
@@ -176,6 +185,11 @@ function Settings(): React.JSX.Element {
   useEffect(() => {
     setLlmModelDraft(config.llmModel)
   }, [config.llmModel])
+
+  useEffect(() => {
+    setLocalUrlDraft(config.localBaseUrl ?? '')
+    setLocalModelDraft(config.localModel ?? '')
+  }, [config.localBaseUrl, config.localModel])
 
   const onSaveUrl = async (): Promise<void> => {
     setSavingUrl(true)
@@ -239,9 +253,26 @@ function Settings(): React.JSX.Element {
     await testLlm()
   }
 
+  const onSaveLocal = async (): Promise<void> => {
+    setSavingLocal(true)
+    try {
+      await setLocalBaseUrl(localUrlDraft.trim() || null)
+      await setLocalModel(localModelDraft.trim() || null)
+      if (localKeyDraft.trim()) {
+        await setLocalKey(localKeyDraft.trim())
+        setLocalKeyDraft('')
+      }
+    } finally {
+      setSavingLocal(false)
+    }
+  }
+
   const canTest = Boolean(config.tuleapUrl) && config.hasToken
   const canLoadProjects = canTest && status === 'ok'
-  const canTestLlm = config.hasLlmKey
+  const canTestLlm =
+    config.llmProvider === 'local'
+      ? Boolean(config.localBaseUrl) && Boolean(config.localModel)
+      : config.hasLlmKey
 
   return (
     <div className="mx-auto max-w-3xl px-8 py-10 space-y-6">
@@ -412,81 +443,197 @@ function Settings(): React.JSX.Element {
 
       <Card>
         <CardHeader>
-          <CardTitle>OpenRouter (LLM)</CardTitle>
+          <CardTitle>Fournisseur LLM</CardTitle>
           <CardDescription>
-            Clé API et modèle utilisés par les onglets Génération IA / Chatbot. La clé est chiffrée
-            via <code>safeStorage</code>. La variable d&apos;environnement{' '}
-            <code className="rounded bg-muted px-1.5 py-0.5 text-xs">OPENROUTER_API_KEY</code>, si
-            définie, prend le pas sur la valeur enregistrée.
+            Choisissez entre OpenRouter (cloud) et un modèle local compatible OpenAI (Ollama, LM
+            Studio, llama.cpp server…).
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-1">
-            <Label htmlFor="openrouter-key">Clé API</Label>
-            <div className="flex gap-2">
-              <Input
-                id="openrouter-key"
-                type="password"
-                placeholder={
-                  config.llmKeyFromEnv
-                    ? 'Clé fournie via OPENROUTER_API_KEY'
-                    : config.hasLlmKey
-                      ? '•••••••••• (déjà enregistrée)'
-                      : 'sk-or-v1-…'
-                }
-                value={llmKeyDraft}
-                onChange={(e) => setLlmKeyDraft(e.target.value)}
-                disabled={config.llmKeyFromEnv}
-                autoComplete="off"
-              />
-              <Button
-                onClick={onSaveLlmKey}
-                disabled={savingLlmKey || !llmKeyDraft.trim() || config.llmKeyFromEnv}
-              >
-                Enregistrer
-              </Button>
-            </div>
-            {config.llmKeyFromEnv && (
-              <p className="pt-1 text-xs text-muted-foreground">
-                <Badge variant="secondary">Source : env</Badge>{' '}
-                <span>La clé locale est ignorée tant que la variable d&apos;env est définie.</span>
+        <CardContent className="space-y-5">
+          {/* Provider selector */}
+          <div className="flex gap-2">
+            <Button
+              variant={config.llmProvider === 'openrouter' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setLlmProvider('openrouter')}
+            >
+              OpenRouter
+            </Button>
+            <Button
+              variant={config.llmProvider === 'local' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setLlmProvider('local')}
+            >
+              Modèle local (OpenAI-compatible)
+            </Button>
+          </div>
+
+          {/* OpenRouter section */}
+          {config.llmProvider === 'openrouter' && (
+            <div className="space-y-4 border-t border-border pt-4">
+              <p className="text-xs text-muted-foreground">
+                La clé est chiffrée via <code>safeStorage</code>. La variable d&apos;environnement{' '}
+                <code className="rounded bg-muted px-1.5 py-0.5 text-xs">OPENROUTER_API_KEY</code>
+                , si définie, prend le pas sur la valeur enregistrée.
               </p>
-            )}
-            {!config.llmKeyFromEnv && config.hasLlmKey && (
-              <div className="flex items-center gap-2 pt-1 text-xs text-muted-foreground">
-                <Badge variant="success">Clé chiffrée présente</Badge>
-                <Button variant="ghost" size="sm" onClick={() => clearLlmKey()}>
-                  Supprimer
-                </Button>
+              <div className="space-y-1">
+                <Label htmlFor="openrouter-key">Clé API</Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="openrouter-key"
+                    type="password"
+                    placeholder={
+                      config.llmKeyFromEnv
+                        ? 'Clé fournie via OPENROUTER_API_KEY'
+                        : config.hasLlmKey
+                          ? '•••••••••• (déjà enregistrée)'
+                          : 'sk-or-v1-…'
+                    }
+                    value={llmKeyDraft}
+                    onChange={(e) => setLlmKeyDraft(e.target.value)}
+                    disabled={config.llmKeyFromEnv}
+                    autoComplete="off"
+                  />
+                  <Button
+                    onClick={onSaveLlmKey}
+                    disabled={savingLlmKey || !llmKeyDraft.trim() || config.llmKeyFromEnv}
+                  >
+                    Enregistrer
+                  </Button>
+                </div>
+                {config.llmKeyFromEnv && (
+                  <p className="pt-1 text-xs text-muted-foreground">
+                    <Badge variant="secondary">Source : env</Badge>{' '}
+                    <span>
+                      La clé locale est ignorée tant que la variable d&apos;env est définie.
+                    </span>
+                  </p>
+                )}
+                {!config.llmKeyFromEnv && config.hasLlmKey && (
+                  <div className="flex items-center gap-2 pt-1 text-xs text-muted-foreground">
+                    <Badge variant="success">Clé chiffrée présente</Badge>
+                    <Button variant="ghost" size="sm" onClick={() => clearLlmKey()}>
+                      Supprimer
+                    </Button>
+                  </div>
+                )}
               </div>
-            )}
-          </div>
-
-          <div className="space-y-1">
-            <Label htmlFor="openrouter-model">Modèle</Label>
-            <div className="flex gap-2">
-              <Input
-                id="openrouter-model"
-                placeholder={config.llmDefaultModel}
-                value={llmModelDraft}
-                onChange={(e) => setLlmModelDraft(e.target.value)}
-                spellCheck={false}
-                autoComplete="off"
-              />
-              <Button onClick={onSaveLlmModel} variant="secondary" disabled={savingLlmModel}>
-                Enregistrer
-              </Button>
+              <div className="space-y-1">
+                <Label htmlFor="openrouter-model">Modèle</Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="openrouter-model"
+                    placeholder={config.llmDefaultModel}
+                    value={llmModelDraft}
+                    onChange={(e) => setLlmModelDraft(e.target.value)}
+                    spellCheck={false}
+                    autoComplete="off"
+                  />
+                  <Button onClick={onSaveLlmModel} variant="secondary" disabled={savingLlmModel}>
+                    Enregistrer
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Slug OpenRouter, ex.{' '}
+                  <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
+                    {config.llmDefaultModel}
+                  </code>
+                  . Vide = défaut.
+                </p>
+              </div>
             </div>
-            <p className="text-xs text-muted-foreground">
-              Slug OpenRouter, par ex.{' '}
-              <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
-                {config.llmDefaultModel}
-              </code>
-              . Vide = défaut.
-            </p>
-          </div>
+          )}
 
-          <div className="space-y-2">
+          {/* Local / OpenAI-compatible section */}
+          {config.llmProvider === 'local' && (
+            <div className="space-y-4 border-t border-border pt-4">
+              <p className="text-xs text-muted-foreground">
+                Fonctionne avec Ollama (<code>http://localhost:11434</code>), LM Studio (
+                <code>http://localhost:1234</code>), llama.cpp server, ou tout endpoint compatible
+                API OpenAI. La clé API est optionnelle.
+              </p>
+              <div className="space-y-1">
+                <Label htmlFor="local-base-url">URL de base</Label>
+                <Input
+                  id="local-base-url"
+                  placeholder="http://localhost:11434"
+                  value={localUrlDraft}
+                  onChange={(e) => setLocalUrlDraft(e.target.value)}
+                  spellCheck={false}
+                  autoComplete="off"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Le suffixe <code>/v1</code> est ajouté automatiquement.
+                </p>
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="local-model">Modèle</Label>
+                <Input
+                  id="local-model"
+                  placeholder="llama3.2, mistral, gemma3:12b…"
+                  value={localModelDraft}
+                  onChange={(e) => setLocalModelDraft(e.target.value)}
+                  spellCheck={false}
+                  autoComplete="off"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Nom exact du modèle tel qu&apos;exposé par votre serveur.
+                </p>
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="local-key">Clé API (optionnelle)</Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="local-key"
+                    type="password"
+                    placeholder={
+                      config.localKeyFromEnv
+                        ? 'Clé fournie via LOCAL_LLM_API_KEY'
+                        : config.hasLocalKey
+                          ? '•••••••••• (déjà enregistrée)'
+                          : 'Laisser vide si non requis'
+                    }
+                    value={localKeyDraft}
+                    onChange={(e) => setLocalKeyDraft(e.target.value)}
+                    disabled={config.localKeyFromEnv}
+                    autoComplete="off"
+                  />
+                </div>
+                {config.localKeyFromEnv && (
+                  <p className="pt-1 text-xs text-muted-foreground">
+                    <Badge variant="secondary">Source : env</Badge>{' '}
+                    <span>Clé fournie via LOCAL_LLM_API_KEY.</span>
+                  </p>
+                )}
+                {!config.localKeyFromEnv && config.hasLocalKey && (
+                  <div className="flex items-center gap-2 pt-1 text-xs text-muted-foreground">
+                    <Badge variant="success">Clé chiffrée présente</Badge>
+                    <Button variant="ghost" size="sm" onClick={() => clearLocalKey()}>
+                      Supprimer
+                    </Button>
+                  </div>
+                )}
+              </div>
+              <Button onClick={onSaveLocal} disabled={savingLocal}>
+                {savingLocal ? 'Enregistrement…' : 'Enregistrer la configuration locale'}
+              </Button>
+              {config.localBaseUrl && (
+                <p className="text-xs text-muted-foreground">
+                  Actif :{' '}
+                  <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
+                    {config.localBaseUrl}
+                  </code>{' '}
+                  · modèle{' '}
+                  <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
+                    {config.localModel ?? '(non défini)'}
+                  </code>
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* LLM test (common) */}
+          <div className="space-y-2 border-t border-border pt-4">
             <Button onClick={onTestLlm} disabled={!canTestLlm || llmStatus === 'testing'}>
               {llmStatus === 'testing' ? 'Test en cours…' : 'Tester le LLM'}
             </Button>

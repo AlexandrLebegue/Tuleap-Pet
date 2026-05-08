@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { ConnectionTestResult, ProjectSummary } from '@shared/types'
+import type { ConnectionTestResult, LlmProviderKind, ProjectSummary } from '@shared/types'
 import { api } from '@renderer/lib/api'
 import type { SettingsState } from '../../../preload'
 
@@ -27,9 +27,14 @@ type Store = {
   loadProjects: () => Promise<void>
   setProjectId: (id: number | null) => Promise<void>
 
+  setLlmProvider: (provider: LlmProviderKind) => Promise<void>
   setLlmKey: (key: string) => Promise<void>
   clearLlmKey: () => Promise<void>
   setLlmModel: (model: string | null) => Promise<void>
+  setLocalBaseUrl: (url: string | null) => Promise<void>
+  setLocalModel: (model: string | null) => Promise<void>
+  setLocalKey: (key: string) => Promise<void>
+  clearLocalKey: () => Promise<void>
   testLlm: () => Promise<LlmTestResult>
 
   setAuthMode: (mode: 'token' | 'oauth2') => Promise<void>
@@ -43,10 +48,15 @@ const emptyConfig: SettingsState = {
   projectId: null,
   hasToken: false,
   secretStorageAvailable: true,
+  llmProvider: 'openrouter',
   llmModel: 'minimax/minimax-m2:free',
   llmDefaultModel: 'minimax/minimax-m2:free',
   hasLlmKey: false,
   llmKeyFromEnv: false,
+  localBaseUrl: null,
+  localModel: null,
+  hasLocalKey: false,
+  localKeyFromEnv: false,
   authMode: 'token',
   oauthClientId: null,
   oauthScope: 'read:user_membership read:project read:tracker',
@@ -117,6 +127,11 @@ export const useSettings = create<Store>((set, get) => ({
   llmStatus: 'unknown',
   llmLastResult: null,
 
+  setLlmProvider: async (provider) => {
+    const config = await api.settings.setLlmProvider(provider)
+    set({ config, llmStatus: 'unknown', llmLastResult: null })
+  },
+
   setLlmKey: async (key: string) => {
     const config = await api.settings.setLlmKey(key)
     set({ config, llmStatus: 'unknown', llmLastResult: null })
@@ -129,6 +144,26 @@ export const useSettings = create<Store>((set, get) => ({
 
   setLlmModel: async (model: string | null) => {
     const config = await api.settings.setLlmModel(model)
+    set({ config, llmStatus: 'unknown', llmLastResult: null })
+  },
+
+  setLocalBaseUrl: async (url) => {
+    const config = await api.settings.setLocalBaseUrl(url)
+    set({ config, llmStatus: 'unknown', llmLastResult: null })
+  },
+
+  setLocalModel: async (model) => {
+    const config = await api.settings.setLocalModel(model)
+    set({ config, llmStatus: 'unknown', llmLastResult: null })
+  },
+
+  setLocalKey: async (key) => {
+    const config = await api.settings.setLocalKey(key)
+    set({ config, llmStatus: 'unknown', llmLastResult: null })
+  },
+
+  clearLocalKey: async () => {
+    const config = await api.settings.clearLocalKey()
     set({ config, llmStatus: 'unknown', llmLastResult: null })
   },
 

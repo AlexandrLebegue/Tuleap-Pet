@@ -5,10 +5,15 @@
 
 export type TuleapAuthMode = 'token' | 'oauth2'
 
+export type LlmProviderKind = 'openrouter' | 'local'
+
 export type AppConfig = {
   tuleapUrl: string | null
   projectId: number | null
+  llmProvider: LlmProviderKind
   llmModel: string | null
+  localBaseUrl: string | null
+  localModel: string | null
   authMode: TuleapAuthMode
   oauthClientId: string | null
   oauthScope: string | null

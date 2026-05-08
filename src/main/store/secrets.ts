@@ -10,6 +10,7 @@ import { join, dirname } from 'path'
 
 const TULEAP_TOKEN_FILE = 'tuleap-token.bin'
 const OPENROUTER_KEY_FILE = 'openrouter-key.bin'
+const LOCAL_LLM_KEY_FILE = 'local-llm-key.bin'
 const OAUTH_TOKEN_FILE = 'tuleap-oauth.bin'
 
 function secretPath(file: string): string {
@@ -99,6 +100,33 @@ export function isOpenRouterKeyFromEnv(): boolean {
 
 export function clearOpenRouterKey(): void {
   deleteSecret(OPENROUTER_KEY_FILE)
+}
+
+// ---- Local LLM API key (optional, for endpoints that require auth) --------
+
+export function setLocalLlmKey(plain: string): void {
+  writeSecret(LOCAL_LLM_KEY_FILE, plain)
+}
+
+export function getLocalLlmKey(): string | null {
+  const env = process.env['LOCAL_LLM_API_KEY']
+  if (env && env.trim().length > 0) return env.trim()
+  return readSecret(LOCAL_LLM_KEY_FILE)
+}
+
+export function hasLocalLlmKey(): boolean {
+  const env = process.env['LOCAL_LLM_API_KEY']
+  if (env && env.trim().length > 0) return true
+  return existsSync(secretPath(LOCAL_LLM_KEY_FILE))
+}
+
+export function isLocalLlmKeyFromEnv(): boolean {
+  const env = process.env['LOCAL_LLM_API_KEY']
+  return Boolean(env && env.trim().length > 0)
+}
+
+export function clearLocalLlmKey(): void {
+  deleteSecret(LOCAL_LLM_KEY_FILE)
 }
 
 // ---- Tuleap OAuth2 tokens -------------------------------------------

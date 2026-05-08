@@ -1,5 +1,5 @@
 import Store from 'electron-store'
-import type { AppConfig, TuleapAuthMode } from '@shared/types'
+import type { AppConfig, LlmProviderKind, TuleapAuthMode } from '@shared/types'
 
 type Schema = AppConfig
 
@@ -11,7 +11,10 @@ const store = new Store<Schema>({
   defaults: {
     tuleapUrl: null,
     projectId: null,
+    llmProvider: 'openrouter',
     llmModel: null,
+    localBaseUrl: null,
+    localModel: null,
     authMode: 'token',
     oauthClientId: null,
     oauthScope: null,
@@ -31,7 +34,10 @@ export function getConfig(): AppConfig {
   return {
     tuleapUrl: store.get('tuleapUrl') ?? null,
     projectId: store.get('projectId') ?? null,
+    llmProvider: (store.get('llmProvider') ?? 'openrouter') as LlmProviderKind,
     llmModel: store.get('llmModel') ?? null,
+    localBaseUrl: store.get('localBaseUrl') ?? null,
+    localModel: store.get('localModel') ?? null,
     authMode: (store.get('authMode') ?? 'token') as TuleapAuthMode,
     oauthClientId: store.get('oauthClientId') ?? null,
     oauthScope: store.get('oauthScope') ?? null,
@@ -39,8 +45,20 @@ export function getConfig(): AppConfig {
   }
 }
 
+export function getLlmProvider(): LlmProviderKind {
+  return (store.get('llmProvider') ?? 'openrouter') as LlmProviderKind
+}
+
 export function getLlmModel(): string {
   return store.get('llmModel') ?? DEFAULT_LLM_MODEL
+}
+
+export function getLocalBaseUrl(): string | null {
+  return store.get('localBaseUrl') ?? null
+}
+
+export function getLocalModel(): string | null {
+  return store.get('localModel') ?? null
 }
 
 export function getOAuthScope(): string {
@@ -65,12 +83,25 @@ export function setProjectId(id: number | null): void {
   }
 }
 
+export function setLlmProvider(provider: LlmProviderKind): void {
+  store.set('llmProvider', provider)
+}
+
 export function setLlmModel(model: string | null): void {
   if (model === null || model.trim() === '') {
     store.set('llmModel', null)
   } else {
     store.set('llmModel', model.trim())
   }
+}
+
+export function setLocalBaseUrl(url: string | null): void {
+  const normalized = normalizeUrl(url)
+  store.set('localBaseUrl', normalized)
+}
+
+export function setLocalModel(model: string | null): void {
+  store.set('localModel', model === null || model.trim() === '' ? null : model.trim())
 }
 
 export function setAuthMode(mode: TuleapAuthMode): void {
