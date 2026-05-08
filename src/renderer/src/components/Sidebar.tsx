@@ -9,6 +9,8 @@ import {
   Gauge
 } from 'lucide-react'
 import { cn } from '@renderer/lib/utils'
+import ConnectionStatusBadge from './ConnectionStatusBadge'
+import { useSettings } from '@renderer/stores/settings.store'
 
 type NavItem = {
   to: string
@@ -27,11 +29,22 @@ const items: NavItem[] = [
 ]
 
 function Sidebar(): React.JSX.Element {
+  const projectId = useSettings((s) => s.config.projectId)
+  const projects = useSettings((s) => s.projects)
+  const selectedProject = projects.find((p) => p.id === projectId) ?? null
+
   return (
     <aside className="flex h-full w-56 shrink-0 flex-col border-r border-border bg-muted/30">
       <div className="px-4 py-5 border-b border-border">
         <h1 className="text-sm font-semibold tracking-tight">Tuleap AI Companion</h1>
-        <p className="mt-1 text-xs text-muted-foreground">v0.0.1 — Phase 0</p>
+        <div className="mt-2 flex items-center gap-2">
+          <ConnectionStatusBadge />
+        </div>
+        {selectedProject && (
+          <p className="mt-2 truncate text-xs text-muted-foreground" title={selectedProject.label}>
+            {selectedProject.label}
+          </p>
+        )}
       </div>
       <nav className="flex flex-col gap-1 p-2">
         {items.map((item) => {
@@ -56,7 +69,7 @@ function Sidebar(): React.JSX.Element {
         })}
       </nav>
       <div className="mt-auto p-3 text-xs text-muted-foreground">
-        <span className="block">Local-first · Token API</span>
+        <span className="block">v0.0.1 · Phase 0 · Local-first</span>
       </div>
     </aside>
   )
