@@ -19,6 +19,30 @@ const MIGRATIONS: Array<{ id: number; up: string }> = [
       CREATE INDEX IF NOT EXISTS idx_audit_log_ts ON audit_log(ts);
       CREATE INDEX IF NOT EXISTS idx_audit_log_action ON audit_log(action);
     `
+  },
+  {
+    id: 2,
+    up: `
+      CREATE TABLE IF NOT EXISTS conversations (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        title        TEXT NOT NULL,
+        created_ts   INTEGER NOT NULL,
+        updated_ts   INTEGER NOT NULL,
+        model        TEXT,
+        project_id   INTEGER
+      );
+      CREATE INDEX IF NOT EXISTS idx_conversations_updated ON conversations(updated_ts DESC);
+
+      CREATE TABLE IF NOT EXISTS messages (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        conversation_id INTEGER NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+        role            TEXT NOT NULL,
+        content         TEXT NOT NULL,
+        tool_payload    TEXT,
+        created_ts      INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_messages_conv ON messages(conversation_id, id);
+    `
   }
 ]
 

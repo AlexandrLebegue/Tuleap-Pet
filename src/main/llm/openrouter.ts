@@ -1,4 +1,4 @@
-import { generateText, streamText, type ModelMessage } from 'ai'
+import { generateText, streamText, stepCountIs, type ModelMessage } from 'ai'
 import { createOpenRouter } from '@openrouter/ai-sdk-provider'
 import { toLlmError } from './errors'
 import type {
@@ -37,7 +37,6 @@ export function createOpenRouterProvider(opts: OpenRouterProviderOptions): LlmPr
   const openrouter = createOpenRouter({
     apiKey: opts.apiKey,
     headers: {
-      // Identify the client to OpenRouter (optional but recommended).
       'HTTP-Referer': opts.appUrl ?? 'https://github.com/AlexandrLebegue/Tuleap-Pet',
       'X-Title': opts.appName ?? 'Tuleap AI Companion'
     }
@@ -59,7 +58,9 @@ export function createOpenRouterProvider(opts: OpenRouterProviderOptions): LlmPr
           model: openrouter(modelId),
           messages: toModelMessages(request.messages),
           temperature: request.temperature,
-          maxOutputTokens: request.maxOutputTokens
+          maxOutputTokens: request.maxOutputTokens,
+          tools: request.tools,
+          stopWhen: request.tools ? stepCountIs(request.maxSteps ?? 6) : undefined
         })
         return {
           text: result.text,
@@ -82,13 +83,63 @@ export function createOpenRouterProvider(opts: OpenRouterProviderOptions): LlmPr
           model: openrouter(modelId),
           messages: toModelMessages(request.messages),
           temperature: request.temperature,
-          maxOutputTokens: request.maxOutputTokens
+          maxOutputTokens: request.maxOutputTokens,
+          tools: request.tools,
+          stopWhen: request.tools ? stepCountIs(request.maxSteps ?? 6) : undefined
         })
 
         let buffered = ''
-        for await (const delta of result.textStream) {
-          buffered += delta
-          onChunk({ type: 'text', delta })
+        for await (const part of result.fullStream) {
+          switch (part.type) {
+            case 'text-delta': {
+              const delta = (part as unknown as { text?: string; delta?: string }).text
+                ?? (part as unknown as { delta?: string }).delta
+                ?? ''
+              if (delta) {
+                buffered += delta
+                onChunk({ type: 'text', delta })
+              }
+              break
+            }
+            case 'tool-call': {
+              const tc = part as unknown as {
+                toolName: string
+                toolCallId: string
+                input?: unknown
+                args?: unknown
+              }
+              onChunk({
+                type: 'tool-call',
+                toolName: tc.toolName,
+                toolCallId: tc.toolCallId,
+                args: tc.input ?? tc.args
+              })
+              break
+            }
+            case 'tool-result': {
+              const tr = part as unknown as {
+                toolName: string
+                toolCallId: string
+                output?: unknown
+                result?: unknown
+                error?: string
+              }
+              onChunk({
+                type: 'tool-result',
+                toolName: tr.toolName,
+                toolCallId: tr.toolCallId,
+                result: tr.output ?? tr.result,
+                error: tr.error
+              })
+              break
+            }
+            case 'error': {
+              const e = part as unknown as { error: unknown }
+              throw e.error ?? new Error('Erreur de streaming inconnue')
+            }
+            default:
+              break
+          }
         }
 
         const finishReason = (await result.finishReason) ?? null

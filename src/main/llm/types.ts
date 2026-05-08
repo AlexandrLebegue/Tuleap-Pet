@@ -1,3 +1,5 @@
+import type { Tool } from 'ai'
+
 export type LlmMessage =
   | { role: 'system'; content: string }
   | { role: 'user'; content: string }
@@ -8,6 +10,9 @@ export type LlmGenerateRequest = {
   messages: LlmMessage[]
   temperature?: number
   maxOutputTokens?: number
+  tools?: Record<string, Tool>
+  /** Maximum number of tool-calling rounds (default: 6). */
+  maxSteps?: number
 }
 
 export type LlmUsage = {
@@ -25,6 +30,8 @@ export type LlmGenerateResult = {
 
 export type LlmStreamChunk =
   | { type: 'text'; delta: string }
+  | { type: 'tool-call'; toolName: string; toolCallId: string; args: unknown }
+  | { type: 'tool-result'; toolName: string; toolCallId: string; result: unknown; error?: string }
   | { type: 'finish'; finishReason: string | null; usage: LlmUsage | null }
 
 export interface LlmProvider {

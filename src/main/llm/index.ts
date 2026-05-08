@@ -13,6 +13,7 @@ export {
 } from './errors'
 export type { LlmErrorKind } from './errors'
 export { createOpenRouterProvider } from './openrouter'
+export { buildTuleapTools } from './tools'
 export type {
   LlmGenerateRequest,
   LlmGenerateResult,
