@@ -35,6 +35,7 @@
     "electron-store": "^8.2.0",
     "execa": "^9.6.1",
     "lucide-react": "^1.14.0",
+    "puppeteer": "^24.43.0",
     "react-router-dom": "^7.15.0",
     "tailwind-merge": "^3.5.0",
     "zod": "^4.4.3",
