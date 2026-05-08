@@ -4,6 +4,7 @@ import { registerGenerationHandlers } from './generation'
 import { registerMarpHandlers } from './marp'
 import { registerChatHandlers } from './chat'
 import { registerAuthHandlers } from './auth'
+import { registerCoderHandlers } from './coder'
 
 export function registerIpcHandlers(): void {
   registerSettingsHandlers()
@@ -12,4 +13,5 @@ export function registerIpcHandlers(): void {
   registerMarpHandlers()
   registerChatHandlers()
   registerAuthHandlers()
+  registerCoderHandlers()
 }

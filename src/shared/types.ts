@@ -135,6 +135,29 @@ export type ChatConversation = {
   projectId: number | null
 }
 
+// ---- Coder (Phase 3) ----
+
+export type CoderStreamEvent =
+  | { type: 'started'; sessionId: string; pid: number; command: string; cwd: string }
+  | { type: 'stdout'; sessionId: string; chunk: string }
+  | { type: 'stderr'; sessionId: string; chunk: string }
+  | { type: 'exit'; sessionId: string; code: number | null; signal: string | null }
+  | { type: 'error'; sessionId: string; error: string }
+
+export type CoderRunRequest = {
+  artifactId?: number | null
+  prompt: string
+  cwd?: string | null
+  binaryPath?: string | null
+  /** Extra arguments passed verbatim before the prompt. */
+  extraArgs?: string[]
+}
+
+export type CoderContextResult = {
+  artifact: ArtifactDetail
+  contextMarkdown: string
+}
+
 export type ChatStreamEvent =
   | { type: 'started'; conversationId: number; assistantMessageId: number }
   | { type: 'delta'; conversationId: number; assistantMessageId: number; delta: string }

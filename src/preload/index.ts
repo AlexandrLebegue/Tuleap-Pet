@@ -6,6 +6,8 @@ import type {
   ChatConversation,
   ChatMessage,
   ChatStreamEvent,
+  CoderContextResult,
+  CoderStreamEvent,
   ConnectionTestResult,
   MilestoneStatus,
   MilestoneSummary,
@@ -140,7 +142,30 @@ const auth = {
   hasOAuth: (): Promise<{ hasOAuth: boolean }> => ipcRenderer.invoke('auth:has-oauth')
 }
 
-const api = { settings, tuleap, generation, marp, chat, auth }
+const coder = {
+  buildContext: (artifactId: number): Promise<CoderContextResult> =>
+    ipcRenderer.invoke('coder:build-context', artifactId),
+  setBinary: (path: string | null): Promise<{ ok: true; path: string | null }> =>
+    ipcRenderer.invoke('coder:set-binary', { path }),
+  chooseCwd: (): Promise<{ ok: true; path: string | null } | { ok: false; cancelled: true }> =>
+    ipcRenderer.invoke('coder:choose-cwd'),
+  run: (args: {
+    prompt: string
+    cwd?: string | null
+    binaryPath?: string | null
+    extraArgs?: string[]
+  }): Promise<{ ok: true; sessionId: string; pid: number } | { ok: false; error: string }> =>
+    ipcRenderer.invoke('coder:run', args),
+  kill: (sessionId: string): Promise<{ ok: boolean }> =>
+    ipcRenderer.invoke('coder:kill', sessionId),
+  subscribe: (handler: (event: CoderStreamEvent) => void): (() => void) => {
+    const wrapped = (_e: unknown, payload: CoderStreamEvent): void => handler(payload)
+    ipcRenderer.on('coder:stream', wrapped)
+    return () => ipcRenderer.removeListener('coder:stream', wrapped)
+  }
+}
+
+const api = { settings, tuleap, generation, marp, chat, auth, coder }
 
 if (process.contextIsolated) {
   try {
