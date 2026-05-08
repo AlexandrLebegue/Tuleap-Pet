@@ -31,7 +31,7 @@
 
 Le renderer n'effectue **aucun** appel sortant. Tout passe par le preload bridge → IPC → main → fetch.
 
-## IPC surface (Phase 0)
+## IPC surface (Phase 0 + Phase 1)
 
 | Canal | Direction | Payload | Réponse |
 |---|---|---|---|
@@ -40,22 +40,33 @@ Le renderer n'effectue **aucun** appel sortant. Tout passe par le preload bridge
 | `settings:set-token` | renderer → main | `string` (jamais retourné) | `SettingsState` |
 | `settings:clear-token` | renderer → main | — | `SettingsState` |
 | `settings:set-project-id` | renderer → main | `number \| null` | `SettingsState` |
+| `settings:set-llm-key` | renderer → main | `string` (jamais retourné) | `SettingsState` |
+| `settings:clear-llm-key` | renderer → main | — | `SettingsState` |
+| `settings:set-llm-model` | renderer → main | `string \| null` | `SettingsState` |
 | `settings:reset` | renderer → main | — | `SettingsState` |
 | `tuleap:test-connection` | renderer → main | — | `ConnectionTestResult` |
 | `tuleap:list-projects` | renderer → main | `string?` (query) | `ProjectSummary[]` |
 | `tuleap:list-trackers` | renderer → main | `number?` (override projectId) | `TrackerSummary[]` |
 | `tuleap:list-artifacts` | renderer → main | `{ trackerId, limit?, offset? }` | `Page<ArtifactSummary>` |
 | `tuleap:get-artifact` | renderer → main | `number` | `ArtifactDetail` |
+| `generation:list-sprints` | renderer → main | `MilestoneStatus?` (`'open'`) | `MilestoneSummary[]` |
+| `generation:get-sprint-content` | renderer → main | `number` | `SprintContent` |
+| `generation:test-llm` | renderer → main | — | `LlmTestResult` |
+| `generation:generate-sprint-review` | renderer → main | `{ milestoneId, language? }` | `{ markdown, model, finishReason, usage }` |
+| `marp:render-preview` | renderer → main | `string` (markdown) | `{ html }` (sandboxed) |
+| `marp:export-pptx` | renderer → main | `{ markdown, suggestedName? }` | `MarpExportResult` (ok / cancelled / error) |
 
-`SettingsState` = `{ tuleapUrl, projectId, hasToken, secretStorageAvailable }`. Le token n'apparaît jamais dans les réponses IPC.
+`SettingsState` = `{ tuleapUrl, projectId, hasToken, secretStorageAvailable, llmModel, llmDefaultModel, hasLlmKey, llmKeyFromEnv }`. Ni le token Tuleap ni la clé OpenRouter n'apparaissent jamais dans les réponses IPC.
 
 ## Stockage
 
 | Donnée | Emplacement | Format |
 |---|---|---|
-| URL Tuleap, projectId | `<userData>/config.json` (electron-store) | JSON |
-| Token API perso | `<userData>/secrets/tuleap-token.bin` | Buffer chiffré via `safeStorage` |
+| URL Tuleap, projectId, modèle LLM | `<userData>/config.json` (electron-store) | JSON |
+| Token API perso Tuleap | `<userData>/secrets/tuleap-token.bin` | Buffer chiffré via `safeStorage` |
+| Clé API OpenRouter | `<userData>/secrets/openrouter-key.bin` | Buffer chiffré via `safeStorage` |
 | Audit log | `<userData>/data/tuleap-companion.db` | SQLite (table `audit_log`) |
+| Templates de prompts | bundlés via Vite `?raw` depuis `docs/prompts/*.md` | (read-only à l'exécution) |
 
 `<userData>` est résolu par Electron : `~/.config/tuleap-ai-companion/` sur Linux, etc.
 
@@ -111,3 +122,43 @@ ConnectionStatusBadge            Badge variant="success" / "destructive"
 - `TuleapSchemaError` — Zod a rejeté la réponse
 
 L'IPC handler `tuleap:test-connection` mappe ces erreurs vers un `ConnectionTestResult` (discriminated union) — pour les autres canaux, l'erreur est simplement re-jetée via `ipcRenderer.invoke` et reçue côté renderer comme `Error`.
+
+`src/main/llm/errors.ts` définit une hiérarchie symétrique pour le LLM :
+
+- `LlmAuthError` — 401 / 403 (clé refusée par OpenRouter)
+- `LlmRateLimitError` — 429
+- `LlmNetworkError` — fetch a throw
+- `LlmError` — autres erreurs HTTP ou inconnues
+
+`generation:test-llm` les mappe vers un `LlmTestResult` (discriminated union).
+
+## Pipeline Génération IA (Phase 1)
+
+```
+Generation.tsx                   selectSprint() puis generate('fr')
+       │
+       ▼
+ipc/generation.ts                client.getProject(projectId)
+                                 client.getMilestone(milestoneId)
+                                 client.listMilestoneContent(milestoneId, limit=200)
+                                 buildSprintReviewMessages({ projectName, milestone, artifacts })
+                                 resolveLlmProvider().generate({ messages, temp=0.3 })
+       │
+       ▼
+prompts/sprint-review.ts         bucketArtifacts() → done/in-progress/todo
+                                 interpolate(userTemplate, vars)
+       │
+       ▼
+llm/openrouter.ts                generateText({ model: openrouter(slug), messages })
+                                 → AI SDK v6 → OpenRouter REST
+       │
+       ▼ (markdown Marp)
+ipc/marp.ts                      renderMarpPreview() → HTML sandboxed
+                                 (à l'export) exportMarpPptx() → marp-cli (Chromium puppeteer)
+                                                        → dialog.showSaveDialog()
+       │
+       ▼
+MarpPreviewFrame                 <iframe sandbox="" srcDoc={html}>
+```
+
+Chaque étape (start, done, marp.export-pptx) émet une ligne `audit_log`.
