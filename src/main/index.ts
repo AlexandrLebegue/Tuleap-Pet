@@ -3,6 +3,7 @@ import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { initDatabase, closeDatabase, audit } from './store/db'
+import { registerIpcHandlers } from './ipc'
 
 function createWindow(): void {
   // Create the browser window.
@@ -50,6 +51,7 @@ app.whenReady().then(() => {
   electronApp.setAppUserModelId('com.tuleap.ai-companion')
 
   initDatabase()
+  registerIpcHandlers()
   audit('app.start')
 
   // Default open or close DevTools by F12 in development

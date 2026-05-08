@@ -71,7 +71,11 @@ export function closeDatabase(): void {
   }
 }
 
-export function audit(action: string, target?: string, payload?: unknown): void {
+export function audit(
+  action: string,
+  target?: string | null,
+  payload?: unknown
+): void {
   if (!db) return
   db.prepare('INSERT INTO audit_log (ts, action, target, payload) VALUES (?, ?, ?, ?)').run(
     Date.now(),

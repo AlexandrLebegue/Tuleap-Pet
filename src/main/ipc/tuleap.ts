@@ -1,0 +1,161 @@
+import { ipcMain } from 'electron'
+import {
+  TuleapClient,
+  TuleapAuthError,
+  TuleapError,
+  TuleapNetworkError,
+  TuleapNotFoundError,
+  TuleapSchemaError,
+  TuleapServerError,
+  mapArtifactDetail,
+  mapArtifactSummary,
+  mapProject,
+  mapTracker,
+  type PaginatedResponse
+} from '../tuleap'
+import { getConfig } from '../store/config'
+import { getTuleapToken } from '../store/secrets'
+import { audit } from '../store/db'
+import type {
+  ArtifactDetail,
+  ArtifactSummary,
+  ConnectionTestResult,
+  Page,
+  ProjectSummary,
+  TrackerSummary
+} from '@shared/types'
+
+function buildClient(): TuleapClient {
+  const { tuleapUrl } = getConfig()
+  if (!tuleapUrl) {
+    throw new TuleapError('unknown', "L'URL Tuleap n'est pas configurée.")
+  }
+  const token = getTuleapToken()
+  if (!token) {
+    throw new TuleapError('auth', 'Aucun token Tuleap enregistré.')
+  }
+  return new TuleapClient({ baseUrl: tuleapUrl, token })
+}
+
+function toConnectionResult(err: unknown): ConnectionTestResult {
+  if (err instanceof TuleapAuthError) {
+    return { ok: false, kind: 'auth', error: err.message, status: err.status ?? 401 }
+  }
+  if (err instanceof TuleapNotFoundError) {
+    return { ok: false, kind: 'http', error: err.message, status: 404 }
+  }
+  if (err instanceof TuleapServerError) {
+    return { ok: false, kind: 'http', error: err.message, status: err.status ?? 500 }
+  }
+  if (err instanceof TuleapNetworkError) {
+    return { ok: false, kind: 'network', error: err.message }
+  }
+  if (err instanceof TuleapSchemaError) {
+    return { ok: false, kind: 'schema', error: err.message }
+  }
+  if (err instanceof TuleapError) {
+    return { ok: false, kind: err.kind, error: err.message }
+  }
+  return { ok: false, kind: 'unknown', error: err instanceof Error ? err.message : String(err) }
+}
+
+function toPage<T, U>(page: PaginatedResponse<T>, mapFn: (item: T) => U): Page<U> {
+  return {
+    items: page.items.map(mapFn),
+    total: page.total,
+    limit: page.limit,
+    offset: page.offset
+  }
+}
+
+export function registerTuleapHandlers(): void {
+  ipcMain.handle('tuleap:test-connection', async (): Promise<ConnectionTestResult> => {
+    audit('tuleap.test-connection')
+    try {
+      const client = buildClient()
+      const me = await client.getSelf()
+      return {
+        ok: true,
+        username: me.username,
+        realName: me.real_name ?? '',
+        userId: me.id
+      }
+    } catch (err) {
+      return toConnectionResult(err)
+    }
+  })
+
+  ipcMain.handle(
+    'tuleap:list-projects',
+    async (_event, query?: unknown): Promise<ProjectSummary[]> => {
+      const q = typeof query === 'string' ? query : undefined
+      const client = buildClient()
+      audit('tuleap.list-projects', q ?? null)
+      const page = await client.listProjects({ limit: 100, query: q })
+      return page.items.map(mapProject)
+    }
+  )
+
+  ipcMain.handle(
+    'tuleap:list-trackers',
+    async (_event, projectId?: unknown): Promise<TrackerSummary[]> => {
+      const id =
+        typeof projectId === 'number' ? projectId : (getConfig().projectId ?? undefined)
+      if (typeof id !== 'number') {
+        throw new TuleapError('unknown', "Aucun projet n'est sélectionné.")
+      }
+      const client = buildClient()
+      audit('tuleap.list-trackers', String(id))
+      const page = await client.listTrackers(id, { limit: 100 })
+      const trackers = await Promise.all(
+        page.items.map(async (raw) => {
+          let count: number | null = null
+          try {
+            count = await client.countArtifacts(raw.id)
+          } catch {
+            count = null
+          }
+          return mapTracker(raw, count)
+        })
+      )
+      return trackers
+    }
+  )
+
+  ipcMain.handle(
+    'tuleap:list-artifacts',
+    async (
+      _event,
+      args: unknown
+    ): Promise<Page<ArtifactSummary>> => {
+      if (!args || typeof args !== 'object') {
+        throw new TuleapError('unknown', 'Arguments invalides.')
+      }
+      const { trackerId, limit, offset } = args as {
+        trackerId?: number
+        limit?: number
+        offset?: number
+      }
+      if (typeof trackerId !== 'number' || !Number.isInteger(trackerId) || trackerId <= 0) {
+        throw new TuleapError('unknown', "trackerId invalide.")
+      }
+      const client = buildClient()
+      audit('tuleap.list-artifacts', String(trackerId), { limit, offset })
+      const page = await client.listArtifacts(trackerId, {
+        limit: limit ?? 50,
+        offset: offset ?? 0
+      })
+      return toPage(page, mapArtifactSummary)
+    }
+  )
+
+  ipcMain.handle('tuleap:get-artifact', async (_event, id: unknown): Promise<ArtifactDetail> => {
+    if (typeof id !== 'number' || !Number.isInteger(id) || id <= 0) {
+      throw new TuleapError('unknown', "id invalide.")
+    }
+    const client = buildClient()
+    audit('tuleap.get-artifact', String(id))
+    const raw = await client.getArtifact(id)
+    return mapArtifactDetail(raw)
+  })
+}
