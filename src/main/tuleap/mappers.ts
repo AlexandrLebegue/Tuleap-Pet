@@ -11,6 +11,7 @@ import type {
   ArtifactDetailRaw,
   ArtifactFieldValueRaw,
   ArtifactSummaryRaw,
+  MilestoneContentItemRaw,
   MilestoneRaw,
   ProjectRaw,
   TrackerRaw
@@ -55,6 +56,30 @@ export function mapArtifactSummary(raw: ArtifactSummaryRaw): ArtifactSummary {
     submittedOn: raw.submitted_on ?? null,
     lastModified: raw.last_modified_date ?? null,
     trackerId: raw.tracker.id
+  }
+}
+
+/**
+ * Maps a milestone content item (backlog item) to ArtifactSummary.
+ * Handles the case where uri/tracker may be absent or nested inside an `artifact` wrapper.
+ */
+export function mapMilestoneContentItem(raw: MilestoneContentItemRaw): ArtifactSummary {
+  // Some Tuleap versions wrap the artifact data inside an `artifact` property
+  const nested = raw.artifact
+  const uri = raw.uri || nested?.uri || ''
+  const trackerId = raw.tracker?.id ?? nested?.tracker?.id ?? 0
+  const title = raw.title ?? (raw as unknown as { label?: string }).label ?? ''
+
+  return {
+    id: raw.id,
+    title,
+    status: raw.status ?? null,
+    uri,
+    htmlUrl: raw.html_url ?? null,
+    submittedBy: rawSubmittedBy(raw as unknown as ArtifactSummaryRaw),
+    submittedOn: raw.submitted_on ?? null,
+    lastModified: raw.last_modified_date ?? null,
+    trackerId
   }
 }
 

@@ -180,6 +180,8 @@ export const useChat = create<Store>((set, get) => ({
       case 'done': {
         set({ status: 'idle' })
         void get().refresh()
+        // Delayed refresh to pick up AI-generated title from autoNameConversation
+        setTimeout(() => void get().refresh(), 3000)
         break
       }
       case 'error': {

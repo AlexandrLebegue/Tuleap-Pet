@@ -162,6 +162,7 @@ function Settings(): React.JSX.Element {
   const setLocalModel = useSettings((s) => s.setLocalModel)
   const setLocalKey = useSettings((s) => s.setLocalKey)
   const clearLocalKey = useSettings((s) => s.clearLocalKey)
+  const setLocalDirectConnection = useSettings((s) => s.setLocalDirectConnection)
   const testLlm = useSettings((s) => s.testLlm)
 
   const [urlDraft, setUrlDraft] = useState(config.tuleapUrl ?? '')
@@ -548,22 +549,22 @@ function Settings(): React.JSX.Element {
           {config.llmProvider === 'local' && (
             <div className="space-y-4 border-t border-border pt-4">
               <p className="text-xs text-muted-foreground">
-                Fonctionne avec Ollama (<code>http://localhost:11434</code>), LM Studio (
-                <code>http://localhost:1234</code>), llama.cpp server, ou tout endpoint compatible
+                Fonctionne avec Ollama, LM Studio, llama.cpp server, ou tout endpoint compatible
                 API OpenAI. La clé API est optionnelle.
               </p>
               <div className="space-y-1">
                 <Label htmlFor="local-base-url">URL de base</Label>
                 <Input
                   id="local-base-url"
-                  placeholder="http://localhost:11434"
+                  placeholder="http://localhost:11434/v1"
                   value={localUrlDraft}
                   onChange={(e) => setLocalUrlDraft(e.target.value)}
                   spellCheck={false}
                   autoComplete="off"
                 />
                 <p className="text-xs text-muted-foreground">
-                  Le suffixe <code>/v1</code> est ajouté automatiquement.
+                  Inclure le chemin de version (ex. <code>/v1</code>, <code>/v3</code>).
+                  Le SDK appellera <code>{'{url}'}/chat/completions</code>.
                 </p>
               </div>
               <div className="space-y-1">
@@ -614,6 +615,18 @@ function Settings(): React.JSX.Element {
                   </div>
                 )}
               </div>
+              <label className="flex cursor-pointer items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={config.localDirectConnection}
+                  onChange={(e) => setLocalDirectConnection(e.target.checked)}
+                  className="h-4 w-4 accent-primary"
+                />
+                Connexion directe (contourner le proxy système)
+                <span className="text-xs text-muted-foreground">
+                  — recommandé sur réseau d&apos;entreprise
+                </span>
+              </label>
               <Button onClick={onSaveLocal} disabled={savingLocal}>
                 {savingLocal ? 'Enregistrement…' : 'Enregistrer la configuration locale'}
               </Button>

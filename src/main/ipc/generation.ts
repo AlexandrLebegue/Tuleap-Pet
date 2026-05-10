@@ -2,8 +2,8 @@ import { ipcMain } from 'electron'
 import {
   TuleapError,
   buildTuleapClient,
-  mapArtifactSummary,
-  mapMilestone
+  mapMilestone,
+  mapMilestoneContentItem
 } from '../tuleap'
 import { getConfig, getLlmModel, getLlmProvider } from '../store/config'
 import { resolveLlmProvider, toLlmError } from '../llm'
@@ -19,10 +19,12 @@ import type {
 async function fetchSprintContent(milestoneId: number): Promise<SprintContent> {
   const client = await buildTuleapClient()
   const milestoneRaw = await client.getMilestone(milestoneId)
-  const contentPage = await client.listMilestoneContent(milestoneId, { limit: 200 })
+  const contentItems = await client.fetchAll((offset) =>
+    client.listMilestoneContent(milestoneId, { limit: 50, offset })
+  )
   return {
     milestone: mapMilestone(milestoneRaw),
-    artifacts: contentPage.items.map(mapArtifactSummary)
+    artifacts: contentItems.map(mapMilestoneContentItem)
   }
 }
 
@@ -49,8 +51,10 @@ export function registerGenerationHandlers(): void {
         status === 'open' || status === 'closed' || status === 'all' ? status : 'open'
       audit('generation.list-sprints', `${projectId}:${validStatus}`)
       const client = await buildTuleapClient()
-      const page = await client.listMilestones(projectId, { status: validStatus, limit: 100 })
-      return page.items.map(mapMilestone)
+      const items = await client.fetchAll((offset) =>
+        client.listMilestones(projectId, { status: validStatus, limit: 50, offset })
+      )
+      return items.map(mapMilestone)
     }
   )
 

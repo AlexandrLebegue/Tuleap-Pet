@@ -40,14 +40,16 @@ export async function scanRecentActivity(opts: {
 
   const client = await buildTuleapClient()
   const project = await client.getProject(config.projectId)
-  const trackers = await client.listTrackers(config.projectId, { limit: 100 })
+  const trackerItems = await client.fetchAll((offset) =>
+    client.listTrackers(config.projectId as number, { limit: 50, offset })
+  )
   const milestonesPage = await client.listMilestones(config.projectId, {
     status: 'open',
     limit: 50
   })
 
   const activities: AdminTrackerActivity[] = await Promise.all(
-    trackers.items.map(async (rawTracker) => {
+    trackerItems.map(async (rawTracker) => {
       try {
         const page = await client.listArtifacts(rawTracker.id, {
           limit: RECENT_LIMIT_PER_TRACKER,

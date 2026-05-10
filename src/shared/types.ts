@@ -19,6 +19,8 @@ export type AppConfig = {
   oauthScope: string | null
   /** Path / command for the OpenCode binary used by the Coder tab. */
   openCodeBinary: string | null
+  /** Bypass system proxy for local LLM calls (uses a direct connection). */
+  localDirectConnection: boolean
 }
 
 export type ConnectionTestResult =

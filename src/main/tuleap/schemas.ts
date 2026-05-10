@@ -82,11 +82,45 @@ const baseArtifactSchema = z
 
 export const artifactSummarySchema = baseArtifactSchema
 
+/**
+ * Schema for items returned by /api/milestones/{id}/content.
+ * These "backlog items" may lack `uri` and `tracker` at the top level
+ * depending on the Tuleap version / configuration.
+ */
+export const milestoneContentItemSchema = z
+  .object({
+    id: z.number(),
+    uri: z.string().optional().default(''),
+    title: z.string().nullable().optional().default(''),
+    label: z.string().nullable().optional(),
+    status: z.string().nullable().optional().default(null),
+    submitted_by: z.number().nullable().optional(),
+    submitted_by_user: z
+      .object({ username: z.string().optional(), real_name: z.string().optional() })
+      .passthrough()
+      .optional(),
+    submitted_on: z.string().nullable().optional(),
+    last_modified_date: z.string().nullable().optional(),
+    html_url: z.string().nullable().optional(),
+    tracker: z.object({ id: z.number() }).passthrough().optional(),
+    artifact: z
+      .object({
+        id: z.number(),
+        uri: z.string().optional().default(''),
+        tracker: z.object({ id: z.number() }).passthrough().optional()
+      })
+      .passthrough()
+      .optional()
+  })
+  .passthrough()
+
+export type MilestoneContentItemRaw = z.infer<typeof milestoneContentItemSchema>
+
 export type ArtifactSummaryRaw = z.infer<typeof artifactSummarySchema>
 
 export const artifactDetailSchema = baseArtifactSchema.extend({
   values: z.array(artifactFieldValueSchema).optional().default([]),
-  values_by_field: z.record(z.string(), artifactFieldValueSchema).optional()
+  values_by_field: z.record(z.string(), artifactFieldValueSchema).nullish()
 })
 
 export type ArtifactDetailRaw = z.infer<typeof artifactDetailSchema>

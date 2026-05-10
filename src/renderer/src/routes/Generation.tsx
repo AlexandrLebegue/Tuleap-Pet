@@ -49,7 +49,11 @@ function Generation(): React.JSX.Element {
   const refreshPreview = useGeneration((s) => s.refreshPreview)
   const exportPptx = useGeneration((s) => s.exportPptx)
 
-  const ready = config.tuleapUrl && config.hasToken && config.projectId !== null && config.hasLlmKey
+  const llmReady =
+    config.llmProvider === 'local'
+      ? Boolean(config.localBaseUrl && config.localModel)
+      : config.hasLlmKey
+  const ready = config.tuleapUrl && config.hasToken && config.projectId !== null && llmReady
   const sprintCount = sprints.length
 
   useEffect(() => {

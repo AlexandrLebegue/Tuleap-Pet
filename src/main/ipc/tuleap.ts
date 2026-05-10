@@ -81,8 +81,10 @@ export function registerTuleapHandlers(): void {
       const q = typeof query === 'string' ? query : undefined
       const client = await buildTuleapClient()
       audit('tuleap.list-projects', q ?? null)
-      const page = await client.listProjects({ limit: 100, query: q })
-      return page.items.map(mapProject)
+      const items = await client.fetchAll((offset) =>
+        client.listProjects({ limit: 50, offset, query: q })
+      )
+      return items.map(mapProject)
     }
   )
 
@@ -96,9 +98,11 @@ export function registerTuleapHandlers(): void {
       }
       const client = await buildTuleapClient()
       audit('tuleap.list-trackers', String(id))
-      const page = await client.listTrackers(id, { limit: 100 })
+      const rawTrackers = await client.fetchAll((offset) =>
+        client.listTrackers(id, { limit: 50, offset })
+      )
       const trackers = await Promise.all(
-        page.items.map(async (raw) => {
+        rawTrackers.map(async (raw) => {
           let count: number | null = null
           try {
             count = await client.countArtifacts(raw.id)

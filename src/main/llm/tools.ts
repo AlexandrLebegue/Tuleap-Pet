@@ -66,7 +66,7 @@ export function buildTuleapTools(): Record<string, Tool> {
         audit('chat.tool', 'list_trackers', args)
         const id = args.projectId ?? projectIdOrThrow()
         const client = await buildTuleapClient()
-        const page = await client.listTrackers(id, { limit: 100 })
+        const page = await client.listTrackers(id, { limit: 50 })
         return page.items.map((t) => mapTracker(t, null))
       }
     }),

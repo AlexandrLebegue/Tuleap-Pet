@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow } from 'electron'
+import { app, shell, BrowserWindow, session } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
@@ -46,9 +46,14 @@ function createWindow(): void {
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   // Set app user model id for windows
   electronApp.setAppUserModelId('com.tuleap.ai-companion')
+
+  // Pre-configure a direct (no-proxy) session for local LLM calls.
+  // Node.js fetch ignores NO_PROXY; this session uses Chromium networking
+  // with proxy explicitly disabled so enterprise proxies are bypassed.
+  await session.fromPartition('local-llm-direct', { cache: false }).setProxy({ mode: 'direct' })
 
   initDatabase()
   registerIpcHandlers()

@@ -1,5 +1,6 @@
 import { getLocalLlmKey, getOpenRouterKey } from '../store/secrets'
-import { getLocalBaseUrl, getLocalModel, getLlmModel, getLlmProvider } from '../store/config'
+import { debugLog } from '../logger'
+import { getLocalBaseUrl, getLocalDirectConnection, getLocalModel, getLlmModel, getLlmProvider } from '../store/config'
 import { createOpenRouterProvider } from './openrouter'
 import { createLocalProvider } from './local'
 import { LlmAuthError } from './errors'
@@ -27,10 +28,12 @@ export type {
 
 export function resolveLlmProvider(): LlmProvider {
   const provider = getLlmProvider()
+  debugLog('[llm] resolveLlmProvider provider=%s', provider)
 
   if (provider === 'local') {
     const baseUrl = getLocalBaseUrl()
     const model = getLocalModel()
+    debugLog('[llm] local baseUrl=%s model=%s', baseUrl, model)
     if (!baseUrl) {
       throw new LlmAuthError(
         "Aucune URL de base configurée pour le modèle local. Renseignez-la dans Réglages."
@@ -44,7 +47,8 @@ export function resolveLlmProvider(): LlmProvider {
     return createLocalProvider({
       baseUrl,
       model,
-      apiKey: getLocalLlmKey()
+      apiKey: getLocalLlmKey(),
+      directConnection: getLocalDirectConnection()
     })
   }
 

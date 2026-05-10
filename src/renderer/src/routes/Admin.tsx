@@ -180,12 +180,25 @@ function Admin(): React.JSX.Element {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            <Button onClick={onSummarize} disabled={summaryStatus === 'running' || !config.hasLlmKey}>
+            <Button
+              onClick={onSummarize}
+              disabled={
+                summaryStatus === 'running' ||
+                (config.llmProvider === 'local'
+                  ? !config.localBaseUrl || !config.localModel
+                  : !config.hasLlmKey)
+              }
+            >
               {summaryStatus === 'running' ? 'Génération…' : 'Générer la synthèse'}
             </Button>
-            {!config.hasLlmKey && (
+            {config.llmProvider !== 'local' && !config.hasLlmKey && (
               <p className="text-xs text-muted-foreground">
                 La synthèse nécessite la clé OpenRouter (Réglages).
+              </p>
+            )}
+            {config.llmProvider === 'local' && (!config.localBaseUrl || !config.localModel) && (
+              <p className="text-xs text-muted-foreground">
+                La synthèse nécessite la configuration du modèle local (Réglages).
               </p>
             )}
             {summaryError && (

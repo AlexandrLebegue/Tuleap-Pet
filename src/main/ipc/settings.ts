@@ -5,10 +5,12 @@ import {
   clearConfig,
   getConfig,
   getLocalBaseUrl,
+  getLocalDirectConnection,
   getLocalModel,
   getLlmModel,
   getOAuthScope,
   setLocalBaseUrl,
+  setLocalDirectConnection,
   setLocalModel,
   setLlmModel,
   setLlmProvider,
@@ -48,6 +50,7 @@ export type SettingsState = {
   localModel: string | null
   hasLocalKey: boolean
   localKeyFromEnv: boolean
+  localDirectConnection: boolean
   authMode: 'token' | 'oauth2'
   oauthClientId: string | null
   oauthScope: string
@@ -72,6 +75,7 @@ function buildState(): SettingsState {
     localModel: getLocalModel(),
     hasLocalKey: hasLocalLlmKey(),
     localKeyFromEnv: isLocalLlmKeyFromEnv(),
+    localDirectConnection: getLocalDirectConnection(),
     authMode: config.authMode,
     oauthClientId: config.oauthClientId,
     oauthScope: getOAuthScope(),
@@ -174,6 +178,15 @@ export function registerSettingsHandlers(): void {
     }
     setLocalLlmKey(key)
     audit('settings.set-local-key')
+    return buildState()
+  })
+
+  ipcMain.handle('settings:set-local-direct-connection', (_event, value: unknown) => {
+    if (typeof value !== 'boolean') {
+      throw new Error("Le paramètre 'value' doit être un booléen.")
+    }
+    setLocalDirectConnection(value)
+    audit('settings.set-local-direct-connection', String(value))
     return buildState()
   })
 

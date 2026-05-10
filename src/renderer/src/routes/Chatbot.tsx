@@ -1,14 +1,113 @@
 import * as React from 'react'
-import { useEffect, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useSettings } from '@renderer/stores/settings.store'
 import { useChat } from '@renderer/stores/chat.store'
 import { Card, CardDescription, CardHeader, CardTitle } from '@renderer/components/ui/card'
 import { Button } from '@renderer/components/ui/button'
 import { Input } from '@renderer/components/ui/input'
-import { Trash2, Plus, Send } from 'lucide-react'
+import { Trash2, Plus, Send, Pencil, Check, X } from 'lucide-react'
 import { cn } from '@renderer/lib/utils'
 import ChatMessageBubble from '@renderer/components/ChatMessageBubble'
+import type { ChatConversation, LlmProviderKind } from '@shared/types'
+
+/** Editable conversation header with model info */
+function ConversationHeader({
+  conv,
+  llmProvider,
+  localModel,
+  llmModel,
+  onRename
+}: {
+  conv: ChatConversation | null
+  llmProvider: LlmProviderKind
+  localModel: string | null
+  llmModel: string
+  onRename: (id: number, title: string) => Promise<void>
+}): React.JSX.Element {
+  const [editing, setEditing] = useState(false)
+  const [editValue, setEditValue] = useState('')
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  const startEdit = useCallback(() => {
+    if (!conv) return
+    setEditValue(conv.title)
+    setEditing(true)
+    setTimeout(() => inputRef.current?.focus(), 50)
+  }, [conv])
+
+  const confirmEdit = useCallback(async () => {
+    if (!conv) return
+    const trimmed = editValue.trim()
+    if (trimmed && trimmed !== conv.title) {
+      await onRename(conv.id, trimmed)
+    }
+    setEditing(false)
+  }, [conv, editValue, onRename])
+
+  const cancelEdit = useCallback(() => setEditing(false), [])
+
+  const onKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (e.key === 'Enter') void confirmEdit()
+      if (e.key === 'Escape') cancelEdit()
+    },
+    [confirmEdit, cancelEdit]
+  )
+
+  return (
+    <header className="border-b border-border px-6 py-3">
+      <div className="flex items-center gap-2">
+        {!editing ? (
+          <>
+            <h2 className="text-lg font-semibold tracking-tight">
+              {conv ? conv.title : 'Aucune conversation sélectionnée'}
+            </h2>
+            {conv && (
+              <button
+                onClick={startEdit}
+                className="text-muted-foreground hover:text-foreground transition-colors"
+                aria-label="Renommer"
+              >
+                <Pencil className="size-3.5" />
+              </button>
+            )}
+          </>
+        ) : (
+          <>
+            <Input
+              ref={inputRef}
+              value={editValue}
+              onChange={(e) => setEditValue(e.target.value)}
+              onKeyDown={onKeyDown}
+              onBlur={() => void confirmEdit()}
+              className="h-8 text-lg font-semibold"
+            />
+            <button
+              onClick={() => void confirmEdit()}
+              className="text-green-600 hover:text-green-500"
+              aria-label="Confirmer"
+            >
+              <Check className="size-4" />
+            </button>
+            <button
+              onClick={cancelEdit}
+              className="text-muted-foreground hover:text-destructive"
+              aria-label="Annuler"
+            >
+              <X className="size-4" />
+            </button>
+          </>
+        )}
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Modèle :{' '}
+        <code>{llmProvider === 'local' ? localModel ?? 'local' : llmModel}</code> · Tools :
+        get_self, list_projects, list_trackers, list_artifacts, get_artifact, list_milestones
+      </p>
+    </header>
+  )
+}
 
 function Chatbot(): React.JSX.Element {
   const config = useSettings((s) => s.config)
@@ -25,11 +124,16 @@ function Chatbot(): React.JSX.Element {
   const refresh = useChat((s) => s.refresh)
   const open = useChat((s) => s.open)
   const newConversation = useChat((s) => s.newConversation)
+  const rename = useChat((s) => s.rename)
   const remove = useChat((s) => s.remove)
   const send = useChat((s) => s.send)
   const setDraft = useChat((s) => s.setDraft)
 
-  const ready = config.tuleapUrl && config.hasToken && config.hasLlmKey
+  const llmReady =
+    config.llmProvider === 'local'
+      ? Boolean(config.localBaseUrl && config.localModel)
+      : config.hasLlmKey
+  const ready = config.tuleapUrl && config.hasToken && llmReady
 
   useEffect(() => {
     init()
@@ -128,15 +232,13 @@ function Chatbot(): React.JSX.Element {
       </aside>
 
       <section className="flex h-full flex-1 flex-col">
-        <header className="border-b border-border px-6 py-3">
-          <h2 className="text-lg font-semibold tracking-tight">
-            {selectedConv ? selectedConv.title : 'Aucune conversation sélectionnée'}
-          </h2>
-          <p className="text-xs text-muted-foreground">
-            Modèle : <code>{config.llmModel}</code> · Tools : get_self, list_projects,
-            list_trackers, list_artifacts, get_artifact, list_milestones
-          </p>
-        </header>
+        <ConversationHeader
+          conv={selectedConv}
+          llmProvider={config.llmProvider}
+          localModel={config.localModel}
+          llmModel={config.llmModel}
+          onRename={rename}
+        />
 
         <div ref={scrollRef} className="flex-1 space-y-3 overflow-auto px-6 py-4">
           {!selectedConv && (
@@ -183,8 +285,5 @@ function Chatbot(): React.JSX.Element {
     </div>
   )
 }
-
-// Keep an Input import to satisfy ESLint when we'll reuse it for the rename UX (backlog).
-void Input
 
 export default Chatbot

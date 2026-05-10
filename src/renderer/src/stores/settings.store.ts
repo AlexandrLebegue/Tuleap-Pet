@@ -35,6 +35,7 @@ type Store = {
   setLocalModel: (model: string | null) => Promise<void>
   setLocalKey: (key: string) => Promise<void>
   clearLocalKey: () => Promise<void>
+  setLocalDirectConnection: (value: boolean) => Promise<void>
   testLlm: () => Promise<LlmTestResult>
 
   setAuthMode: (mode: 'token' | 'oauth2') => Promise<void>
@@ -57,6 +58,7 @@ const emptyConfig: SettingsState = {
   localModel: null,
   hasLocalKey: false,
   localKeyFromEnv: false,
+  localDirectConnection: true,
   authMode: 'token',
   oauthClientId: null,
   oauthScope: 'read:user_membership read:project read:tracker',
@@ -164,6 +166,11 @@ export const useSettings = create<Store>((set, get) => ({
 
   clearLocalKey: async () => {
     const config = await api.settings.clearLocalKey()
+    set({ config, llmStatus: 'unknown', llmLastResult: null })
+  },
+
+  setLocalDirectConnection: async (value: boolean) => {
+    const config = await api.settings.setLocalDirectConnection(value)
     set({ config, llmStatus: 'unknown', llmLastResult: null })
   },
 

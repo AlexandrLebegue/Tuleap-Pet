@@ -92,9 +92,11 @@ export function createOpenRouterProvider(opts: OpenRouterProviderOptions): LlmPr
         for await (const part of result.fullStream) {
           switch (part.type) {
             case 'text-delta': {
-              const delta = (part as unknown as { text?: string; delta?: string }).text
-                ?? (part as unknown as { delta?: string }).delta
-                ?? ''
+              const delta =
+                (part as unknown as { textDelta?: string }).textDelta ??
+                (part as unknown as { text?: string }).text ??
+                (part as unknown as { delta?: string }).delta ??
+                ''
               if (delta) {
                 buffered += delta
                 onChunk({ type: 'text', delta })
@@ -142,11 +144,16 @@ export function createOpenRouterProvider(opts: OpenRouterProviderOptions): LlmPr
           }
         }
 
+        // Use the SDK's assembled text as authoritative source — it includes
+        // text from ALL steps in multi-step tool calling, even if some
+        // text-delta events were not captured during streaming.
+        const sdkText = await result.text
+        const finalText = sdkText || buffered
         const finishReason = (await result.finishReason) ?? null
         const usage = toUsage(await result.usage)
         onChunk({ type: 'finish', finishReason, usage })
 
-        return { text: buffered, model: modelId, finishReason, usage }
+        return { text: finalText, model: modelId, finishReason, usage }
       } catch (err) {
         throw toLlmError(err, modelId)
       }

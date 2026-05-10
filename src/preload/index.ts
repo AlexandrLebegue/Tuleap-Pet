@@ -32,6 +32,7 @@ export type SettingsState = {
   localModel: string | null
   hasLocalKey: boolean
   localKeyFromEnv: boolean
+  localDirectConnection: boolean
   authMode: 'token' | 'oauth2'
   oauthClientId: string | null
   oauthScope: string
@@ -63,6 +64,8 @@ const settings = {
   setLocalKey: (key: string): Promise<SettingsState> =>
     ipcRenderer.invoke('settings:set-local-key', key),
   clearLocalKey: (): Promise<SettingsState> => ipcRenderer.invoke('settings:clear-local-key'),
+  setLocalDirectConnection: (value: boolean): Promise<SettingsState> =>
+    ipcRenderer.invoke('settings:set-local-direct-connection', value),
   reset: (): Promise<SettingsState> => ipcRenderer.invoke('settings:reset')
 }
 
@@ -180,6 +183,21 @@ const coder = {
   }
 }
 
+export type DebugLogEntry = {
+  id: number
+  level: 'log' | 'warn' | 'error'
+  ts: number
+  message: string
+}
+
+const debug = {
+  subscribe: (handler: (entry: DebugLogEntry) => void): (() => void) => {
+    const wrapped = (_e: unknown, payload: DebugLogEntry): void => handler(payload)
+    ipcRenderer.on('debug:log', wrapped)
+    return () => ipcRenderer.removeListener('debug:log', wrapped)
+  }
+}
+
 type AdminSummaryResult =
   | { ok: true; markdown: string; model: string; usage: { totalTokens?: number } | null }
   | { ok: false; error: string; kind: string }
@@ -191,7 +209,7 @@ const admin = {
     ipcRenderer.invoke('admin:summarize', scan)
 }
 
-const api = { settings, tuleap, generation, marp, chat, auth, coder, admin }
+const api = { settings, tuleap, generation, marp, chat, auth, coder, admin, debug }
 
 if (process.contextIsolated) {
   try {

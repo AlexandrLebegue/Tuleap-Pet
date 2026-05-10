@@ -11,12 +11,14 @@ import {
   artifactDetailSchema,
   artifactSummarySchema,
   arrayOf,
+  milestoneContentItemSchema,
   milestoneSchema,
   projectSchema,
   trackerSchema,
   userSelfSchema,
   type ArtifactDetailRaw,
   type ArtifactSummaryRaw,
+  type MilestoneContentItemRaw,
   type MilestoneRaw,
   type ProjectRaw,
   type TrackerRaw,
@@ -247,15 +249,29 @@ export class TuleapClient {
 
   /**
    * Items linked to a milestone (user stories, tasks, …).
-   * Tuleap exposes them as artifacts on /api/milestones/{id}/content.
+   * Tuleap exposes them as backlog items on /api/milestones/{id}/content.
+   * The response shape may differ from standard artifacts (missing uri/tracker).
    */
   listMilestoneContent(
     milestoneId: number,
     opts?: Pagination
-  ): Promise<PaginatedResponse<ArtifactSummaryRaw>> {
-    return this.paginated(artifactSummarySchema, `/api/milestones/${milestoneId}/content`, {
+  ): Promise<PaginatedResponse<MilestoneContentItemRaw>> {
+    return this.paginated(milestoneContentItemSchema, `/api/milestones/${milestoneId}/content`, {
       limit: opts?.limit ?? DEFAULT_PAGE_LIMIT,
       offset: opts?.offset ?? 0
     })
+  }
+
+  /** Fetch every page of a paginated endpoint and return a flat array of all items. */
+  async fetchAll<T>(fetcher: (offset: number) => Promise<PaginatedResponse<T>>): Promise<T[]> {
+    const all: T[] = []
+    let offset = 0
+    while (true) {
+      const page = await fetcher(offset)
+      all.push(...page.items)
+      if (page.items.length === 0 || all.length >= page.total) break
+      offset += page.items.length
+    }
+    return all
   }
 }

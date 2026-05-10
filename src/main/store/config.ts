@@ -15,6 +15,7 @@ const store = new Store<Schema>({
     llmModel: null,
     localBaseUrl: null,
     localModel: null,
+    localDirectConnection: true,
     authMode: 'token',
     oauthClientId: null,
     oauthScope: null,
@@ -38,11 +39,20 @@ export function getConfig(): AppConfig {
     llmModel: store.get('llmModel') ?? null,
     localBaseUrl: store.get('localBaseUrl') ?? null,
     localModel: store.get('localModel') ?? null,
+    localDirectConnection: store.get('localDirectConnection') ?? true,
     authMode: (store.get('authMode') ?? 'token') as TuleapAuthMode,
     oauthClientId: store.get('oauthClientId') ?? null,
     oauthScope: store.get('oauthScope') ?? null,
     openCodeBinary: store.get('openCodeBinary') ?? null
   }
+}
+
+export function getLocalDirectConnection(): boolean {
+  return store.get('localDirectConnection') ?? true
+}
+
+export function setLocalDirectConnection(value: boolean): void {
+  store.set('localDirectConnection', value)
 }
 
 export function getLlmProvider(): LlmProviderKind {
