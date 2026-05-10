@@ -11,6 +11,7 @@ import {
   mapArtifactSummary,
   mapProject,
   mapTracker,
+  mapTrackerFields,
   type PaginatedResponse
 } from '../tuleap'
 import { getConfig } from '../store/config'
@@ -21,6 +22,7 @@ import type {
   ConnectionTestResult,
   Page,
   ProjectSummary,
+  TrackerFields,
   TrackerSummary
 } from '@shared/types'
 
@@ -152,4 +154,107 @@ export function registerTuleapHandlers(): void {
     const raw = await client.getArtifact(id)
     return mapArtifactDetail(raw)
   })
+
+  ipcMain.handle(
+    'tuleap:get-tracker-fields',
+    async (_event, args: unknown): Promise<TrackerFields> => {
+      const { trackerId } = args as { trackerId: number }
+      if (typeof trackerId !== 'number' || !Number.isInteger(trackerId) || trackerId <= 0) {
+        throw new TuleapError('unknown', 'trackerId invalide.')
+      }
+      const client = await buildTuleapClient()
+      audit('tuleap.get-tracker-fields', String(trackerId))
+      const raw = await client.getTrackerFields(trackerId)
+      return mapTrackerFields(raw)
+    }
+  )
+
+  ipcMain.handle(
+    'tuleap:create-artifact',
+    async (
+      _event,
+      args: unknown
+    ): Promise<ArtifactSummary> => {
+      const {
+        trackerId,
+        titleFieldId,
+        title,
+        statusFieldId,
+        statusBindValueId,
+        descriptionFieldId,
+        description
+      } = args as {
+        trackerId: number
+        titleFieldId: number
+        title: string
+        statusFieldId?: number | null
+        statusBindValueId?: number | null
+        descriptionFieldId?: number | null
+        description?: string | null
+      }
+      const client = await buildTuleapClient()
+      audit('tuleap.create-artifact', String(trackerId))
+      const created = await client.createArtifact({
+        trackerId,
+        titleFieldId,
+        title,
+        statusFieldId: statusFieldId ?? null,
+        statusBindValueId: statusBindValueId ?? null,
+        descriptionFieldId: descriptionFieldId ?? null,
+        description: description ?? null
+      })
+      const raw = await client.getArtifact(created.id)
+      return mapArtifactDetail(raw)
+    }
+  )
+
+  ipcMain.handle(
+    'tuleap:update-artifact-status',
+    async (_event, args: unknown): Promise<{ ok: true }> => {
+      const { artifactId, statusFieldId, statusBindValueId } = args as {
+        artifactId: number
+        statusFieldId: number
+        statusBindValueId: number
+      }
+      const client = await buildTuleapClient()
+      audit('tuleap.update-artifact-status', String(artifactId))
+      await client.updateArtifactStatus({ artifactId, statusFieldId, statusBindValueId })
+      return { ok: true }
+    }
+  )
+
+  ipcMain.handle(
+    'tuleap:update-artifact',
+    async (_event, args: unknown): Promise<{ ok: true }> => {
+      const {
+        artifactId,
+        titleFieldId,
+        title,
+        descriptionFieldId,
+        description,
+        statusFieldId,
+        statusBindValueId
+      } = args as {
+        artifactId: number
+        titleFieldId?: number | null
+        title?: string | null
+        descriptionFieldId?: number | null
+        description?: string | null
+        statusFieldId?: number | null
+        statusBindValueId?: number | null
+      }
+      const client = await buildTuleapClient()
+      audit('tuleap.update-artifact', String(artifactId))
+      await client.updateArtifact({
+        artifactId,
+        titleFieldId: titleFieldId ?? null,
+        title: title ?? null,
+        descriptionFieldId: descriptionFieldId ?? null,
+        description: description ?? null,
+        statusFieldId: statusFieldId ?? null,
+        statusBindValueId: statusBindValueId ?? null
+      })
+      return { ok: true }
+    }
+  )
 }

@@ -8,6 +8,7 @@ import { Button } from '@renderer/components/ui/button'
 import TrackerList from '@renderer/components/TrackerList'
 import ArtifactTable from '@renderer/components/ArtifactTable'
 import ArtifactDetailPanel from '@renderer/components/ArtifactDetailPanel'
+import KanbanBoard from '@renderer/components/KanbanBoard'
 
 function Project(): React.JSX.Element {
   const config = useSettings((s) => s.config)
@@ -24,12 +25,16 @@ function Project(): React.JSX.Element {
   const artifactDetail = useProject((s) => s.artifactDetail)
   const loadingDetail = useProject((s) => s.loadingDetail)
   const detailError = useProject((s) => s.detailError)
+  const viewMode = useProject((s) => s.viewMode)
+  const trackerFields = useProject((s) => s.trackerFields)
+  const loadingFields = useProject((s) => s.loadingFields)
 
   const loadTrackers = useProject((s) => s.loadTrackers)
   const selectTracker = useProject((s) => s.selectTracker)
   const loadArtifacts = useProject((s) => s.loadArtifacts)
   const openArtifact = useProject((s) => s.openArtifact)
   const closeArtifact = useProject((s) => s.closeArtifact)
+  const setViewMode = useProject((s) => s.setViewMode)
 
   const projectName = projects.find((p) => p.id === config.projectId)?.label ?? null
 
@@ -110,21 +115,66 @@ function Project(): React.JSX.Element {
 
           {selectedTrackerId !== null && (
             <div className="space-y-3">
-              <h3 className="text-lg font-medium tracking-tight">Artéfacts</h3>
-              {artifactsError && (
-                <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm">
-                  {artifactsError}
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-medium tracking-tight">Artéfacts</h3>
+                <div className="flex gap-1">
+                  <Button
+                    variant={viewMode === 'table' ? 'secondary' : 'ghost'}
+                    size="sm"
+                    onClick={() => setViewMode('table')}
+                    title="Vue tableau"
+                  >
+                    ☰ Tableau
+                  </Button>
+                  <Button
+                    variant={viewMode === 'kanban' ? 'secondary' : 'ghost'}
+                    size="sm"
+                    onClick={() => setViewMode('kanban')}
+                    disabled={loadingFields && trackerFields === null}
+                    title="Vue kanban"
+                  >
+                    ⊞ Kanban
+                  </Button>
                 </div>
+              </div>
+
+              {viewMode === 'table' && (
+                <>
+                  {artifactsError && (
+                    <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm">
+                      {artifactsError}
+                    </div>
+                  )}
+                  <ArtifactTable
+                    artifacts={artifacts}
+                    total={artifactsTotal}
+                    offset={artifactsOffset}
+                    pageSize={PROJECT_PAGE_SIZE}
+                    loading={loadingArtifacts}
+                    onPage={(offset) => loadArtifacts(offset)}
+                    onSelect={(id) => openArtifact(id)}
+                  />
+                </>
               )}
-              <ArtifactTable
-                artifacts={artifacts}
-                total={artifactsTotal}
-                offset={artifactsOffset}
-                pageSize={PROJECT_PAGE_SIZE}
-                loading={loadingArtifacts}
-                onPage={(offset) => loadArtifacts(offset)}
-                onSelect={(id) => openArtifact(id)}
-              />
+
+              {viewMode === 'kanban' && (
+                <>
+                  {(loadingFields && trackerFields === null) ? (
+                    <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">
+                      Chargement de la structure du tracker…
+                    </div>
+                  ) : trackerFields !== null ? (
+                    <KanbanBoard
+                      trackerFields={trackerFields}
+                      onCardClick={(id) => openArtifact(id)}
+                    />
+                  ) : (
+                    <p className="text-sm text-muted-foreground">
+                      Impossible de charger la structure du tracker.
+                    </p>
+                  )}
+                </>
+              )}
             </div>
           )}
         </div>

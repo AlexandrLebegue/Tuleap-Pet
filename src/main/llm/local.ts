@@ -81,10 +81,13 @@ export function createLocalProvider(opts: LocalProviderOptions): LlmProvider {
         const result = await generateText({
           model: client.chat(id),
           messages: toModelMessages(request.messages),
-          temperature: request.temperature,
+          temperature: request.thinking ? undefined : request.temperature,
           maxOutputTokens: request.maxOutputTokens,
           tools: request.tools,
-          stopWhen: request.tools ? stepCountIs(request.maxSteps ?? 6) : undefined
+          stopWhen: request.tools ? stepCountIs(request.maxSteps ?? 6) : undefined,
+          providerOptions: request.thinking
+            ? { openai: { reasoning_effort: 'high' } }
+            : undefined
         })
         debugLog('[local-llm] generate OK finishReason=%s tokens=%o', result.finishReason, result.usage)
         return {
@@ -118,10 +121,13 @@ export function createLocalProvider(opts: LocalProviderOptions): LlmProvider {
         const result = streamText({
           model: client.chat(id),
           messages: toModelMessages(request.messages),
-          temperature: request.temperature,
+          temperature: request.thinking ? undefined : request.temperature,
           maxOutputTokens: request.maxOutputTokens,
           tools: request.tools,
-          stopWhen: request.tools ? stepCountIs(request.maxSteps ?? 6) : undefined
+          stopWhen: request.tools ? stepCountIs(request.maxSteps ?? 6) : undefined,
+          providerOptions: request.thinking
+            ? { openai: { reasoning_effort: 'high' } }
+            : undefined
         })
 
         let buffered = ''

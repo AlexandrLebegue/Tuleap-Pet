@@ -57,10 +57,13 @@ export function createOpenRouterProvider(opts: OpenRouterProviderOptions): LlmPr
         const result = await generateText({
           model: openrouter(modelId),
           messages: toModelMessages(request.messages),
-          temperature: request.temperature,
+          temperature: request.thinking ? undefined : request.temperature,
           maxOutputTokens: request.maxOutputTokens,
           tools: request.tools,
-          stopWhen: request.tools ? stepCountIs(request.maxSteps ?? 6) : undefined
+          stopWhen: request.tools ? stepCountIs(request.maxSteps ?? 6) : undefined,
+          providerOptions: request.thinking
+            ? { openrouter: { reasoning: { effort: 'high' } } }
+            : undefined
         })
         return {
           text: result.text,
@@ -82,10 +85,13 @@ export function createOpenRouterProvider(opts: OpenRouterProviderOptions): LlmPr
         const result = streamText({
           model: openrouter(modelId),
           messages: toModelMessages(request.messages),
-          temperature: request.temperature,
+          temperature: request.thinking ? undefined : request.temperature,
           maxOutputTokens: request.maxOutputTokens,
           tools: request.tools,
-          stopWhen: request.tools ? stepCountIs(request.maxSteps ?? 6) : undefined
+          stopWhen: request.tools ? stepCountIs(request.maxSteps ?? 6) : undefined,
+          providerOptions: request.thinking
+            ? { openrouter: { reasoning: { effort: 'high' } } }
+            : undefined
         })
 
         let buffered = ''

@@ -13,7 +13,8 @@ import {
 import { audit } from '../store/db'
 import { resolveLlmProvider, buildTuleapTools, toLlmError } from '../llm'
 import type { LlmMessage } from '../llm'
-import { getLlmModel, getLlmProvider, getLocalModel } from '../store/config'
+import { getChatbotDoxygenMode, getChatbotExpertMode, getChatbotToolsEnabled, getLlmModel, getLlmProvider, getLocalModel } from '../store/config'
+import { getCombinedPrompt, getExpertSystemPrompt } from '../prompts/expert-prompts'
 import { debugLog, debugError } from '../logger'
 import type { ChatMessage, ChatStreamEvent } from '@shared/types'
 
@@ -67,10 +68,24 @@ Tu disposes des outils suivants pour interroger l'API Tuleap :
 - "Détail de l'artéfact 5678" -> appeler get_artifact avec id=5678
 - "Combien d'items dans le tracker Bugs ?" -> appeler list_trackers puis list_artifacts`
 
+function buildSystemPrompt(): string {
+  const expertMode = getChatbotExpertMode()
+  const doxygenMode = getChatbotDoxygenMode()
+
+  let prompt = SYSTEM_PROMPT
+
+  if (expertMode) {
+    const expertSection = doxygenMode ? getCombinedPrompt(true) : getExpertSystemPrompt()
+    prompt = `${SYSTEM_PROMPT}\n\n---\n\n# Mode Expert C/C++\n\n${expertSection}`
+  }
+
+  return prompt
+}
+
 function ensureSystemMessage(history: ChatMessage[]): LlmMessage[] {
   const llmHistory = chatHistoryAsLlmMessages(history)
   if (llmHistory.length === 0 || llmHistory[0]?.role !== 'system') {
-    llmHistory.unshift({ role: 'system', content: SYSTEM_PROMPT })
+    llmHistory.unshift({ role: 'system', content: buildSystemPrompt() })
   }
   return llmHistory
 }
@@ -155,7 +170,7 @@ export function registerChatHandlers(): void {
   })
 
   ipcMain.handle('chat:send-message', async (event, args: unknown) => {
-    const opts = (args ?? {}) as { conversationId?: number; content?: string }
+    const opts = (args ?? {}) as { conversationId?: number; content?: string; thinking?: boolean }
     if (typeof opts.conversationId !== 'number' || typeof opts.content !== 'string') {
       throw new Error('Arguments invalides.')
     }
@@ -190,15 +205,18 @@ export function registerChatHandlers(): void {
     let buffered = ''
     try {
       const provider = resolveLlmProvider()
-      debugLog('[chat] provider=%s model=%s', provider.name,
-        provider.name === 'local' ? getLocalModel() : getLlmModel())
-      const tools = buildTuleapTools()
+      const thinking = opts.thinking ?? false
+      const toolsEnabled = getChatbotToolsEnabled()
+      debugLog('[chat] provider=%s model=%s thinking=%s tools=%s', provider.name,
+        provider.name === 'local' ? getLocalModel() : getLlmModel(), thinking, toolsEnabled)
+      const tools = toolsEnabled ? buildTuleapTools() : undefined
       const result = await provider.stream(
         {
           messages: llmMessages,
           tools,
           temperature: 0.4,
-          maxOutputTokens: 2048
+          maxOutputTokens: thinking ? 16000 : 2048,
+          thinking
         },
         (chunk) => {
           if (chunk.type === 'text') {

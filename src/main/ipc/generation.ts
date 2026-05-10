@@ -2,19 +2,23 @@ import { ipcMain } from 'electron'
 import {
   TuleapError,
   buildTuleapClient,
+  mapArtifactSummary,
   mapMilestone,
   mapMilestoneContentItem
 } from '../tuleap'
 import { getConfig, getLlmModel, getLlmProvider } from '../store/config'
 import { resolveLlmProvider, toLlmError } from '../llm'
 import { audit } from '../store/db'
-import { buildSprintReviewMessages } from '../prompts'
 import type {
   ConnectionTestResult,
+  GenerationSource,
   MilestoneStatus,
   MilestoneSummary,
-  SprintContent
+  SprintContent,
+  SprintReviewProgressEvent,
+  SprintReviewSlideType
 } from '@shared/types'
+import { runSprintReviewPipeline } from '../generation/pipeline'
 
 async function fetchSprintContent(milestoneId: number): Promise<SprintContent> {
   const client = await buildTuleapClient()
@@ -33,6 +37,7 @@ export type GenerationResult = {
   model: string
   finishReason: string | null
   usage: { inputTokens?: number; outputTokens?: number; totalTokens?: number } | null
+  slideWarnings?: { slide: SprintReviewSlideType; warning: string }[]
 }
 
 export type LlmTestResult =
@@ -69,7 +74,22 @@ export function registerGenerationHandlers(): void {
     }
   )
 
-ipcMain.handle('generation:test-llm', async (): Promise<LlmTestResult> => {
+  ipcMain.handle(
+    'generation:list-tracker-artifacts',
+    async (_event, trackerId: unknown) => {
+      if (typeof trackerId !== 'number' || !Number.isInteger(trackerId) || trackerId <= 0) {
+        throw new TuleapError('unknown', 'trackerId invalide.')
+      }
+      audit('generation.list-tracker-artifacts', String(trackerId))
+      const client = await buildTuleapClient()
+      const items = await client.fetchAll((offset) =>
+        client.listArtifacts(trackerId, { limit: 50, offset })
+      )
+      return items.map(mapArtifactSummary)
+    }
+  )
+
+  ipcMain.handle('generation:test-llm', async (): Promise<LlmTestResult> => {
     const resolvedProvider = getLlmProvider()
     const resolvedModel = getLlmModel()
     audit('generation.test-llm', `${resolvedProvider}:${resolvedModel}`)
@@ -105,54 +125,70 @@ ipcMain.handle('generation:test-llm', async (): Promise<LlmTestResult> => {
   ipcMain.handle(
     'generation:generate-sprint-review',
     async (
-      _event,
+      event,
       args: unknown
     ): Promise<GenerationResult> => {
       if (!args || typeof args !== 'object') {
         throw new Error('Arguments invalides.')
       }
-      const { milestoneId, language } = args as {
-        milestoneId?: number
+      const { source, language } = args as {
+        source?: GenerationSource
         language?: 'fr' | 'en'
       }
-      if (typeof milestoneId !== 'number' || !Number.isInteger(milestoneId) || milestoneId <= 0) {
-        throw new Error('milestoneId invalide.')
+
+      if (!source || typeof source !== 'object' || !('mode' in source)) {
+        throw new Error('source invalide : mode requis.')
       }
-      audit('generation.sprint-review.start', String(milestoneId), { language })
+      if (source.mode === 'sprint') {
+        if (typeof source.milestoneId !== 'number' || !Number.isInteger(source.milestoneId) || source.milestoneId <= 0) {
+          throw new Error('milestoneId invalide.')
+        }
+      } else if (source.mode === 'custom') {
+        if (!Array.isArray(source.artifactIds) || source.artifactIds.length === 0) {
+          throw new Error('artifactIds invalide : tableau non vide requis.')
+        }
+        if (typeof source.label !== 'string' || !source.label.trim()) {
+          throw new Error('label invalide.')
+        }
+      } else {
+        throw new Error('source.mode invalide.')
+      }
+
+      const resolvedLanguage: 'fr' | 'en' =
+        language === 'fr' || language === 'en' ? language : 'fr'
 
       const projectId = getConfig().projectId
       if (typeof projectId !== 'number') {
         throw new TuleapError('unknown', "Aucun projet n'est sélectionné.")
       }
 
+      const sourceLabel = source.mode === 'sprint' ? String(source.milestoneId) : source.label
+      audit('generation.sprint-review.start', sourceLabel, { mode: source.mode, language: resolvedLanguage })
+
       const client = await buildTuleapClient()
       const project = await client.getProject(projectId)
-      const content = await fetchSprintContent(milestoneId)
 
-      const messages = buildSprintReviewMessages({
-        projectName: project.label,
-        milestone: content.milestone,
-        artifacts: content.artifacts,
-        language: language ?? 'fr'
-      })
+      const emitProgress = (e: SprintReviewProgressEvent): void => {
+        event.sender.send('generation:progress', e)
+      }
 
-      const provider = resolveLlmProvider()
-      const result = await provider.generate({
-        messages,
-        temperature: 0.3,
-        maxOutputTokens: 4096
-      })
+      const pipelineResult = await runSprintReviewPipeline(
+        { source, projectName: project.label, language: resolvedLanguage },
+        emitProgress
+      )
 
-      audit('generation.sprint-review.done', String(milestoneId), {
-        model: result.model,
-        usage: result.usage
+      audit('generation.sprint-review.done', sourceLabel, {
+        model: pipelineResult.model,
+        usage: pipelineResult.usage,
+        warnings: pipelineResult.slideWarnings.length
       })
 
       return {
-        markdown: result.text,
-        model: result.model,
-        finishReason: result.finishReason,
-        usage: result.usage
+        markdown: pipelineResult.markdown,
+        model: pipelineResult.model,
+        finishReason: pipelineResult.finishReason,
+        usage: pipelineResult.usage,
+        slideWarnings: pipelineResult.slideWarnings
       }
     }
   )

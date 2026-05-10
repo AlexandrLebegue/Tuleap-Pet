@@ -6,7 +6,7 @@ import { useChat } from '@renderer/stores/chat.store'
 import { Card, CardDescription, CardHeader, CardTitle } from '@renderer/components/ui/card'
 import { Button } from '@renderer/components/ui/button'
 import { Input } from '@renderer/components/ui/input'
-import { Trash2, Plus, Send, Pencil, Check, X } from 'lucide-react'
+import { Trash2, Plus, Send, Pencil, Check, X, Brain, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 import { cn } from '@renderer/lib/utils'
 import ChatMessageBubble from '@renderer/components/ChatMessageBubble'
 import type { ChatConversation, LlmProviderKind } from '@shared/types'
@@ -128,6 +128,10 @@ function Chatbot(): React.JSX.Element {
   const remove = useChat((s) => s.remove)
   const send = useChat((s) => s.send)
   const setDraft = useChat((s) => s.setDraft)
+  const thinking = useChat((s) => s.thinking)
+  const setThinking = useChat((s) => s.setThinking)
+
+  const [sidebarOpen, setSidebarOpen] = useState(true)
 
   const llmReady =
     config.llmProvider === 'local'
@@ -182,54 +186,74 @@ function Chatbot(): React.JSX.Element {
 
   return (
     <div className="flex h-full">
-      <aside className="flex h-full w-72 shrink-0 flex-col border-r border-border bg-muted/20">
-        <div className="flex items-center justify-between border-b border-border px-4 py-3">
-          <h3 className="text-sm font-semibold tracking-tight">Conversations</h3>
-          <Button size="icon" variant="ghost" onClick={() => newConversation()} aria-label="Nouvelle">
-            <Plus className="size-4" />
+      {sidebarOpen ? (
+        <aside className="flex h-full w-72 shrink-0 flex-col border-r border-border bg-muted/20">
+          <div className="flex items-center justify-between border-b border-border px-4 py-3">
+            <h3 className="text-sm font-semibold tracking-tight">Conversations</h3>
+            <div className="flex gap-1">
+              <Button size="icon" variant="ghost" onClick={() => newConversation()} aria-label="Nouvelle">
+                <Plus className="size-4" />
+              </Button>
+              <Button size="icon" variant="ghost" onClick={() => setSidebarOpen(false)} aria-label="Masquer">
+                <PanelLeftClose className="size-4" />
+              </Button>
+            </div>
+          </div>
+          <div className="flex-1 overflow-auto p-2">
+            {conversations.length === 0 && (
+              <p className="px-2 py-4 text-xs text-muted-foreground">
+                Aucune conversation. Cliquez sur + pour démarrer.
+              </p>
+            )}
+            {conversations.map((conv) => (
+              <button
+                key={conv.id}
+                onClick={() => open(conv.id)}
+                className={cn(
+                  'group flex w-full items-center justify-between rounded-md px-2 py-2 text-left text-sm transition-colors',
+                  conv.id === selectedId
+                    ? 'bg-accent text-accent-foreground'
+                    : 'hover:bg-accent/50'
+                )}
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="truncate" title={conv.title}>
+                    {conv.title}
+                  </p>
+                  <p className="text-[10px] text-muted-foreground">
+                    {new Date(conv.updatedAt).toLocaleString()}
+                  </p>
+                </div>
+                <span
+                  role="button"
+                  tabIndex={0}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    void remove(conv.id)
+                  }}
+                  className="ml-2 hidden text-muted-foreground hover:text-destructive group-hover:inline-flex"
+                  aria-label="Supprimer"
+                >
+                  <Trash2 className="size-3.5" />
+                </span>
+              </button>
+            ))}
+          </div>
+        </aside>
+      ) : (
+        <div className="flex h-full shrink-0 flex-col border-r border-border bg-muted/20">
+          <Button
+            size="icon"
+            variant="ghost"
+            onClick={() => setSidebarOpen(true)}
+            aria-label="Afficher les conversations"
+            className="m-2"
+            title="Afficher les conversations"
+          >
+            <PanelLeftOpen className="size-4" />
           </Button>
         </div>
-        <div className="flex-1 overflow-auto p-2">
-          {conversations.length === 0 && (
-            <p className="px-2 py-4 text-xs text-muted-foreground">
-              Aucune conversation. Cliquez sur + pour démarrer.
-            </p>
-          )}
-          {conversations.map((conv) => (
-            <button
-              key={conv.id}
-              onClick={() => open(conv.id)}
-              className={cn(
-                'group flex w-full items-center justify-between rounded-md px-2 py-2 text-left text-sm transition-colors',
-                conv.id === selectedId
-                  ? 'bg-accent text-accent-foreground'
-                  : 'hover:bg-accent/50'
-              )}
-            >
-              <div className="min-w-0 flex-1">
-                <p className="truncate" title={conv.title}>
-                  {conv.title}
-                </p>
-                <p className="text-[10px] text-muted-foreground">
-                  {new Date(conv.updatedAt).toLocaleString()}
-                </p>
-              </div>
-              <span
-                role="button"
-                tabIndex={0}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  void remove(conv.id)
-                }}
-                className="ml-2 hidden text-muted-foreground hover:text-destructive group-hover:inline-flex"
-                aria-label="Supprimer"
-              >
-                <Trash2 className="size-3.5" />
-              </span>
-            </button>
-          ))}
-        </div>
-      </aside>
+      )}
 
       <section className="flex h-full flex-1 flex-col">
         <ConversationHeader
@@ -272,12 +296,22 @@ function Chatbot(): React.JSX.Element {
                 placeholder="Posez une question — Entrée pour envoyer, Maj+Entrée pour un saut de ligne."
                 className="flex-1 resize-none rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               />
-              <Button
-                onClick={() => send()}
-                disabled={!draft.trim() || status === 'sending' || status === 'streaming'}
-              >
-                <Send className="size-4" />
-              </Button>
+              <div className="flex flex-col gap-2">
+                <Button
+                  size="icon"
+                  variant={thinking ? 'default' : 'outline'}
+                  onClick={() => setThinking(!thinking)}
+                  title={thinking ? 'Thinking activé — cliquer pour désactiver' : 'Activer le mode thinking (raisonnement étendu)'}
+                >
+                  <Brain className="size-4" />
+                </Button>
+                <Button
+                  onClick={() => send()}
+                  disabled={!draft.trim() || status === 'sending' || status === 'streaming'}
+                >
+                  <Send className="size-4" />
+                </Button>
+              </div>
             </div>
           </footer>
         )}

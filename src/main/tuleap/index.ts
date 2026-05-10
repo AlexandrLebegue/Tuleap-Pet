@@ -14,5 +14,5 @@ export {
   TuleapServerError
 } from './errors'
 export type { ErrorKind } from './errors'
-export { mapArtifactDetail, mapArtifactSummary, mapMilestone, mapMilestoneContentItem, mapProject, mapTracker } from './mappers'
+export { mapArtifactDetail, mapArtifactSummary, mapGitCommit, mapMilestone, mapMilestoneContentItem, mapProject, mapTracker, mapTrackerFields } from './mappers'
 export { buildTuleapClient } from './build'

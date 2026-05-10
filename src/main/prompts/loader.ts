@@ -7,6 +7,15 @@
  */
 import sprintReviewSource from '../../../docs/prompts/sprint_review.md?raw'
 import adminSummarySource from '../../../docs/prompts/admin_summary.md?raw'
+import sprintSummarySource from '../../../docs/prompts/sprint_summary.md?raw'
+import slideTitreSource from '../../../docs/prompts/slide_titre.md?raw'
+import slideContexteSource from '../../../docs/prompts/slide_contexte.md?raw'
+import slideEquipeSource from '../../../docs/prompts/slide_equipe.md?raw'
+import slideLivrablesSource from '../../../docs/prompts/slide_livrables.md?raw'
+import slideAvancementSource from '../../../docs/prompts/slide_avancement.md?raw'
+import slideIndicateursSource from '../../../docs/prompts/slide_indicateurs.md?raw'
+import slideRisquesSource from '../../../docs/prompts/slide_risques.md?raw'
+import slideSyntheseSource from '../../../docs/prompts/slide_synthese.md?raw'
 
 export type PromptTemplate = {
   /** Logical name (matches the file basename). */
@@ -50,12 +59,21 @@ export function interpolate(template: string, vars: Record<string, string | numb
 
 const templates: Record<string, PromptTemplate> = {
   sprint_review: buildTemplate('sprint_review', sprintReviewSource),
-  admin_summary: buildTemplate('admin_summary', adminSummarySource)
+  admin_summary: buildTemplate('admin_summary', adminSummarySource),
+  sprint_summary: buildTemplate('sprint_summary', sprintSummarySource),
+  slide_titre: buildTemplate('slide_titre', slideTitreSource),
+  slide_contexte: buildTemplate('slide_contexte', slideContexteSource),
+  slide_equipe: buildTemplate('slide_equipe', slideEquipeSource),
+  slide_livrables: buildTemplate('slide_livrables', slideLivrablesSource),
+  slide_avancement: buildTemplate('slide_avancement', slideAvancementSource),
+  slide_indicateurs: buildTemplate('slide_indicateurs', slideIndicateursSource),
+  slide_risques: buildTemplate('slide_risques', slideRisquesSource),
+  slide_synthese: buildTemplate('slide_synthese', slideSyntheseSource)
 }
 
-export function getPrompt(name: keyof typeof templates): PromptTemplate {
+export function getPrompt(name: string): PromptTemplate {
   const tpl = templates[name]
-  if (!tpl) throw new Error(`Prompt inconnu : ${String(name)}`)
+  if (!tpl) throw new Error(`Prompt inconnu : ${name}`)
   return tpl
 }
 

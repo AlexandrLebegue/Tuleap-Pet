@@ -10,6 +10,11 @@ import Generation from './routes/Generation'
 import Chatbot from './routes/Chatbot'
 import Coder from './routes/Coder'
 import Admin from './routes/Admin'
+import Commenter from './routes/Commenter'
+import CommenterPR from './routes/CommenterPR'
+import Corrector from './routes/Corrector'
+import TestGenerator from './routes/TestGenerator'
+import GitExplorer from './routes/GitExplorer'
 
 const router = createHashRouter([
   {
@@ -22,7 +27,12 @@ const router = createHashRouter([
       { path: 'generation', element: <Generation /> },
       { path: 'chatbot', element: <Chatbot /> },
       { path: 'coder', element: <Coder /> },
-      { path: 'admin', element: <Admin /> }
+      { path: 'admin', element: <Admin /> },
+      { path: 'commenter', element: <Commenter /> },
+      { path: 'commenter-pr', element: <CommenterPR /> },
+      { path: 'corrector', element: <Corrector /> },
+      { path: 'test-generator', element: <TestGenerator /> },
+      { path: 'git', element: <GitExplorer /> }
     ]
   }
 ])

@@ -6,7 +6,12 @@ import {
   Sparkles,
   MessageSquare,
   Code2,
-  Gauge
+  Gauge,
+  FileCode2,
+  GitPullRequest,
+  GitBranch,
+  Wrench,
+  FlaskConical
 } from 'lucide-react'
 import { cn } from '@renderer/lib/utils'
 import ConnectionStatusBadge from './ConnectionStatusBadge'
@@ -16,16 +21,40 @@ type NavItem = {
   to: string
   label: string
   icon: React.ComponentType<{ className?: string }>
-  phase: number
 }
 
-const items: NavItem[] = [
-  { to: '/settings', label: 'Réglages', icon: SettingsIcon, phase: 0 },
-  { to: '/project', label: 'Projet', icon: FolderKanban, phase: 0 },
-  { to: '/generation', label: 'Génération IA', icon: Sparkles, phase: 1 },
-  { to: '/chatbot', label: 'Chatbot', icon: MessageSquare, phase: 2 },
-  { to: '/coder', label: 'Coder', icon: Code2, phase: 3 },
-  { to: '/admin', label: 'Admin', icon: Gauge, phase: 4 }
+type NavGroup = {
+  label: string
+  items: NavItem[]
+}
+
+const groups: NavGroup[] = [
+  {
+    label: 'Général',
+    items: [
+      { to: '/settings', label: 'Configuration', icon: SettingsIcon },
+      { to: '/chatbot', label: 'Chatbot', icon: MessageSquare }
+    ]
+  },
+  {
+    label: 'Tuleap',
+    items: [
+      { to: '/project', label: 'Projet', icon: FolderKanban },
+      { to: '/admin', label: 'Admin', icon: Gauge },
+      { to: '/generation', label: 'Génération IA', icon: Sparkles },
+      { to: '/git', label: 'Git Explorer', icon: GitBranch }
+    ]
+  },
+  {
+    label: 'Codeur',
+    items: [
+      { to: '/coder', label: 'Coder', icon: Code2 },
+      { to: '/commenter', label: 'Commentateur', icon: FileCode2 },
+      { to: '/commenter-pr', label: 'Commenter PR', icon: GitPullRequest },
+      { to: '/corrector', label: 'Correcteur', icon: Wrench },
+      { to: '/test-generator', label: 'Tests unitaires', icon: FlaskConical }
+    ]
+  }
 ]
 
 function Sidebar(): React.JSX.Element {
@@ -46,29 +75,38 @@ function Sidebar(): React.JSX.Element {
           </p>
         )}
       </div>
-      <nav className="flex flex-col gap-1 p-2">
-        {items.map((item) => {
-          const Icon = item.icon
-          return (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              className={({ isActive }) =>
-                cn(
-                  'flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors',
-                  isActive
-                    ? 'bg-accent text-accent-foreground font-medium'
-                    : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground'
+      <nav className="flex-1 overflow-y-auto py-2">
+        {groups.map((group, gi) => (
+          <div key={group.label} className={cn('px-2', gi > 0 && 'mt-4')}>
+            <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/70">
+              {group.label}
+            </p>
+            <div className="flex flex-col gap-0.5">
+              {group.items.map((item) => {
+                const Icon = item.icon
+                return (
+                  <NavLink
+                    key={item.to}
+                    to={item.to}
+                    className={({ isActive }) =>
+                      cn(
+                        'flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors',
+                        isActive
+                          ? 'bg-accent text-accent-foreground font-medium'
+                          : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground'
+                      )
+                    }
+                  >
+                    <Icon className="size-4" />
+                    <span>{item.label}</span>
+                  </NavLink>
                 )
-              }
-            >
-              <Icon className="size-4" />
-              <span>{item.label}</span>
-            </NavLink>
-          )
-        })}
+              })}
+            </div>
+          </div>
+        ))}
       </nav>
-      <div className="mt-auto p-3 text-xs text-muted-foreground">
+      <div className="p-3 text-xs text-muted-foreground border-t border-border">
         <span className="block">v0.0.1 · Phase 0 · Local-first</span>
       </div>
     </aside>

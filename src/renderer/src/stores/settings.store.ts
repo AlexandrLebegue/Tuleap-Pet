@@ -42,6 +42,9 @@ type Store = {
   setOAuthClient: (clientId: string | null, scope: string | null) => Promise<void>
   startOAuth: () => Promise<{ ok: boolean; error?: string }>
   clearOAuth: () => Promise<void>
+  setChatbotExpertMode: (value: boolean) => Promise<void>
+  setChatbotDoxygenMode: (value: boolean) => Promise<void>
+  setChatbotToolsEnabled: (value: boolean) => Promise<void>
 }
 
 const emptyConfig: SettingsState = {
@@ -64,7 +67,12 @@ const emptyConfig: SettingsState = {
   oauthScope: 'read:user_membership read:project read:tracker',
   oauthDefaultScope: 'read:user_membership read:project read:tracker',
   hasOAuth: false,
-  openCodeBinary: null
+  openCodeBinary: null,
+  chatbotExpertMode: false,
+  chatbotDoxygenMode: false,
+  chatbotToolsEnabled: true,
+  tempClonePath: null,
+  gitCloneSsh: true
 }
 
 export const useSettings = create<Store>((set, get) => ({
@@ -236,5 +244,20 @@ export const useSettings = create<Store>((set, get) => ({
   clearOAuth: async () => {
     await api.auth.clearOAuth()
     await get().refresh()
+  },
+
+  setChatbotExpertMode: async (value: boolean) => {
+    const config = await api.settings.setChatbotExpertMode(value)
+    set({ config })
+  },
+
+  setChatbotDoxygenMode: async (value: boolean) => {
+    const config = await api.settings.setChatbotDoxygenMode(value)
+    set({ config })
+  },
+
+  setChatbotToolsEnabled: async (value: boolean) => {
+    const config = await api.settings.setChatbotToolsEnabled(value)
+    set({ config })
   }
 }))

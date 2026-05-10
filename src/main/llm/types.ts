@@ -13,6 +13,8 @@ export type LlmGenerateRequest = {
   tools?: Record<string, Tool>
   /** Maximum number of tool-calling rounds (default: 6). */
   maxSteps?: number
+  /** Enable extended thinking / reasoning (model-dependent). */
+  thinking?: boolean
 }
 
 export type LlmUsage = {

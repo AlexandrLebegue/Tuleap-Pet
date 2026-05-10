@@ -6,6 +6,7 @@ import { Label } from '@renderer/components/ui/label'
 import { Button } from '@renderer/components/ui/button'
 import { Badge } from '@renderer/components/ui/badge'
 import { useSettings } from '@renderer/stores/settings.store'
+import { api } from '@renderer/lib/api'
 import type { ConnectionTestResult } from '@shared/types'
 
 function describeError(result: ConnectionTestResult & { ok: false }): string {
@@ -276,11 +277,11 @@ function Settings(): React.JSX.Element {
       : config.hasLlmKey
 
   return (
-    <div className="mx-auto max-w-3xl px-8 py-10 space-y-6">
+    <div className="mx-auto max-w-3xl px-8 py-10 space-y-10">
       <div>
         <h2 className="text-2xl font-semibold tracking-tight">Réglages</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Connexion à votre instance Tuleap et choix du projet de travail.
+          Configuration de la connexion Tuleap, du modèle LLM et des outils.
         </p>
       </div>
 
@@ -290,6 +291,13 @@ function Settings(): React.JSX.Element {
           de manière sécurisée. Sur Linux, installer libsecret peut aider.
         </div>
       )}
+
+      {/* ── Section : Connexion Tuleap ─────────────────────────────────── */}
+      <section className="space-y-4">
+        <div className="flex items-center gap-3">
+          <h3 className="text-base font-semibold">Connexion Tuleap</h3>
+          <div className="flex-1 h-px bg-border" />
+        </div>
 
       <Card>
         <CardHeader>
@@ -441,6 +449,14 @@ function Settings(): React.JSX.Element {
           <AuthModeSwitcher />
         </CardContent>
       </Card>
+      </section>
+
+      {/* ── Section : Modèle LLM ───────────────────────────────────────── */}
+      <section className="space-y-4">
+        <div className="flex items-center gap-3">
+          <h3 className="text-base font-semibold">Modèle LLM</h3>
+          <div className="flex-1 h-px bg-border" />
+        </div>
 
       <Card>
         <CardHeader>
@@ -685,7 +701,198 @@ function Settings(): React.JSX.Element {
           </div>
         </CardContent>
       </Card>
+      </section>
+
+      {/* ── Section : Git Explorer ─────────────────────────────────────── */}
+      <section className="space-y-4">
+        <div className="flex items-center gap-3">
+          <h3 className="text-base font-semibold">Git Explorer</h3>
+          <div className="flex-1 h-px bg-border" />
+        </div>
+        <TempClonePathCard />
+      </section>
+
+      {/* ── Section : Chatbot ──────────────────────────────────────────── */}
+      <section className="space-y-4">
+        <div className="flex items-center gap-3">
+          <h3 className="text-base font-semibold">Chatbot</h3>
+          <div className="flex-1 h-px bg-border" />
+        </div>
+        <ChatbotConfigCard />
+      </section>
     </div>
+  )
+}
+
+function TempClonePathCard(): React.JSX.Element {
+  const config = useSettings((s) => s.config)
+  const refresh = useSettings((s) => s.refresh)
+  const [draft, setDraft] = useState(config.tempClonePath ?? '')
+
+  useEffect(() => {
+    setDraft(config.tempClonePath ?? '')
+  }, [config.tempClonePath])
+
+  const savePath = async (path: string | null): Promise<void> => {
+    await api.settings.setTempClonePath(path)
+    await refresh()
+  }
+
+  const browse = async (): Promise<void> => {
+    const result = await api.settings.chooseTempDir()
+    if (result.ok) {
+      setDraft(result.path)
+      await savePath(result.path)
+    }
+  }
+
+  const toggleSsh = async (value: boolean): Promise<void> => {
+    await api.settings.setGitCloneSsh(value)
+    await refresh()
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Dossier temporaire &amp; clonage Git</CardTitle>
+        <CardDescription>
+          Les jobs Git Explorer clonent temporairement les dépôts ici. Le dossier est nettoyé
+          après chaque job.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="space-y-2">
+          <Label>Dossier temporaire</Label>
+          <div className="flex gap-2">
+            <Input
+              placeholder="/tmp/tuleap-jobs"
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onBlur={() => void savePath(draft || null)}
+              spellCheck={false}
+              autoComplete="off"
+            />
+            <Button variant="secondary" onClick={() => void browse()}>
+              Parcourir…
+            </Button>
+          </div>
+          {config.tempClonePath && (
+            <p className="text-xs text-muted-foreground">
+              Actif : <code className="rounded bg-muted px-1 py-0.5">{config.tempClonePath}</code>
+            </p>
+          )}
+          {!config.tempClonePath && (
+            <p className="text-xs text-yellow-600 dark:text-yellow-400">
+              Non configuré — les jobs Git Explorer ne pourront pas démarrer.
+            </p>
+          )}
+        </div>
+
+        <div className="space-y-2 border-t pt-4">
+          <Label>Méthode de clonage</Label>
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              variant={config.gitCloneSsh ? 'default' : 'outline'}
+              onClick={() => void toggleSsh(true)}
+            >
+              SSH
+            </Button>
+            <Button
+              size="sm"
+              variant={!config.gitCloneSsh ? 'default' : 'outline'}
+              onClick={() => void toggleSsh(false)}
+            >
+              HTTPS + token
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {config.gitCloneSsh
+              ? 'SSH — utilise votre clé SSH système. Aucun token requis.'
+              : 'HTTPS — injecte votre token Tuleap dans l\'URL de clonage.'}
+          </p>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+function ChatbotConfigCard(): React.JSX.Element {
+  const config = useSettings((s) => s.config)
+  const setChatbotExpertMode = useSettings((s) => s.setChatbotExpertMode)
+  const setChatbotDoxygenMode = useSettings((s) => s.setChatbotDoxygenMode)
+  const setChatbotToolsEnabled = useSettings((s) => s.setChatbotToolsEnabled)
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Configuration du Chatbot</CardTitle>
+        <CardDescription>
+          Activez des modes supplémentaires pour enrichir le prompt système du chatbot.
+          Ces paramètres s&apos;appliquent à toutes les nouvelles conversations.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <label className="flex items-start gap-3 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={config.chatbotExpertMode}
+            onChange={(e) => setChatbotExpertMode(e.target.checked)}
+            className="mt-0.5 h-4 w-4 accent-primary"
+          />
+          <div>
+            <p className="text-sm font-medium">Mode Expert C/C++</p>
+            <p className="text-xs text-muted-foreground">
+              Injecte les règles de codage (types, conventions de nommage, exemples) dans le prompt système.
+              Recommandé pour la génération de code embarqué.
+            </p>
+          </div>
+        </label>
+
+        <label className="flex items-start gap-3 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={config.chatbotDoxygenMode}
+            onChange={(e) => setChatbotDoxygenMode(e.target.checked)}
+            className="mt-0.5 h-4 w-4 accent-primary"
+          />
+          <div>
+            <p className="text-sm font-medium">Mode Doxygen</p>
+            <p className="text-xs text-muted-foreground">
+              Ajoute les règles de documentation Doxygen complètes (en-tête de fichier, fonctions,
+              structures, balises de contrôle). Actif uniquement avec le mode Expert.
+            </p>
+          </div>
+        </label>
+
+        <label className="flex items-start gap-3 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={config.chatbotToolsEnabled}
+            onChange={(e) => setChatbotToolsEnabled(e.target.checked)}
+            className="mt-0.5 h-4 w-4 accent-primary"
+          />
+          <div>
+            <p className="text-sm font-medium">Activer les outils Tuleap</p>
+            <p className="text-xs text-muted-foreground">
+              Permet au chatbot d&apos;interroger l&apos;API Tuleap (projets, artéfacts, sprints).
+              Désactiver si le modèle ne supporte pas le tool calling.
+            </p>
+          </div>
+        </label>
+
+        {config.chatbotExpertMode && (
+          <div className="rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-xs text-muted-foreground">
+            Mode actif :{' '}
+            <span className="font-medium text-foreground">
+              Expert{config.chatbotDoxygenMode ? ' + Doxygen' : ''}
+            </span>
+            {' '}— le prompt système inclut les règles de codage
+            {config.chatbotDoxygenMode ? ' et de documentation.' : '.'}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   )
 }
 

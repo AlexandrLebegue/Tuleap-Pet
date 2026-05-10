@@ -19,7 +19,12 @@ const store = new Store<Schema>({
     authMode: 'token',
     oauthClientId: null,
     oauthScope: null,
-    openCodeBinary: null
+    openCodeBinary: null,
+    chatbotExpertMode: false,
+    chatbotDoxygenMode: false,
+    chatbotToolsEnabled: true,
+    tempClonePath: null,
+    gitCloneSsh: true
   },
   clearInvalidConfig: true
 })
@@ -43,8 +48,29 @@ export function getConfig(): AppConfig {
     authMode: (store.get('authMode') ?? 'token') as TuleapAuthMode,
     oauthClientId: store.get('oauthClientId') ?? null,
     oauthScope: store.get('oauthScope') ?? null,
-    openCodeBinary: store.get('openCodeBinary') ?? null
+    openCodeBinary: store.get('openCodeBinary') ?? null,
+    chatbotExpertMode: store.get('chatbotExpertMode') ?? false,
+    chatbotDoxygenMode: store.get('chatbotDoxygenMode') ?? false,
+    chatbotToolsEnabled: store.get('chatbotToolsEnabled') ?? true,
+    tempClonePath: store.get('tempClonePath') ?? null,
+    gitCloneSsh: store.get('gitCloneSsh') ?? true
   }
+}
+
+export function getTempClonePath(): string | null {
+  return store.get('tempClonePath') ?? null
+}
+
+export function setTempClonePath(p: string | null): void {
+  store.set('tempClonePath', p && p.trim().length > 0 ? p.trim() : null)
+}
+
+export function getGitCloneSsh(): boolean {
+  return store.get('gitCloneSsh') ?? true
+}
+
+export function setGitCloneSsh(value: boolean): void {
+  store.set('gitCloneSsh', value)
 }
 
 export function getLocalDirectConnection(): boolean {
@@ -128,6 +154,30 @@ export function setOAuthScope(scope: string | null): void {
 
 export function setOpenCodeBinary(path: string | null): void {
   store.set('openCodeBinary', path && path.trim().length > 0 ? path.trim() : null)
+}
+
+export function getChatbotExpertMode(): boolean {
+  return store.get('chatbotExpertMode') ?? false
+}
+
+export function getChatbotDoxygenMode(): boolean {
+  return store.get('chatbotDoxygenMode') ?? false
+}
+
+export function setChatbotExpertMode(value: boolean): void {
+  store.set('chatbotExpertMode', value)
+}
+
+export function setChatbotDoxygenMode(value: boolean): void {
+  store.set('chatbotDoxygenMode', value)
+}
+
+export function getChatbotToolsEnabled(): boolean {
+  return store.get('chatbotToolsEnabled') ?? true
+}
+
+export function setChatbotToolsEnabled(value: boolean): void {
+  store.set('chatbotToolsEnabled', value)
 }
 
 export function clearConfig(): void {

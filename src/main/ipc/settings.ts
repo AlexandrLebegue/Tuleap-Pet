@@ -4,18 +4,26 @@ import {
   DEFAULT_OAUTH_SCOPE,
   clearConfig,
   getConfig,
+  getChatbotDoxygenMode,
+  getChatbotExpertMode,
+  getChatbotToolsEnabled,
+  setChatbotToolsEnabled,
   getLocalBaseUrl,
   getLocalDirectConnection,
   getLocalModel,
   getLlmModel,
   getOAuthScope,
+  setChatbotDoxygenMode,
+  setChatbotExpertMode,
   setLocalBaseUrl,
   setLocalDirectConnection,
   setLocalModel,
   setLlmModel,
   setLlmProvider,
   setProjectId,
-  setTuleapUrl
+  setTuleapUrl,
+  getTempClonePath,
+  getGitCloneSsh
 } from '../store/config'
 import {
   clearLocalLlmKey,
@@ -57,6 +65,11 @@ export type SettingsState = {
   oauthDefaultScope: string
   hasOAuth: boolean
   openCodeBinary: string | null
+  chatbotExpertMode: boolean
+  chatbotDoxygenMode: boolean
+  chatbotToolsEnabled: boolean
+  tempClonePath: string | null
+  gitCloneSsh: boolean
 }
 
 function buildState(): SettingsState {
@@ -81,7 +94,12 @@ function buildState(): SettingsState {
     oauthScope: getOAuthScope(),
     oauthDefaultScope: DEFAULT_OAUTH_SCOPE,
     hasOAuth: hasOAuthBundle(),
-    openCodeBinary: config.openCodeBinary
+    openCodeBinary: config.openCodeBinary,
+    chatbotExpertMode: getChatbotExpertMode(),
+    chatbotDoxygenMode: getChatbotDoxygenMode(),
+    chatbotToolsEnabled: getChatbotToolsEnabled(),
+    tempClonePath: getTempClonePath(),
+    gitCloneSsh: getGitCloneSsh()
   }
 }
 
@@ -193,6 +211,27 @@ export function registerSettingsHandlers(): void {
   ipcMain.handle('settings:clear-local-key', () => {
     clearLocalLlmKey()
     audit('settings.clear-local-key')
+    return buildState()
+  })
+
+  ipcMain.handle('settings:set-chatbot-expert-mode', (_event, value: unknown) => {
+    if (typeof value !== 'boolean') throw new Error("Le paramètre 'value' doit être un booléen.")
+    setChatbotExpertMode(value)
+    audit('settings.set-chatbot-expert-mode', String(value))
+    return buildState()
+  })
+
+  ipcMain.handle('settings:set-chatbot-doxygen-mode', (_event, value: unknown) => {
+    if (typeof value !== 'boolean') throw new Error("Le paramètre 'value' doit être un booléen.")
+    setChatbotDoxygenMode(value)
+    audit('settings.set-chatbot-doxygen-mode', String(value))
+    return buildState()
+  })
+
+  ipcMain.handle('settings:set-chatbot-tools-enabled', (_event, value: unknown) => {
+    if (typeof value !== 'boolean') throw new Error("Le paramètre 'value' doit être un booléen.")
+    setChatbotToolsEnabled(value)
+    audit('settings.set-chatbot-tools-enabled', String(value))
     return buildState()
   })
 

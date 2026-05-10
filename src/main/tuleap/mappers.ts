@@ -3,18 +3,22 @@ import type {
   ArtifactFieldValue,
   ArtifactLink,
   ArtifactSummary,
+  GitCommit,
   MilestoneSummary,
   ProjectSummary,
+  TrackerFields,
   TrackerSummary
 } from '@shared/types'
 import type {
   ArtifactDetailRaw,
   ArtifactFieldValueRaw,
   ArtifactSummaryRaw,
+  GitCommitRaw,
   MilestoneContentItemRaw,
   MilestoneRaw,
   ProjectRaw,
-  TrackerRaw
+  TrackerRaw,
+  TrackerStructureRaw
 } from './schemas'
 
 export function mapProject(raw: ProjectRaw): ProjectSummary {
@@ -40,9 +44,12 @@ function rawToFieldValue(raw: ArtifactFieldValueRaw): ArtifactFieldValue {
 function rawSubmittedBy(raw: ArtifactSummaryRaw | ArtifactDetailRaw): string | null {
   const user = raw.submitted_by_user
   if (user) {
-    return user.real_name ?? user.username ?? null
+    // Prefer real_name; fall back to username; ignore empty strings
+    const name = (user.real_name ?? '').trim() || (user.username ?? '').trim()
+    return name || null
   }
-  return raw.submitted_by !== undefined && raw.submitted_by !== null ? String(raw.submitted_by) : null
+  // submitted_by is a numeric user ID — useless without a name
+  return null
 }
 
 export function mapArtifactSummary(raw: ArtifactSummaryRaw): ArtifactSummary {
@@ -83,12 +90,19 @@ export function mapMilestoneContentItem(raw: MilestoneContentItemRaw): ArtifactS
   }
 }
 
+function stripHtml(text: string): string {
+  return text.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
+}
+
 function extractDescription(values: ArtifactFieldValueRaw[]): string | null {
   for (const value of values) {
     const label = (value.label ?? '').toLowerCase()
-    if (label === 'description' || label === 'details') {
-      const v = (value as unknown as { value?: unknown }).value
-      if (typeof v === 'string' && v.length > 0) return v
+    if (label === 'description' || label === 'details' || label === 'résumé' || label === 'resume') {
+      const raw = value as unknown as Record<string, unknown>
+      // values_format=collection: { value: "text" }
+      if (typeof raw['value'] === 'string' && raw['value'].length > 0) {
+        return stripHtml(raw['value'])
+      }
     }
   }
   return null
@@ -138,6 +152,38 @@ export function mapArtifactDetail(raw: ArtifactDetailRaw): ArtifactDetail {
     description: extractDescription(values),
     values: values.map(rawToFieldValue),
     links: extractLinks(values)
+  }
+}
+
+export function mapGitCommit(raw: GitCommitRaw): GitCommit {
+  return {
+    id: raw.id,
+    shortId: raw.short_id ?? raw.id.slice(0, 7),
+    title: raw.title,
+    authorName: raw.author_name,
+    authoredDate: raw.authored_date
+  }
+}
+
+export function mapTrackerFields(raw: TrackerStructureRaw): TrackerFields {
+  const titleFieldId = raw.semantics?.title?.field_id ?? null
+  const descriptionFieldId = raw.semantics?.description?.field_id ?? null
+  const statusFieldId = raw.semantics?.status?.field_id ?? null
+  const statusFieldRaw =
+    statusFieldId !== null ? (raw.fields.find((f) => f.field_id === statusFieldId) ?? null) : null
+  return {
+    trackerId: raw.id,
+    titleFieldId,
+    descriptionFieldId,
+    statusFieldId,
+    statusField: statusFieldRaw
+      ? {
+          fieldId: statusFieldRaw.field_id,
+          label: statusFieldRaw.label,
+          type: statusFieldRaw.type,
+          bindValues: statusFieldRaw.values.map((v) => ({ id: v.id, label: v.label }))
+        }
+      : null
   }
 }
 

@@ -141,3 +141,91 @@ export const milestoneSchema = z
 export type MilestoneRaw = z.infer<typeof milestoneSchema>
 
 export const arrayOf = <T extends z.ZodTypeAny>(schema: T): z.ZodArray<T> => z.array(schema)
+
+// ---- Git repositories & branches ----
+
+export const gitRepositorySchema = z
+  .object({
+    id: z.number(),
+    name: z.string(),
+    description: z.string().optional().default(''),
+    // Tuleap versions differ on clone URL field names
+    clone_http_url: z.string().optional().default(''),
+    clone_ssh_url: z.string().optional().default(''),
+    http_url: z.string().optional().default(''),
+    path: z.string().optional().default(''),
+    path_without_project: z.string().optional().default(''),
+    clone_url: z
+      .object({
+        http: z.string().optional().default(''),
+        ssh: z.string().optional().default('')
+      })
+      .passthrough()
+      .optional()
+  })
+  .passthrough()
+
+export type GitRepositoryRaw = z.infer<typeof gitRepositorySchema>
+
+export const gitBranchSchema = z
+  .object({
+    name: z.string()
+  })
+  .passthrough()
+
+export type GitBranchRaw = z.infer<typeof gitBranchSchema>
+
+export const pullRequestCreatedSchema = z
+  .object({
+    id: z.number(),
+    html_url: z.string().optional().default('')
+  })
+  .passthrough()
+
+export type PullRequestCreatedRaw = z.infer<typeof pullRequestCreatedSchema>
+
+// ---- Git commits ----
+
+export const gitCommitSchema = z
+  .object({
+    id: z.string(),
+    short_id: z.string().optional(),
+    title: z.string().optional().default(''),
+    author_name: z.string().optional().default(''),
+    authored_date: z.string().optional().default('')
+  })
+  .passthrough()
+
+export type GitCommitRaw = z.infer<typeof gitCommitSchema>
+
+// ---- Tracker structure (for Kanban field/semantics discovery) ----
+
+export const trackerFieldBindValueSchema = z
+  .object({ id: z.number(), label: z.string() })
+  .passthrough()
+
+export const trackerFieldSchema = z
+  .object({
+    field_id: z.number(),
+    label: z.string().optional().default(''),
+    type: z.string().optional().default('unknown'),
+    values: z.array(trackerFieldBindValueSchema).optional().default([])
+  })
+  .passthrough()
+
+export const trackerStructureSchema = z
+  .object({
+    id: z.number(),
+    fields: z.array(trackerFieldSchema).optional().default([]),
+    semantics: z
+      .object({
+        title: z.object({ field_id: z.number() }).passthrough().optional(),
+        description: z.object({ field_id: z.number() }).passthrough().optional(),
+        status: z.object({ field_id: z.number() }).passthrough().optional()
+      })
+      .passthrough()
+      .optional()
+  })
+  .passthrough()
+
+export type TrackerStructureRaw = z.infer<typeof trackerStructureSchema>

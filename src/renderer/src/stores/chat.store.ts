@@ -17,6 +17,7 @@ type Store = {
   loadingMessages: boolean
   status: Status
   draft: string
+  thinking: boolean
   errorMessage: string | null
   unsubscribe: (() => void) | null
 
@@ -28,6 +29,7 @@ type Store = {
   rename: (id: number, title: string) => Promise<void>
   remove: (id: number) => Promise<void>
   setDraft: (text: string) => void
+  setThinking: (value: boolean) => void
   send: () => Promise<void>
   handleEvent: (event: ChatStreamEvent) => void
 }
@@ -50,6 +52,7 @@ export const useChat = create<Store>((set, get) => ({
   loadingMessages: false,
   status: 'idle',
   draft: '',
+  thinking: false,
   errorMessage: null,
   unsubscribe: null,
 
@@ -115,14 +118,16 @@ export const useChat = create<Store>((set, get) => ({
 
   setDraft: (text: string) => set({ draft: text }),
 
+  setThinking: (value: boolean) => set({ thinking: value }),
+
   send: async () => {
-    const { selectedId, draft } = get()
+    const { selectedId, draft, thinking } = get()
     if (!selectedId) return
     const trimmed = draft.trim()
     if (!trimmed) return
     set({ status: 'sending', draft: '', errorMessage: null })
     try {
-      const result = await api.chat.sendMessage({ conversationId: selectedId, content: trimmed })
+      const result = await api.chat.sendMessage({ conversationId: selectedId, content: trimmed, thinking })
       if (!result.ok) {
         set({ status: 'error', errorMessage: result.error })
       }

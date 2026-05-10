@@ -11,17 +11,26 @@ import {
   artifactDetailSchema,
   artifactSummarySchema,
   arrayOf,
+  gitBranchSchema,
+  gitCommitSchema,
+  gitRepositorySchema,
   milestoneContentItemSchema,
   milestoneSchema,
   projectSchema,
+  pullRequestCreatedSchema,
   trackerSchema,
+  trackerStructureSchema,
   userSelfSchema,
   type ArtifactDetailRaw,
   type ArtifactSummaryRaw,
+  type GitBranchRaw,
+  type GitCommitRaw,
+  type GitRepositoryRaw,
   type MilestoneContentItemRaw,
   type MilestoneRaw,
   type ProjectRaw,
   type TrackerRaw,
+  type TrackerStructureRaw,
   type UserSelf
 } from './schemas'
 
@@ -81,6 +90,50 @@ export class TuleapClient {
     this.authHeader = opts.authHeader ?? 'X-Auth-AccessKey'
     this.fetchImpl = opts.fetchImpl ?? globalThis.fetch.bind(globalThis)
     this.timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS
+  }
+
+  private async mutate(method: 'POST' | 'PUT', path: string, body: unknown): Promise<Response> {
+    const url = buildUrl(this.baseUrl, path)
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), this.timeoutMs)
+    const headers: Record<string, string> = {
+      Accept: 'application/json',
+      'Content-Type': 'application/json'
+    }
+    if (this.authHeader === 'Authorization') {
+      headers['Authorization'] = `Bearer ${this.token}`
+    } else {
+      headers['X-Auth-AccessKey'] = this.token
+    }
+    let response: Response
+    try {
+      response = await this.fetchImpl(url, {
+        method,
+        headers,
+        body: JSON.stringify(body),
+        signal: controller.signal
+      })
+    } catch (err) {
+      if (err instanceof TuleapError) throw err
+      const message = err instanceof Error ? err.message : String(err)
+      throw new TuleapNetworkError(`Erreur réseau vers ${url}: ${message}`)
+    } finally {
+      clearTimeout(timer)
+    }
+    if (response.status === 401 || response.status === 403) {
+      throw new TuleapAuthError(
+        `Authentification refusée par Tuleap (HTTP ${response.status}).`,
+        response.status
+      )
+    }
+    if (!response.ok) {
+      const text = await response.text().catch(() => '')
+      throw new TuleapServerError(
+        `Tuleap a renvoyé HTTP ${response.status}: ${text.slice(0, 300)}`,
+        response.status
+      )
+    }
+    return response
   }
 
   private async request(path: string, params?: Record<string, unknown>): Promise<Response> {
@@ -221,7 +274,22 @@ export class TuleapClient {
   }
 
   getArtifact(id: number): Promise<ArtifactDetailRaw> {
-    return this.json(artifactDetailSchema, `/api/artifacts/${id}`)
+    return this.json(artifactDetailSchema, `/api/artifacts/${id}`, {
+      values_format: 'collection',
+      tracker_structure_format: 'minimal'
+    })
+  }
+
+  listLinkedArtifacts(
+    artifactId: number,
+    opts?: { nature?: string; direction?: 'forward' | 'reverse' } & Pagination
+  ): Promise<PaginatedResponse<ArtifactSummaryRaw>> {
+    return this.paginated(artifactSummarySchema, `/api/artifacts/${artifactId}/linked_artifacts`, {
+      nature: opts?.nature ?? '_is_child',
+      direction: opts?.direction ?? 'forward',
+      limit: opts?.limit ?? DEFAULT_PAGE_LIMIT,
+      offset: opts?.offset ?? 0
+    })
   }
 
   countArtifacts(trackerId: number): Promise<number | null> {
@@ -260,6 +328,159 @@ export class TuleapClient {
       limit: opts?.limit ?? DEFAULT_PAGE_LIMIT,
       offset: opts?.offset ?? 0
     })
+  }
+
+  getTrackerFields(trackerId: number): Promise<TrackerStructureRaw> {
+    return this.json(trackerStructureSchema, `/api/trackers/${trackerId}`)
+  }
+
+  async createArtifact(args: {
+    trackerId: number
+    titleFieldId: number
+    title: string
+    statusFieldId: number | null
+    statusBindValueId: number | null
+    descriptionFieldId: number | null
+    description: string | null
+  }): Promise<{ id: number }> {
+    const values: unknown[] = [{ field_id: args.titleFieldId, value: args.title }]
+    if (args.statusFieldId !== null && args.statusBindValueId !== null) {
+      values.push({ field_id: args.statusFieldId, bind_value_ids: [args.statusBindValueId] })
+    }
+    if (args.descriptionFieldId !== null && args.description !== null) {
+      values.push({
+        field_id: args.descriptionFieldId,
+        value: { content: args.description, format: 'text' }
+      })
+    }
+    const response = await this.mutate('POST', '/api/artifacts', {
+      tracker: { id: args.trackerId },
+      values
+    })
+    let raw: unknown
+    try {
+      raw = await response.json()
+    } catch {
+      throw new TuleapSchemaError('Réponse non-JSON pour POST /api/artifacts')
+    }
+    const parsed = z.object({ id: z.number() }).passthrough().safeParse(raw)
+    if (!parsed.success) {
+      throw new TuleapSchemaError(`Réponse création artifact invalide: ${parsed.error.message}`)
+    }
+    return { id: parsed.data.id }
+  }
+
+  async updateArtifactStatus(args: {
+    artifactId: number
+    statusFieldId: number
+    statusBindValueId: number
+  }): Promise<void> {
+    await this.mutate('PUT', `/api/artifacts/${args.artifactId}`, {
+      values: [{ field_id: args.statusFieldId, bind_value_ids: [args.statusBindValueId] }]
+    })
+  }
+
+  async updateArtifact(args: {
+    artifactId: number
+    titleFieldId: number | null
+    title: string | null
+    descriptionFieldId: number | null
+    description: string | null
+    statusFieldId: number | null
+    statusBindValueId: number | null
+  }): Promise<void> {
+    const values: unknown[] = []
+    if (args.titleFieldId !== null && args.title !== null) {
+      values.push({ field_id: args.titleFieldId, value: args.title })
+    }
+    if (args.descriptionFieldId !== null && args.description !== null) {
+      values.push({ field_id: args.descriptionFieldId, value: { content: args.description, format: 'text' } })
+    }
+    if (args.statusFieldId !== null && args.statusBindValueId !== null) {
+      values.push({ field_id: args.statusFieldId, bind_value_ids: [args.statusBindValueId] })
+    }
+    if (values.length === 0) return
+    await this.mutate('PUT', `/api/artifacts/${args.artifactId}`, { values })
+  }
+
+  async listGitRepositories(
+    projectId: number,
+    opts?: Pagination
+  ): Promise<PaginatedResponse<GitRepositoryRaw>> {
+    const limit = opts?.limit ?? DEFAULT_PAGE_LIMIT
+    const offset = opts?.offset ?? 0
+    const path = `/api/projects/${projectId}/git`
+    const response = await this.request(path, { limit, offset })
+    const totalHeader = response.headers.get('X-PAGINATION-SIZE')
+    const total = totalHeader ? Number.parseInt(totalHeader, 10) : Number.NaN
+    let raw: unknown
+    try {
+      raw = await response.json()
+    } catch {
+      throw new TuleapSchemaError(`Réponse non-JSON pour ${path}`)
+    }
+    // Tuleap may return a plain array or wrap repos in { repositories: [...] }
+    const itemsRaw = Array.isArray(raw)
+      ? raw
+      : (raw as Record<string, unknown> | null)?.['repositories'] ?? []
+    const parsed = arrayOf(gitRepositorySchema).safeParse(itemsRaw)
+    if (!parsed.success) {
+      throw new TuleapSchemaError(
+        `Réponse Tuleap invalide pour ${path}: ${parsed.error.message.slice(0, 300)}\nPremier item brut: ${JSON.stringify(Array.isArray(itemsRaw) ? itemsRaw[0] : itemsRaw).slice(0, 500)}`
+      )
+    }
+    return {
+      items: parsed.data,
+      total: Number.isFinite(total) ? total : parsed.data.length,
+      limit,
+      offset
+    }
+  }
+
+  listBranches(
+    repoId: number,
+    opts?: Pagination
+  ): Promise<PaginatedResponse<GitBranchRaw>> {
+    return this.paginated(gitBranchSchema, `/api/git/${repoId}/branches`, {
+      limit: opts?.limit ?? DEFAULT_PAGE_LIMIT,
+      offset: opts?.offset ?? 0
+    })
+  }
+
+  listCommits(
+    repoId: number,
+    opts?: Pagination & { refName?: string }
+  ): Promise<PaginatedResponse<GitCommitRaw>> {
+    const params: Record<string, unknown> = {
+      limit: opts?.limit ?? DEFAULT_PAGE_LIMIT,
+      offset: opts?.offset ?? 0
+    }
+    if (opts?.refName) params['ref_name'] = opts.refName
+    return this.paginated(gitCommitSchema, `/api/git/${repoId}/commits`, params)
+  }
+
+  async createPullRequest(args: {
+    repoId: number
+    sourceBranch: string
+    targetBranch: string
+  }): Promise<{ id: number; htmlUrl: string }> {
+    const response = await this.mutate('POST', '/api/pull_requests', {
+      repository_id: args.repoId,
+      branch_src: args.sourceBranch,
+      repository_dest_id: args.repoId,
+      branch_dest: args.targetBranch
+    })
+    let raw: unknown
+    try {
+      raw = await response.json()
+    } catch {
+      throw new TuleapSchemaError('Réponse non-JSON pour POST /api/pull_requests')
+    }
+    const parsed = pullRequestCreatedSchema.safeParse(raw)
+    if (!parsed.success) {
+      throw new TuleapSchemaError(`Réponse PR invalide: ${parsed.error.message.slice(0, 300)}`)
+    }
+    return { id: parsed.data.id, htmlUrl: parsed.data.html_url ?? '' }
   }
 
   /** Fetch every page of a paginated endpoint and return a flat array of all items. */

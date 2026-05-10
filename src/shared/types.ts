@@ -21,6 +21,16 @@ export type AppConfig = {
   openCodeBinary: string | null
   /** Bypass system proxy for local LLM calls (uses a direct connection). */
   localDirectConnection: boolean
+  /** Chatbot: include expert C/C++ coding rules in system prompt. */
+  chatbotExpertMode: boolean
+  /** Chatbot: include Doxygen documentation rules in system prompt. */
+  chatbotDoxygenMode: boolean
+  /** Chatbot: enable Tuleap tool calling (get_self, list_artifacts, etc.). */
+  chatbotToolsEnabled: boolean
+  /** Path to temp folder used for auto-cloning repos during background jobs. */
+  tempClonePath: string | null
+  /** Use SSH for git clone in background jobs (no token injection needed). */
+  gitCloneSsh: boolean
 }
 
 export type ConnectionTestResult =
@@ -43,6 +53,25 @@ export type ProjectSummary = {
   shortname: string
   uri: string
 }
+
+export type GitRepository = {
+  id: number
+  name: string
+  description: string
+  cloneUrl: string
+}
+
+export type GitBranch = {
+  name: string
+}
+
+export type CommenterPRProgress =
+  | { type: 'start'; totalFiles: number; estimatedSeconds: number }
+  | { type: 'file'; index: number; total: number; filename: string; etaSeconds: number }
+  | { type: 'git'; step: 'checkout' | 'branch' | 'add' | 'commit' | 'push' }
+  | { type: 'pr'; prId: number }
+  | { type: 'done'; filesProcessed: number; skippedFiles: number; branchName: string }
+  | { type: 'error'; message: string }
 
 export type TrackerSummary = {
   id: number
@@ -110,9 +139,31 @@ export type SprintContent = {
   artifacts: ArtifactSummary[]
 }
 
+export type SprintReviewSlideType =
+  | 'titre'
+  | 'contexte'
+  | 'equipe'
+  | 'livrables'
+  | 'avancement'
+  | 'indicateurs'
+  | 'risques'
+  | 'synthese'
+
+export type SprintReviewProgressEvent =
+  | { type: 'enriching'; index: number; total: number }
+  | { type: 'summarizing' }
+  | { type: 'slide_start'; slide: SprintReviewSlideType; index: number; total: number }
+  | { type: 'slide_done'; slide: SprintReviewSlideType; index: number; total: number }
+  | { type: 'slide_error'; slide: SprintReviewSlideType; index: number; total: number; error: string }
+  | { type: 'assembling' }
+  | { type: 'done' }
+
+export type GenerationSource =
+  | { mode: 'sprint'; milestoneId: number }
+  | { mode: 'custom'; artifactIds: number[]; label: string }
+
 export type GenerationOptions = {
-  milestoneId: number
-  includeLinks?: boolean
+  source: GenerationSource
   language?: 'fr' | 'en'
 }
 
@@ -186,6 +237,25 @@ export type AdminScanResult = {
   openSprints: MilestoneSummary[]
 }
 
+// ---- Kanban / Tracker structure ----
+
+export type TrackerFieldBindValue = { id: number; label: string }
+
+export type TrackerField = {
+  fieldId: number
+  label: string
+  type: string
+  bindValues: TrackerFieldBindValue[]
+}
+
+export type TrackerFields = {
+  trackerId: number
+  titleFieldId: number | null
+  statusFieldId: number | null
+  descriptionFieldId: number | null
+  statusField: TrackerField | null
+}
+
 export type ChatStreamEvent =
   | { type: 'started'; conversationId: number; assistantMessageId: number }
   | { type: 'delta'; conversationId: number; assistantMessageId: number; delta: string }
@@ -215,3 +285,57 @@ export type ChatStreamEvent =
       model: string
     }
   | { type: 'error'; conversationId: number; assistantMessageId: number; error: string }
+
+// ---- Git Explorer ----
+
+export type GitCommit = {
+  id: string
+  shortId: string
+  title: string
+  authorName: string
+  authoredDate: string
+}
+
+export type CommentingOptions = {
+  preserveExisting: boolean
+  addFileHeader: boolean
+  detailedComments: boolean
+  applyCodingRules: boolean
+  onlyChangedFiles: boolean
+}
+
+export type JobType = 'commentateur' | 'test-generator'
+
+export type JobStatus =
+  | 'queued'
+  | 'cloning'
+  | 'processing'
+  | 'committing'
+  | 'pushing'
+  | 'creating-pr'
+  | 'done'
+  | 'error'
+  | 'cancelled'
+
+export type BackgroundJob = {
+  id: string
+  type: JobType
+  repoName: string
+  branchName: string
+  status: JobStatus
+  currentFile: string | null
+  progress: { current: number; total: number } | null
+  error: string | null
+  prId: number | null
+  prUrl: string | null
+  branchCreated: string | null
+  createdAt: number
+}
+
+export type JobStreamEvent =
+  | { type: 'queued'; job: BackgroundJob }
+  | { type: 'status'; jobId: string; status: JobStatus }
+  | { type: 'progress'; jobId: string; current: number; total: number; currentFile: string }
+  | { type: 'done'; jobId: string; prId: number | null; prUrl: string | null; branchCreated: string }
+  | { type: 'error'; jobId: string; error: string }
+  | { type: 'cancelled'; jobId: string }

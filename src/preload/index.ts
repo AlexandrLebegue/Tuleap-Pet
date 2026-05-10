@@ -8,13 +8,24 @@ import type {
   ChatStreamEvent,
   CoderContextResult,
   CoderStreamEvent,
+  CommenterPRProgress,
+  CommentingOptions,
   ConnectionTestResult,
+  GenerationSource,
+  GitBranch,
+  GitCommit,
+  GitRepository,
+  JobStreamEvent,
+  JobType,
   LlmProviderKind,
   MilestoneStatus,
   MilestoneSummary,
   Page,
   ProjectSummary,
   SprintContent,
+  SprintReviewProgressEvent,
+  SprintReviewSlideType,
+  TrackerFields,
   TrackerSummary
 } from '@shared/types'
 
@@ -39,6 +50,11 @@ export type SettingsState = {
   oauthDefaultScope: string
   hasOAuth: boolean
   openCodeBinary: string | null
+  chatbotExpertMode: boolean
+  chatbotDoxygenMode: boolean
+  chatbotToolsEnabled: boolean
+  tempClonePath: string | null
+  gitCloneSsh: boolean
 }
 
 const settings = {
@@ -66,7 +82,19 @@ const settings = {
   clearLocalKey: (): Promise<SettingsState> => ipcRenderer.invoke('settings:clear-local-key'),
   setLocalDirectConnection: (value: boolean): Promise<SettingsState> =>
     ipcRenderer.invoke('settings:set-local-direct-connection', value),
-  reset: (): Promise<SettingsState> => ipcRenderer.invoke('settings:reset')
+  setChatbotExpertMode: (value: boolean): Promise<SettingsState> =>
+    ipcRenderer.invoke('settings:set-chatbot-expert-mode', value),
+  setChatbotDoxygenMode: (value: boolean): Promise<SettingsState> =>
+    ipcRenderer.invoke('settings:set-chatbot-doxygen-mode', value),
+  setChatbotToolsEnabled: (value: boolean): Promise<SettingsState> =>
+    ipcRenderer.invoke('settings:set-chatbot-tools-enabled', value),
+  reset: (): Promise<SettingsState> => ipcRenderer.invoke('settings:reset'),
+  setTempClonePath: (path: string | null): Promise<{ tempClonePath: string | null; gitCloneSsh: boolean }> =>
+    ipcRenderer.invoke('settings:set-temp-clone-path', path),
+  setGitCloneSsh: (value: boolean): Promise<{ tempClonePath: string | null; gitCloneSsh: boolean }> =>
+    ipcRenderer.invoke('settings:set-git-clone-ssh', value),
+  chooseTempDir: (): Promise<{ ok: true; path: string } | { ok: false; cancelled: true }> =>
+    ipcRenderer.invoke('settings:choose-temp-dir')
 }
 
 const tuleap = {
@@ -80,7 +108,32 @@ const tuleap = {
     limit?: number
     offset?: number
   }): Promise<Page<ArtifactSummary>> => ipcRenderer.invoke('tuleap:list-artifacts', args),
-  getArtifact: (id: number): Promise<ArtifactDetail> => ipcRenderer.invoke('tuleap:get-artifact', id)
+  getArtifact: (id: number): Promise<ArtifactDetail> => ipcRenderer.invoke('tuleap:get-artifact', id),
+  getTrackerFields: (trackerId: number): Promise<TrackerFields> =>
+    ipcRenderer.invoke('tuleap:get-tracker-fields', { trackerId }),
+  createArtifact: (args: {
+    trackerId: number
+    titleFieldId: number
+    title: string
+    statusFieldId?: number | null
+    statusBindValueId?: number | null
+    descriptionFieldId?: number | null
+    description?: string | null
+  }): Promise<ArtifactSummary> => ipcRenderer.invoke('tuleap:create-artifact', args),
+  updateArtifactStatus: (args: {
+    artifactId: number
+    statusFieldId: number
+    statusBindValueId: number
+  }): Promise<{ ok: true }> => ipcRenderer.invoke('tuleap:update-artifact-status', args),
+  updateArtifact: (args: {
+    artifactId: number
+    titleFieldId?: number | null
+    title?: string | null
+    descriptionFieldId?: number | null
+    description?: string | null
+    statusFieldId?: number | null
+    statusBindValueId?: number | null
+  }): Promise<{ ok: true }> => ipcRenderer.invoke('tuleap:update-artifact', args)
 }
 
 type LlmTestResult =
@@ -92,6 +145,7 @@ type GenerationResult = {
   model: string
   finishReason: string | null
   usage: { inputTokens?: number; outputTokens?: number; totalTokens?: number } | null
+  slideWarnings?: { slide: SprintReviewSlideType; warning: string }[]
 }
 
 type MarpExportResult =
@@ -106,9 +160,16 @@ const generation = {
     ipcRenderer.invoke('generation:get-sprint-content', milestoneId),
   testLlm: (): Promise<LlmTestResult> => ipcRenderer.invoke('generation:test-llm'),
   generateSprintReview: (args: {
-    milestoneId: number
+    source: GenerationSource
     language?: 'fr' | 'en'
-  }): Promise<GenerationResult> => ipcRenderer.invoke('generation:generate-sprint-review', args)
+  }): Promise<GenerationResult> => ipcRenderer.invoke('generation:generate-sprint-review', args),
+  listTrackerArtifacts: (trackerId: number): Promise<ArtifactSummary[]> =>
+    ipcRenderer.invoke('generation:list-tracker-artifacts', trackerId),
+  subscribeProgress: (handler: (event: SprintReviewProgressEvent) => void): (() => void) => {
+    const wrapped = (_e: unknown, payload: SprintReviewProgressEvent): void => handler(payload)
+    ipcRenderer.on('generation:progress', wrapped)
+    return () => ipcRenderer.removeListener('generation:progress', wrapped)
+  }
 }
 
 const marp = {
@@ -136,7 +197,7 @@ const chat = {
     ipcRenderer.invoke('chat:rename-conversation', { id, title }),
   deleteConversation: (id: number): Promise<{ ok: true }> =>
     ipcRenderer.invoke('chat:delete-conversation', id),
-  sendMessage: (args: { conversationId: number; content: string }): Promise<ChatSendResult> =>
+  sendMessage: (args: { conversationId: number; content: string; thinking?: boolean }): Promise<ChatSendResult> =>
     ipcRenderer.invoke('chat:send-message', args),
   /** Subscribe to streaming events; returns an unsubscribe function. */
   subscribe: (handler: (event: ChatStreamEvent) => void): (() => void) => {
@@ -209,7 +270,131 @@ const admin = {
     ipcRenderer.invoke('admin:summarize', scan)
 }
 
-const api = { settings, tuleap, generation, marp, chat, auth, coder, admin, debug }
+export type CommenterFile = { name: string; content: string }
+export type CommenterOptions = {
+  preserveExisting: boolean
+  addFileHeader: boolean
+  detailedComments: boolean
+  applyCodingRules: boolean
+}
+export type CommenterResult = { results: CommenterFile[]; errors: { name: string; error: string }[] }
+
+const commenter = {
+  process: (args: { files: CommenterFile[]; options: CommenterOptions }): Promise<CommenterResult> =>
+    ipcRenderer.invoke('commenter:process', args),
+  saveFile: (args: { filename: string; content: string }): Promise<{ ok: boolean }> =>
+    ipcRenderer.invoke('commenter:save-file', args),
+  saveAll: (args: { files: CommenterFile[] }): Promise<{ ok: boolean; savedCount: number }> =>
+    ipcRenderer.invoke('commenter:save-all', args)
+}
+
+export type CorrectorFile = { name: string; content: string }
+export type CorrectorResult = {
+  corrected: CorrectorFile[]
+  summaries: { name: string; summary: string }[]
+  errorAnalysis: string
+}
+
+const corrector = {
+  analyze: (args: { errorContent: string }): Promise<{ analysis: string }> =>
+    ipcRenderer.invoke('corrector:analyze', args),
+  correct: (args: {
+    files: CorrectorFile[]
+    errorContent: string
+    analysis: string
+  }): Promise<CorrectorResult> => ipcRenderer.invoke('corrector:correct', args),
+  saveFile: (args: { filename: string; content: string }): Promise<{ ok: boolean }> =>
+    ipcRenderer.invoke('corrector:save-file', args),
+  saveAll: (args: { files: CorrectorFile[] }): Promise<{ ok: boolean; savedCount: number }> =>
+    ipcRenderer.invoke('corrector:save-all', args)
+}
+
+export type ParsedFunction = {
+  name: string
+  signature: string
+  lineNumber: number
+  sourceCode: string
+  parameters: { name: string; type: string }[]
+  returnType: string
+  description: string
+}
+
+export type TestGenResult = {
+  testFiles: CommenterFile[]
+  metrics: { apiCalls: number; testsGenerated: number; testsFailed: number; totalTime: number }
+}
+
+const testgen = {
+  extractFunctions: (args: { filename: string; content: string }): Promise<{ functions: ParsedFunction[]; fileInfo: Record<string, unknown> }> =>
+    ipcRenderer.invoke('testgen:extract-functions', args),
+  generateAll: (args: { filename: string; content: string }): Promise<TestGenResult> =>
+    ipcRenderer.invoke('testgen:generate-all', args),
+  saveFile: (args: { filename: string; content: string }): Promise<{ ok: boolean }> =>
+    ipcRenderer.invoke('testgen:save-file', args),
+  saveAll: (args: { files: CommenterFile[] }): Promise<{ ok: boolean; savedCount: number }> =>
+    ipcRenderer.invoke('testgen:save-all', args)
+}
+
+const commenterPr = {
+  listRepos: (): Promise<GitRepository[]> =>
+    ipcRenderer.invoke('commenter-pr:list-repos'),
+
+  listBranches: (repoId: number): Promise<GitBranch[]> =>
+    ipcRenderer.invoke('commenter-pr:list-branches', repoId),
+
+  chooseDir: (): Promise<{ ok: boolean; path?: string }> =>
+    ipcRenderer.invoke('commenter-pr:choose-dir'),
+
+  start: (args: {
+    workDir: string
+    repoId: number
+    branch: string
+    options: CommenterOptions
+  }): Promise<{ ok: boolean; branchName?: string; prId?: number; prUrl?: string; error?: string }> =>
+    ipcRenderer.invoke('commenter-pr:start', args),
+
+  subscribe: (handler: (event: CommenterPRProgress) => void): (() => void) => {
+    const wrapped = (_e: unknown, payload: CommenterPRProgress): void => handler(payload)
+    ipcRenderer.on('commenter-pr:progress', wrapped)
+    return () => ipcRenderer.removeListener('commenter-pr:progress', wrapped)
+  }
+}
+
+const gitExplorer = {
+  listRepos: (): Promise<GitRepository[]> =>
+    ipcRenderer.invoke('git:list-repos'),
+
+  listBranches: (repoId: number): Promise<GitBranch[]> =>
+    ipcRenderer.invoke('git:list-branches', repoId),
+
+  listCommits: (args: {
+    repoId: number
+    branchName: string
+    offset?: number
+  }): Promise<Page<GitCommit>> =>
+    ipcRenderer.invoke('git:list-commits', args),
+
+  startJob: (args: {
+    repoId: number
+    repoName: string
+    cloneUrl: string
+    branchName: string
+    type: JobType
+    options?: CommentingOptions
+  }): Promise<{ jobId: string }> =>
+    ipcRenderer.invoke('git:start-job', args),
+
+  cancelJob: (jobId: string): Promise<void> =>
+    ipcRenderer.invoke('git:cancel-job', jobId),
+
+  subscribe: (handler: (event: JobStreamEvent) => void): (() => void) => {
+    const wrapped = (_e: unknown, payload: JobStreamEvent): void => handler(payload)
+    ipcRenderer.on('jobs:stream', wrapped)
+    return () => ipcRenderer.removeListener('jobs:stream', wrapped)
+  }
+}
+
+const api = { settings, tuleap, generation, marp, chat, auth, coder, admin, debug, commenter, corrector, testgen, commenterPr, gitExplorer }
 
 if (process.contextIsolated) {
   try {
