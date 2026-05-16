@@ -1,0 +1,65 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": { "major": 3, "minor": 25, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "ci-gcc",
+      "displayName": "CI - GCC (Linux)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/ci-gcc",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_C_COMPILER": "gcc",
+        "CMAKE_CXX_COMPILER": "g++",
+        "CPP_DEMO_BUILD_TESTS": "ON"
+      }
+    },
+    {
+      "name": "ci-msvc",
+      "displayName": "CI - MSVC (Windows)",
+      "generator": "Visual Studio 17 2022",
+      "binaryDir": "${sourceDir}/build/ci-msvc",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CPP_DEMO_BUILD_TESTS": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    { "name": "ci-gcc",  "configurePreset": "ci-gcc",  "configuration": "Release" },
+    { "name": "ci-msvc", "configurePreset": "ci-msvc", "configuration": "Release" }
+  ],
+  "testPresets": [
+    {
+      "name": "ci-gcc",
+      "configurePreset": "ci-gcc",
+      "output": { "outputOnFailure": true },
+      "execution": { "stopOnFailure": false }
+    },
+    {
+      "name": "ci-msvc",
+      "configurePreset": "ci-msvc",
+      "configuration": "Release",
+      "output": { "outputOnFailure": true },
+      "execution": { "stopOnFailure": false }
+    }
+  ],
+  "workflowPresets": [
+    {
+      "name": "ci-gcc",
+      "steps": [
+        { "type": "configure", "name": "ci-gcc" },
+        { "type": "build",     "name": "ci-gcc" },
+        { "type": "test",      "name": "ci-gcc" }
+      ]
+    },
+    {
+      "name": "ci-msvc",
+      "steps": [
+        { "type": "configure", "name": "ci-msvc" },
+        { "type": "build",     "name": "ci-msvc" },
+        { "type": "test",      "name": "ci-msvc" }
+      ]
+    }
+  ]
+}
