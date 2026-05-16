@@ -44,11 +44,12 @@ function rawToFieldValue(raw: ArtifactFieldValueRaw): ArtifactFieldValue {
 function rawSubmittedBy(raw: ArtifactSummaryRaw | ArtifactDetailRaw): string | null {
   const user = raw.submitted_by_user
   if (user) {
-    // Prefer real_name; fall back to username; ignore empty strings
     const name = (user.real_name ?? '').trim() || (user.username ?? '').trim()
-    return name || null
+    if (name) return name
   }
-  // submitted_by is a numeric user ID — useless without a name
+  if (raw.submitted_by !== undefined && raw.submitted_by !== null) {
+    return String(raw.submitted_by)
+  }
   return null
 }
 

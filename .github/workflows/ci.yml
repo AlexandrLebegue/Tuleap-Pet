@@ -21,6 +21,10 @@ jobs:
           node-version: '20'
           cache: 'npm'
       - run: npm ci
+      # postinstall (electron-builder install-app-deps) rebuilds native
+      # modules for Electron's Node ABI. Unit tests run on plain Node,
+      # so we rebuild better-sqlite3 against the runner's Node version.
+      - run: npm rebuild better-sqlite3
       - run: npm test
 
   build:
