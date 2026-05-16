@@ -23,10 +23,6 @@ services:
     image: tuleap/tuleap-community-edition:latest
     container_name: tuleap-pet-tuleap
     privileged: true
-    cgroup: host
-    security_opt:
-      - seccomp:unconfined
-      - apparmor:unconfined
     hostname: tuleap.local
     depends_on:
       mysql:
@@ -41,12 +37,7 @@ services:
       SITE_ADMINISTRATOR_PASSWORD: ${SITE_ADMINISTRATOR_PASSWORD:?SITE_ADMINISTRATOR_PASSWORD must be set}
       DB_ADMIN_USER: root
       DB_ADMIN_PASSWORD: ${MYSQL_ROOT_PASSWORD}
-    tmpfs:
-      - /tmp
-      - /run
-      - /run/lock
     volumes:
-      - /sys/fs/cgroup:/sys/fs/cgroup:rw
       - tuleap-data:/data
 
 volumes:

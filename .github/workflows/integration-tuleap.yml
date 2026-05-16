@@ -2,7 +2,7 @@ name: Integration (Tuleap)
 
 on:
   push:
-    branches: [main, claude/features-phase5-10]
+    branches: [main]
   schedule:
     - cron: '0 3 * * *'
   workflow_dispatch:

@@ -158,6 +158,33 @@ Voir [`docs/architecture.md`](docs/architecture.md) pour les flux IPC et de séc
 npm test
 ```
 
+### Tests d'intégration (Tuleap dockerisé)
+
+Une suite séparée (`tests/integration/*.integration.test.ts`) tourne contre
+une vraie instance Tuleap lancée via Docker. **Localement** :
+
+```bash
+export MYSQL_ROOT_PASSWORD=rootRootRoot12345678 \
+       TULEAP_SYS_DBPASSWD=tuleapDbPass12345678 \
+       SITE_ADMINISTRATOR_PASSWORD=SiteAdminPass12345678
+docker compose -f ci/tuleap-compose.yml up -d
+bash scripts/tuleap-bootstrap.sh
+export $(grep -v '^#' .tuleap-test.env | xargs)
+NODE_TLS_REJECT_UNAUTHORIZED=0 npm run test:integration
+```
+
+**En CI** : le workflow `Integration (Tuleap)` ne tourne **pas** sur les
+pull requests. L'image `tuleap/tuleap-community-edition` ne boote pas sur
+les runners GitHub-hosted (`ubuntu-22.04` / `ubuntu-24.04`) à cause d'un
+conflit entre le script de setup `site-deploy:gitolite3-hooks` (qui appelle
+`sudo -u gitolite`) et l'environnement cgroup v2 + AppArmor du runner : PAM
+renvoie *"Authentication service cannot retrieve authentication info"*. Les
+patches compose (`cgroup: host`, `security_opt: [seccomp/apparmor unconfined]`,
+`tmpfs`) n'y changent rien. Le job tourne donc uniquement en **nightly
+schedule** et **workflow_dispatch** ; il restera rouge tant qu'on n'a pas
+soit (a) un runner self-hosted, soit (b) une image fixture pré-initialisée
+hébergée sur un registry.
+
 ## Backlog hors-scope
 
 Voir [`docs/backlog.md`](docs/backlog.md).
