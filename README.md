@@ -2,13 +2,14 @@
 
 Application desktop **Electron** qui se branche sur une instance Tuleap et offre un compagnon IA local-first pour les équipes ALM. Provider LLM enfichable : la Phase 1+ utilise **OpenRouter** (clé API ; modèle par défaut `minimax/minimax-m2:free`), Ollama / OpenAI / Anthropic suivront le même contrat.
 
-> Statut actuel : **Phases 0 → 4 livrées**.
+> Statut actuel : **Phases 0 → 4 livrées + Phases 5-10 (features Dev × Tuleap)**.
 >
 > - Phase 0 : connexion Tuleap (token API), sélection projet, parcours trackers/artéfacts.
 > - Phase 1 : génération de sprint reviews Markdown Marp + export PPTX via OpenRouter.
 > - Phase 2 : chatbot avec tools Tuleap (function calling, streaming, persistance SQLite).
 > - Phase 3 : OAuth2 + PKCE comme alternative au token, lancement OpenCode (Coder).
 > - Phase 4 : monitor admin (scan d'activité + synthèse IA).
+> - **Phases 5-10** : Sprint Board + Backlog, Ticket → Branche, PR ↔ AC, Knowledge Base (RAG), Release Notes, Sprint Planning, Bug Repro, Code → Tuleap Traceability, **write tools chatbot (avec confirm modal)**.
 
 ## Stack
 
@@ -62,9 +63,17 @@ Onglets disponibles :
 | **Réglages** | 0 | URL Tuleap, auth, projet, clé OpenRouter, modèle |
 | **Projet** | 0 | Trackers, artéfacts paginés, panneau de détail |
 | **Génération IA** | 1 | Sprint review Marp → PPTX |
-| **Chatbot** | 2 | Conversations persistantes avec tools Tuleap |
+| **Chatbot** | 2 | Conversations persistantes avec tools Tuleap (lecture + écritures avec confirm) |
 | **Coder** | 3 | Construction de contexte Tuleap → lancement OpenCode |
 | **Admin** | 4 | Scan d'activité + synthèse IA |
+| **Sprint Board** | 5 | Backlog + Kanban par workflow + scan risques IA |
+| **Ticket → Branche** | 5 | Crée la branche git, scaffold commit+PR, commente l'artéfact |
+| **PR ↔ AC** | 5 | Vérifie acceptance criteria contre le diff d'une PR |
+| **Knowledge Base** | 5 | Indexe artéfacts fermés (FTS5) + recherche full-text |
+| **Release Notes** | 5 | git log + artéfacts résolus → changelog Markdown |
+| **Sprint Planning** | 5 | Vélocité + composition de sprint avec IA |
+| **Bug Repro** | 5 | Bug Tuleap + repo → test unitaire qui échoue |
+| **Traceability** | 5 | Historique d'un fichier ↔ artéfacts Tuleap référencés |
 
 ## Scripts
 
