@@ -284,16 +284,44 @@ export class TuleapClient {
     })
   }
 
-  listLinkedArtifacts(
+  async listLinkedArtifacts(
     artifactId: number,
     opts?: { nature?: string; direction?: 'forward' | 'reverse' } & Pagination
   ): Promise<PaginatedResponse<ArtifactSummaryRaw>> {
-    return this.paginated(artifactSummarySchema, `/api/artifacts/${artifactId}/linked_artifacts`, {
-      nature: opts?.nature ?? '_is_child',
+    const params: Record<string, unknown> = {
       direction: opts?.direction ?? 'forward',
       limit: opts?.limit ?? DEFAULT_PAGE_LIMIT,
       offset: opts?.offset ?? 0
-    })
+    }
+    if (opts?.nature && opts.nature.length > 0) {
+      params['nature'] = opts.nature
+    }
+    const path = `/api/artifacts/${artifactId}/linked_artifacts`
+    const response = await this.request(path, params)
+    const totalHeader = response.headers.get('X-PAGINATION-SIZE')
+    const total = totalHeader ? Number.parseInt(totalHeader, 10) : Number.NaN
+    let raw: unknown
+    try {
+      raw = await response.json()
+    } catch {
+      throw new TuleapSchemaError(`Réponse non-JSON pour ${path}`)
+    }
+    // Tuleap renvoie soit un array, soit { collection: [...] }.
+    const itemsRaw = Array.isArray(raw)
+      ? raw
+      : (raw as Record<string, unknown> | null)?.['collection'] ?? []
+    const parsed = arrayOf(artifactSummarySchema).safeParse(itemsRaw)
+    if (!parsed.success) {
+      throw new TuleapSchemaError(
+        `Réponse Tuleap invalide pour ${path}: ${parsed.error.message.slice(0, 300)}`
+      )
+    }
+    return {
+      items: parsed.data,
+      total: Number.isFinite(total) ? total : parsed.data.length,
+      limit: (params['limit'] as number) ?? DEFAULT_PAGE_LIMIT,
+      offset: (params['offset'] as number) ?? 0
+    }
   }
 
   countArtifacts(trackerId: number): Promise<number | null> {
