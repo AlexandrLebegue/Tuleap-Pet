@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, claude/features-phase5-10]
   pull_request:
 
 concurrency:
