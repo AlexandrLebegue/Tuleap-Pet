@@ -92,7 +92,11 @@ export class TuleapClient {
     this.timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS
   }
 
-  private async mutate(method: 'POST' | 'PUT', path: string, body: unknown): Promise<Response> {
+  private async mutate(
+    method: 'POST' | 'PUT' | 'PATCH',
+    path: string,
+    body: unknown
+  ): Promise<Response> {
     const url = buildUrl(this.baseUrl, path)
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), this.timeoutMs)
@@ -457,6 +461,76 @@ export class TuleapClient {
     }
     if (opts?.refName) params['ref_name'] = opts.refName
     return this.paginated(gitCommitSchema, `/api/git/${repoId}/commits`, params)
+  }
+
+  /**
+   * Add a free-text comment to an artifact via the changesets endpoint.
+   * Tuleap accepts an empty `values` list as a way to register a "comment-only"
+   * changeset.
+   */
+  async addArtifactComment(args: {
+    artifactId: number
+    body: string
+    format?: 'text' | 'html'
+  }): Promise<void> {
+    await this.mutate('PUT', `/api/artifacts/${args.artifactId}`, {
+      values: [],
+      comment: { body: args.body, format: args.format ?? 'text' }
+    })
+  }
+
+  /**
+   * Link an artifact to one or more children. Tuleap's link semantics live in
+   * a dedicated "artifact link" field — the caller has to pass its id (which
+   * we get from getTrackerFields).
+   */
+  async linkArtifacts(args: {
+    artifactId: number
+    linkFieldId: number
+    childIds: number[]
+    nature?: string
+  }): Promise<void> {
+    const links = args.childIds.map((id) =>
+      args.nature ? { id, type: args.nature } : { id }
+    )
+    await this.mutate('PUT', `/api/artifacts/${args.artifactId}`, {
+      values: [{ field_id: args.linkFieldId, links }]
+    })
+  }
+
+  /** Reorder backlog items inside a milestone. Items must already belong to the milestone. */
+  async reorderMilestoneBacklog(args: {
+    milestoneId: number
+    orderedIds: number[]
+    pivotId?: number
+    direction?: 'before' | 'after'
+  }): Promise<void> {
+    const body: Record<string, unknown> = {
+      order: args.pivotId
+        ? { ids: args.orderedIds, direction: args.direction ?? 'before', compared_to: args.pivotId }
+        : { ids: args.orderedIds }
+    }
+    await this.mutate('PATCH', `/api/milestones/${args.milestoneId}/content`, body)
+  }
+
+  /** Add artifacts to a milestone's content (= move them into the sprint). */
+  async addArtifactsToMilestone(args: {
+    milestoneId: number
+    artifactIds: number[]
+  }): Promise<void> {
+    await this.mutate('PATCH', `/api/milestones/${args.milestoneId}/content`, {
+      add: args.artifactIds.map((id) => ({ id }))
+    })
+  }
+
+  /** Remove artifacts from a milestone (= move back to backlog). */
+  async removeArtifactsFromMilestone(args: {
+    milestoneId: number
+    artifactIds: number[]
+  }): Promise<void> {
+    await this.mutate('PATCH', `/api/milestones/${args.milestoneId}/content`, {
+      remove: args.artifactIds.map((id) => ({ id }))
+    })
   }
 
   async createPullRequest(args: {

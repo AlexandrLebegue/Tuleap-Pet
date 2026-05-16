@@ -394,7 +394,107 @@ const gitExplorer = {
   }
 }
 
-const api = { settings, tuleap, generation, marp, chat, auth, coder, admin, debug, commenter, corrector, testgen, commenterPr, gitExplorer }
+// ----- Phase 5-10 features -----
+
+export type PendingWriteAction =
+  | { kind: 'add_comment'; artifactId: number; comment: string; format?: 'text' | 'html' }
+  | { kind: 'transition_status'; artifactId: number; newStatus: string }
+  | { kind: 'create_artifact'; trackerId: number; title: string; description: string | null }
+  | { kind: 'move_to_sprint'; artifactIds: number[]; milestoneId: number | null; fromMilestoneId?: number | null }
+  | { kind: 'link_artifacts'; parentId: number; childIds: number[] }
+
+const tuleapWrite = {
+  apply: (
+    action: PendingWriteAction
+  ): Promise<{ ok: true; message: string } | { ok: false; error: string }> =>
+    ipcRenderer.invoke('tuleap:apply-write', action)
+}
+
+const sprintBoard = {
+  listOpenSprints: (): Promise<MilestoneSummary[]> => ipcRenderer.invoke('sprint:list-open'),
+  getBoard: (args: {
+    milestoneId: number | null
+  }): Promise<{
+    sprint: MilestoneSummary | null
+    sprintItems: ArtifactSummary[]
+    backlogItems: ArtifactSummary[]
+    workflow: string[]
+  }> => ipcRenderer.invoke('sprint:get-board', args),
+  scanRisks: (
+    args: { items: ArtifactSummary[] }
+  ): Promise<{ ok: true; risks: Array<{ id: number; level: 'low' | 'medium' | 'high'; reason: string }> }> =>
+    ipcRenderer.invoke('sprint:scan-risks', args)
+}
+
+const ticketBranch = {
+  preview: (args: { artifactId: number }) =>
+    ipcRenderer.invoke('ticket-branch:preview', args) as Promise<
+      | { ok: true; branchName: string; commitMessage: string; prBody: string; contextMarkdown: string }
+      | { ok: false; error: string }
+    >,
+  execute: (args: {
+    artifactId: number
+    repoPath: string
+    baseBranch: string
+    branchPrefix?: string
+    pushImmediately?: boolean
+    postComment?: boolean
+    pushRemote?: string
+  }) => ipcRenderer.invoke('ticket-branch:execute', args),
+  chooseRepo: (): Promise<{ ok: true; path: string } | { ok: false; cancelled: true }> =>
+    ipcRenderer.invoke('ticket-branch:choose-repo'),
+  makeTempDir: (): Promise<{ ok: true; path: string }> =>
+    ipcRenderer.invoke('ticket-branch:make-tempdir')
+}
+
+const prAc = {
+  analyze: (args: { repoPath: string; baseBranch: string; headBranch: string; artifactIdHint?: number | null }) =>
+    ipcRenderer.invoke('pr-ac:analyze', args),
+  postComment: (args: { artifactId: number; markdown: string }) =>
+    ipcRenderer.invoke('pr-ac:post-comment', args)
+}
+
+const rag = {
+  index: () => ipcRenderer.invoke('rag:index'),
+  search: (args: { query: string; limit?: number }) => ipcRenderer.invoke('rag:search', args),
+  subscribeProgress: (handler: (payload: { done: number; total: number }) => void): (() => void) => {
+    const wrapped = (_e: unknown, payload: { done: number; total: number }): void => handler(payload)
+    ipcRenderer.on('rag:progress', wrapped)
+    return () => ipcRenderer.removeListener('rag:progress', wrapped)
+  }
+}
+
+const releaseNotes = {
+  generate: (args: {
+    repoPath: string
+    fromRef: string
+    toRef: string
+    windowDays?: number
+    artifactRefRegex?: string
+  }) => ipcRenderer.invoke('release-notes:generate', args),
+  listTags: (repoPath: string): Promise<string[]> =>
+    ipcRenderer.invoke('release-notes:list-tags', repoPath)
+}
+
+const sprintPlanning = {
+  propose: (args: { milestoneId: number; absencesNote?: string; capacityFactor?: number }) =>
+    ipcRenderer.invoke('planning:propose', args)
+}
+
+const bugRepro = {
+  generate: (args: { artifactId: number; repoPath: string; saveToFile?: boolean }) =>
+    ipcRenderer.invoke('bug-repro:generate', args)
+}
+
+const traceability = {
+  fileHistory: (args: { repoPath: string; filePath: string; refRegex?: string; limit?: number }) =>
+    ipcRenderer.invoke('trace:file-history', args)
+}
+
+const api = {
+  settings, tuleap, generation, marp, chat, auth, coder, admin, debug, commenter, corrector, testgen, commenterPr, gitExplorer,
+  tuleapWrite, sprintBoard, ticketBranch, prAc, rag, releaseNotes, sprintPlanning, bugRepro, traceability
+}
 
 if (process.contextIsolated) {
   try {

@@ -11,7 +11,15 @@ import {
   GitPullRequest,
   GitBranch,
   Wrench,
-  FlaskConical
+  FlaskConical,
+  LayoutGrid,
+  BookOpen,
+  ClipboardCheck,
+  FileText,
+  CalendarRange,
+  Bug,
+  History,
+  Rocket
 } from 'lucide-react'
 import { cn } from '@renderer/lib/utils'
 import ConnectionStatusBadge from './ConnectionStatusBadge'
@@ -40,9 +48,22 @@ const groups: NavGroup[] = [
     label: 'Tuleap',
     items: [
       { to: '/project', label: 'Projet', icon: FolderKanban },
+      { to: '/sprint', label: 'Sprint Board', icon: LayoutGrid },
+      { to: '/sprint-planning', label: 'Sprint Planning', icon: CalendarRange },
       { to: '/admin', label: 'Admin', icon: Gauge },
       { to: '/generation', label: 'Génération IA', icon: Sparkles },
+      { to: '/knowledge', label: 'Knowledge Base', icon: BookOpen },
       { to: '/git', label: 'Git Explorer', icon: GitBranch }
+    ]
+  },
+  {
+    label: 'Dev × Tuleap',
+    items: [
+      { to: '/ticket-branch', label: 'Ticket → Branche', icon: Rocket },
+      { to: '/pr-ac', label: 'PR ↔ AC', icon: ClipboardCheck },
+      { to: '/release-notes', label: 'Release Notes', icon: FileText },
+      { to: '/bug-repro', label: 'Bug Repro', icon: Bug },
+      { to: '/traceability', label: 'Traceability', icon: History }
     ]
   },
   {

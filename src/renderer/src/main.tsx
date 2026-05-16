@@ -15,6 +15,14 @@ import CommenterPR from './routes/CommenterPR'
 import Corrector from './routes/Corrector'
 import TestGenerator from './routes/TestGenerator'
 import GitExplorer from './routes/GitExplorer'
+import SprintBoard from './routes/SprintBoard'
+import TicketBranch from './routes/TicketBranch'
+import PrAcReview from './routes/PrAcReview'
+import KnowledgeBase from './routes/KnowledgeBase'
+import ReleaseNotes from './routes/ReleaseNotes'
+import SprintPlanning from './routes/SprintPlanning'
+import BugRepro from './routes/BugRepro'
+import Traceability from './routes/Traceability'
 
 const router = createHashRouter([
   {
@@ -32,7 +40,15 @@ const router = createHashRouter([
       { path: 'commenter-pr', element: <CommenterPR /> },
       { path: 'corrector', element: <Corrector /> },
       { path: 'test-generator', element: <TestGenerator /> },
-      { path: 'git', element: <GitExplorer /> }
+      { path: 'git', element: <GitExplorer /> },
+      { path: 'sprint', element: <SprintBoard /> },
+      { path: 'ticket-branch', element: <TicketBranch /> },
+      { path: 'pr-ac', element: <PrAcReview /> },
+      { path: 'knowledge', element: <KnowledgeBase /> },
+      { path: 'release-notes', element: <ReleaseNotes /> },
+      { path: 'sprint-planning', element: <SprintPlanning /> },
+      { path: 'bug-repro', element: <BugRepro /> },
+      { path: 'traceability', element: <Traceability /> }
     ]
   }
 ])
