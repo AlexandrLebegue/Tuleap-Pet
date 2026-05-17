@@ -1,8 +1,10 @@
-import { dialog } from 'electron'
-import { ipcMain } from 'electron'
+import { BrowserWindow, dialog, ipcMain } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
 import { extractFunctions, generateTestsGranular } from '../test-generator/test-generator'
+import { runPipeline } from '../test-generator/pipeline'
+import type { PipelineProgress } from '../test-generator/pipeline'
+import { getCppProjectRoot } from '../store/config'
 import { audit } from '../store/db'
 import { debugError } from '../logger'
 
@@ -76,4 +78,77 @@ export function registerTestGeneratorHandlers(): void {
     audit('testgen.save-all', dir, { savedCount })
     return { ok: true, savedCount }
   })
+
+  ipcMain.handle('testgen:resolve-source', async (_event, args: unknown) => {
+    const { filename } = args as { filename: string }
+    const root = getCppProjectRoot()
+    if (!root) return { ok: false as const, reason: 'no-project-root' }
+    if (!fs.existsSync(root)) return { ok: false as const, reason: 'project-missing' }
+    const base = path.basename(filename)
+    const matches: string[] = []
+    walkForBasename(root, base, matches, 1000)
+    if (matches.length === 0) return { ok: false as const, reason: 'not-found' }
+    return { ok: true as const, candidates: matches }
+  })
+
+  ipcMain.handle('testgen:run-pipeline', async (event, args: unknown) => {
+    const { sourceFilePath, onlyFunctions, buildEnabled, preset, maxRepairs } = args as {
+      sourceFilePath: string
+      onlyFunctions?: string[]
+      buildEnabled: boolean
+      preset?: string
+      maxRepairs?: number
+    }
+    const root = getCppProjectRoot()
+    if (!root) throw new Error('no project root configured')
+
+    const win = BrowserWindow.fromWebContents(event.sender)
+    const emit = (payload: PipelineProgress): void => {
+      win?.webContents.send('testgen:pipeline-progress', payload)
+    }
+
+    audit('testgen.pipeline.start', null, { sourceFilePath, buildEnabled, preset })
+    try {
+      const result = await runPipeline(
+        {
+          projectRoot: root,
+          sourceFilePath,
+          onlyFunctions,
+          buildEnabled,
+          preset,
+          maxRepairs
+        },
+        emit
+      )
+      audit('testgen.pipeline.done', null, {
+        files: result.testFiles.length,
+        buildOk: result.build?.ok ?? null,
+        iterations: result.iterations
+      })
+      return result
+    } catch (err) {
+      debugError('[testgen] pipeline error: %s', err instanceof Error ? err.message : String(err))
+      throw err
+    }
+  })
+}
+
+function walkForBasename(root: string, target: string, out: string[], limit: number): void {
+  if (out.length >= limit) return
+  let entries: fs.Dirent[]
+  try {
+    entries = fs.readdirSync(root, { withFileTypes: true })
+  } catch {
+    return
+  }
+  for (const e of entries) {
+    if (out.length >= limit) break
+    const full = path.join(root, e.name)
+    if (e.isDirectory()) {
+      if (e.name === 'build' || e.name === 'node_modules' || e.name.startsWith('.git') || e.name === '_deps' || e.name === 'CMakeFiles') continue
+      walkForBasename(full, target, out, limit)
+    } else if (e.isFile() && e.name === target) {
+      out.push(full)
+    }
+  }
 }

@@ -1,13 +1,16 @@
 import * as React from 'react'
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import { api } from '@renderer/lib/api'
+import type { TestgenPipelineProgress, TestgenPipelineResult } from '../../../preload'
 import { Card, CardContent, CardHeader, CardTitle } from '@renderer/components/ui/card'
 import { Button } from '@renderer/components/ui/button'
 import { Badge } from '@renderer/components/ui/badge'
 import {
-  Upload, FileCode, Download, FolderOpen, Loader2, CheckCircle2, AlertCircle, FlaskConical
+  Upload, FileCode, Download, FolderOpen, Loader2, CheckCircle2, AlertCircle, FlaskConical,
+  Hammer, Wrench, AlertTriangle
 } from 'lucide-react'
 import CppProjectBanner from '@renderer/components/CppProjectBanner'
+import { useCppProject } from '@renderer/stores/cppProject.store'
 
 type ParsedFunction = {
   name: string
@@ -61,7 +64,28 @@ export default function TestGenerator(): React.JSX.Element {
   const [testFiles, setTestFiles] = useState<TestFile[]>([])
   const [metrics, setMetrics] = useState<GenerationMetrics | null>(null)
 
+  // Pipeline (P3) state
+  const cppProject = useCppProject((s) => s.project)
+  const [pipelineEnabled, setPipelineEnabled] = useState(false)
+  const [buildEnabled, setBuildEnabled] = useState(true)
+  const [preset, setPreset] = useState('ci-gcc')
+  const [maxRepairs, setMaxRepairs] = useState(3)
+  const [pipelineRunning, setPipelineRunning] = useState(false)
+  const [pipelineEvents, setPipelineEvents] = useState<TestgenPipelineProgress[]>([])
+  const [pipelineResult, setPipelineResult] = useState<TestgenPipelineResult | null>(null)
+  const [pipelineError, setPipelineError] = useState<string | null>(null)
+
   const inputRef = useRef<HTMLInputElement>(null)
+
+  const projectReady = cppProject.exists && cppProject.hasCMake
+  const isPipelineRoute = !filename.endsWith('.py')
+
+  useEffect(() => {
+    const unsub = api.testgen.subscribePipeline((ev) => {
+      setPipelineEvents((prev) => [...prev, ev])
+    })
+    return () => { unsub() }
+  }, [])
 
   const loadFile = useCallback(async (file: File) => {
     if (!isSupported(file.name)) return
@@ -134,6 +158,41 @@ export default function TestGenerator(): React.JSX.Element {
   const onSaveAll = async (): Promise<void> => {
     if (!testFiles.length) return
     await api.testgen.saveAll({ files: testFiles })
+  }
+
+  const onRunPipeline = async (): Promise<void> => {
+    if (!filename || !projectReady) return
+    setPipelineRunning(true)
+    setPipelineEvents([])
+    setPipelineResult(null)
+    setPipelineError(null)
+    try {
+      const resolved = await api.testgen.resolveSource({ filename })
+      if (!resolved.ok) {
+        setPipelineError(
+          resolved.reason === 'not-found'
+            ? `Fichier "${filename}" introuvable dans la racine projet sélectionnée.`
+            : `Source non résolue (${resolved.reason}).`
+        )
+        return
+      }
+      const sourceFilePath = resolved.candidates[0]
+      if (!sourceFilePath) {
+        setPipelineError('Aucun fichier candidat retourné par la résolution.')
+        return
+      }
+      const result = await api.testgen.runPipeline({
+        sourceFilePath,
+        buildEnabled,
+        preset,
+        maxRepairs
+      })
+      setPipelineResult(result)
+    } catch (err) {
+      setPipelineError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setPipelineRunning(false)
+    }
   }
 
   const isLoading = phase === 'extracting' || phase === 'generating'
@@ -262,6 +321,176 @@ export default function TestGenerator(): React.JSX.Element {
           {metrics.testsFailed > 0 && <span className="text-orange-500">{metrics.testsFailed} échecs</span>}
           <span>{metrics.totalTime.toFixed(1)}s</span>
         </div>
+      )}
+
+      {/* Pipeline avancée (P3) — C/C++ only, requires project root + CMake */}
+      {isPipelineRoute && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <Hammer className="size-4" />
+              Pipeline avancée (call-graph + CMake + build)
+              <label className="ml-auto flex items-center gap-2 text-xs font-normal">
+                <input
+                  type="checkbox"
+                  checked={pipelineEnabled}
+                  onChange={(e) => setPipelineEnabled(e.target.checked)}
+                  className="h-3.5 w-3.5 accent-primary"
+                />
+                Activer
+              </label>
+            </CardTitle>
+          </CardHeader>
+          {pipelineEnabled && (
+            <CardContent className="space-y-3">
+              {!projectReady && (
+                <div className="flex items-start gap-2 text-xs text-orange-600 dark:text-orange-400">
+                  <AlertTriangle className="size-3.5 mt-0.5 shrink-0" />
+                  <span>
+                    Sélectionne d'abord la racine du projet C/C++ contenant un <code>CMakeLists.txt</code> via le bandeau ci-dessus.
+                  </span>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <label className="flex items-start gap-2 text-sm cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={buildEnabled}
+                    onChange={(e) => setBuildEnabled(e.target.checked)}
+                    className="mt-0.5 h-4 w-4 accent-primary"
+                    disabled={!projectReady}
+                  />
+                  <div>
+                    <div>Build self-repair</div>
+                    <div className="text-xs text-muted-foreground">cmake --workflow → réessaye sur erreur</div>
+                  </div>
+                </label>
+
+                <label className="flex flex-col gap-1 text-sm">
+                  <span>Preset CMake</span>
+                  <input
+                    type="text"
+                    value={preset}
+                    onChange={(e) => setPreset(e.target.value)}
+                    className="border rounded px-2 py-1 text-xs font-mono bg-background"
+                    placeholder="ci-gcc"
+                    disabled={!projectReady}
+                  />
+                </label>
+
+                <label className="flex flex-col gap-1 text-sm">
+                  <span>Itérations de réparation max.</span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={5}
+                    value={maxRepairs}
+                    onChange={(e) => setMaxRepairs(Number.parseInt(e.target.value || '0', 10))}
+                    className="border rounded px-2 py-1 text-xs font-mono bg-background"
+                    disabled={!projectReady || !buildEnabled}
+                  />
+                </label>
+              </div>
+
+              <Button
+                onClick={onRunPipeline}
+                disabled={!projectReady || !filename || pipelineRunning}
+              >
+                {pipelineRunning
+                  ? <><Loader2 className="mr-2 size-4 animate-spin" />Pipeline en cours…</>
+                  : <><Wrench className="mr-2 size-4" />Générer + Build pipeline</>
+                }
+              </Button>
+
+              {pipelineError && (
+                <div className="flex items-start gap-2 text-xs text-destructive">
+                  <AlertCircle className="size-3.5 mt-0.5" />
+                  <span>{pipelineError}</span>
+                </div>
+              )}
+
+              {pipelineEvents.length > 0 && (
+                <div className="rounded border bg-muted/30 p-2 text-xs font-mono max-h-40 overflow-y-auto space-y-0.5">
+                  {pipelineEvents.map((ev, i) => (
+                    <div key={i} className="text-muted-foreground">
+                      {formatPipelineEvent(ev)}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {pipelineResult && <PipelineResultPanel result={pipelineResult} />}
+            </CardContent>
+          )}
+        </Card>
+      )}
+    </div>
+  )
+}
+
+function formatPipelineEvent(ev: TestgenPipelineProgress): string {
+  switch (ev.type) {
+    case 'index': return `→ indexation du projet : ${ev.root}`
+    case 'discover': return `→ tests détectés : ${ev.testDir ?? '(aucun)'} (template: ${ev.templateFile ?? '-'} / ${ev.marker ?? '-'})`
+    case 'generate': return `→ génération ${ev.functionName} (${ev.index}/${ev.total})`
+    case 'write': return `✓ écrit ${ev.filePath}`
+    case 'cmake-update': return `✓ CMakeLists ${ev.cmakeFile} +${ev.inserted.length} source(s)`
+    case 'build-start': return `→ build itération ${ev.iteration} (cmake --workflow --preset ${ev.preset})`
+    case 'build-result': return ev.ok
+      ? `✓ build OK (itération ${ev.iteration}, ${(ev.durationMs / 1000).toFixed(1)}s)`
+      : `✗ build KO (itération ${ev.iteration}, ${(ev.durationMs / 1000).toFixed(1)}s)`
+    case 'repair': return `→ réparation auto itération ${ev.iteration} sur ${ev.failingFiles.length} fichier(s)`
+    case 'done': return '✓ pipeline terminée'
+    default: return JSON.stringify(ev)
+  }
+}
+
+function PipelineResultPanel({ result }: { result: TestgenPipelineResult }): React.JSX.Element {
+  const buildOk = result.build?.ok ?? null
+  return (
+    <div className="space-y-2 text-sm">
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge variant="success">{result.testFiles.length} fichier(s)</Badge>
+        {result.cmakeInserted.length > 0 && (
+          <Badge variant="outline" className="text-xs">CMake +{result.cmakeInserted.length}</Badge>
+        )}
+        {buildOk === true && <Badge variant="success">Build OK</Badge>}
+        {buildOk === false && <Badge variant="destructive">Build KO</Badge>}
+        {result.iterations > 0 && (
+          <Badge variant="outline" className="text-xs">{result.iterations} itération(s)</Badge>
+        )}
+      </div>
+
+      {result.warnings.length > 0 && (
+        <ul className="text-xs text-orange-600 dark:text-orange-400 list-disc list-inside">
+          {result.warnings.map((w, i) => <li key={i}>{w}</li>)}
+        </ul>
+      )}
+
+      <div className="space-y-1">
+        {result.testFiles.map((f) => (
+          <div key={f.filePath} className="flex items-center gap-2 text-xs font-mono">
+            <CheckCircle2 className="size-3.5 text-green-500 shrink-0" />
+            <span className="truncate flex-1" title={f.filePath}>{f.filePath}</span>
+            <Badge variant="outline" className="text-[10px]">it.{f.iteration}</Badge>
+          </div>
+        ))}
+      </div>
+
+      {result.build && !result.build.ok && result.build.errors.length > 0 && (
+        <details className="text-xs">
+          <summary className="cursor-pointer text-destructive">
+            {result.build.errors.length} erreur(s) de compilation
+          </summary>
+          <ul className="mt-1 space-y-0.5 pl-4 list-disc text-muted-foreground">
+            {result.build.errors.slice(0, 10).map((e, i) => (
+              <li key={i} className="font-mono">
+                {[e.filePath, e.line, e.column].filter(Boolean).join(':')} — {e.message}
+              </li>
+            ))}
+          </ul>
+        </details>
       )}
     </div>
   )

@@ -324,6 +324,40 @@ export type TestGenResult = {
   metrics: { apiCalls: number; testsGenerated: number; testsFailed: number; totalTime: number }
 }
 
+export type TestgenPipelineProgress =
+  | { type: 'index'; root: string }
+  | { type: 'discover'; testDir: string | null; templateFile: string | null; marker: string | null }
+  | { type: 'generate'; functionName: string; index: number; total: number }
+  | { type: 'write'; filePath: string }
+  | { type: 'cmake-update'; cmakeFile: string; inserted: string[] }
+  | { type: 'build-start'; preset: string; iteration: number }
+  | { type: 'build-result'; ok: boolean; iteration: number; durationMs: number }
+  | { type: 'repair'; iteration: number; failingFiles: string[] }
+  | { type: 'done' }
+
+export type TestgenPipelineResult = {
+  testFiles: { filePath: string; functionName: string; content: string; iteration: number }[]
+  discovery: {
+    testDir: string | null
+    templateFile: string | null
+    hits: { filePath: string; markers: string; score: number }[]
+    marker: string | null
+  }
+  cmakeFile: string | null
+  cmakeInserted: string[]
+  build: {
+    ok: boolean
+    exitCode: number | null
+    stdout: string
+    stderr: string
+    errors: { filePath?: string; line?: number; column?: number; message: string }[]
+    durationMs: number
+    command: string
+  } | null
+  iterations: number
+  warnings: string[]
+}
+
 const testgen = {
   extractFunctions: (args: { filename: string; content: string }): Promise<{ functions: ParsedFunction[]; fileInfo: Record<string, unknown> }> =>
     ipcRenderer.invoke('testgen:extract-functions', args),
@@ -332,7 +366,23 @@ const testgen = {
   saveFile: (args: { filename: string; content: string }): Promise<{ ok: boolean }> =>
     ipcRenderer.invoke('testgen:save-file', args),
   saveAll: (args: { files: CommenterFile[] }): Promise<{ ok: boolean; savedCount: number }> =>
-    ipcRenderer.invoke('testgen:save-all', args)
+    ipcRenderer.invoke('testgen:save-all', args),
+  resolveSource: (args: { filename: string }): Promise<
+    { ok: true; candidates: string[] } | { ok: false; reason: string }
+  > => ipcRenderer.invoke('testgen:resolve-source', args),
+  runPipeline: (args: {
+    sourceFilePath: string
+    onlyFunctions?: string[]
+    buildEnabled: boolean
+    preset?: string
+    maxRepairs?: number
+  }): Promise<TestgenPipelineResult> =>
+    ipcRenderer.invoke('testgen:run-pipeline', args),
+  subscribePipeline: (handler: (event: TestgenPipelineProgress) => void): (() => void) => {
+    const wrapped = (_e: unknown, payload: TestgenPipelineProgress): void => handler(payload)
+    ipcRenderer.on('testgen:pipeline-progress', wrapped)
+    return () => ipcRenderer.removeListener('testgen:pipeline-progress', wrapped)
+  }
 }
 
 const commenterPr = {
