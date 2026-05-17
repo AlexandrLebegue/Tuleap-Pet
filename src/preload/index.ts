@@ -279,13 +279,52 @@ export type CommenterOptions = {
 }
 export type CommenterResult = { results: CommenterFile[]; errors: { name: string; error: string }[] }
 
+export type CommenterContextProgress =
+  | { type: 'index'; root: string }
+  | { type: 'file-start'; filePath: string; total: number; functions: number }
+  | { type: 'evaluate'; filePath: string; functionName: string; index: number; total: number }
+  | { type: 'verdict'; functionName: string; sufficient: boolean; reason: string }
+  | { type: 'generate'; functionName: string }
+  | { type: 'file-done'; filePath: string; skipped: number; commented: number }
+  | { type: 'done' }
+
+export type CommenterContextResult = {
+  files: {
+    filePath: string
+    originalContent: string
+    newContent: string
+    plans: {
+      fn: { name: string; qualifiedName: string; startLine: number; endLine: number }
+      evaluation: { sufficient: boolean; reason: string }
+      newComment?: string
+    }[]
+    skipped: number
+    commented: number
+  }[]
+  warnings: string[]
+}
+
 const commenter = {
   process: (args: { files: CommenterFile[]; options: CommenterOptions }): Promise<CommenterResult> =>
     ipcRenderer.invoke('commenter:process', args),
   saveFile: (args: { filename: string; content: string }): Promise<{ ok: boolean }> =>
     ipcRenderer.invoke('commenter:save-file', args),
   saveAll: (args: { files: CommenterFile[] }): Promise<{ ok: boolean; savedCount: number }> =>
-    ipcRenderer.invoke('commenter:save-all', args)
+    ipcRenderer.invoke('commenter:save-all', args),
+  resolveSources: (args: { filenames: string[] }): Promise<
+    { ok: true; resolved: Record<string, string[]> } | { ok: false; reason: string }
+  > => ipcRenderer.invoke('commenter:resolve-sources', args),
+  runContext: (args: {
+    filePaths: string[]
+    forceAll?: boolean
+    depth?: number
+    tokenBudget?: number
+  }): Promise<CommenterContextResult> => ipcRenderer.invoke('commenter:run-context', args),
+  subscribeContext: (handler: (event: CommenterContextProgress) => void): (() => void) => {
+    const wrapped = (_e: unknown, payload: CommenterContextProgress): void => handler(payload)
+    ipcRenderer.on('commenter:context-progress', wrapped)
+    return () => ipcRenderer.removeListener('commenter:context-progress', wrapped)
+  }
 }
 
 export type CorrectorFile = { name: string; content: string }
