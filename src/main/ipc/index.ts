@@ -11,6 +11,7 @@ import { registerCommenterPRHandlers } from './commenter-pr'
 import { registerCorrectorHandlers } from './corrector'
 import { registerTestGeneratorHandlers } from './test-generator'
 import { registerGitExplorerHandlers } from './git-explorer'
+import { registerProjectRootHandlers } from './project-root'
 
 export function registerIpcHandlers(): void {
   registerSettingsHandlers()
@@ -26,4 +27,5 @@ export function registerIpcHandlers(): void {
   registerCorrectorHandlers()
   registerTestGeneratorHandlers()
   registerGitExplorerHandlers()
+  registerProjectRootHandlers()
 }

@@ -7,6 +7,7 @@ import { Badge } from '@renderer/components/ui/badge'
 import {
   Upload, FileCode, Download, FolderOpen, Loader2, CheckCircle2, AlertCircle, FlaskConical
 } from 'lucide-react'
+import CppProjectBanner from '@renderer/components/CppProjectBanner'
 
 type ParsedFunction = {
   name: string
@@ -150,6 +151,8 @@ export default function TestGenerator(): React.JSX.Element {
           Génère automatiquement des tests unitaires ({framework}) pour du code C/C++ ou Python.
         </p>
       </div>
+
+      <CppProjectBanner hint="Indispensable pour l'analyse de call-graph (callers/callees) et la mise à jour du CMakeLists." />
 
       {/* Drop zone */}
       <Card

@@ -31,6 +31,8 @@ export type AppConfig = {
   tempClonePath: string | null
   /** Use SSH for git clone in background jobs (no token injection needed). */
   gitCloneSsh: boolean
+  /** Root of the C/C++ project the TestGenerator + Commenter analyze (call-graph, CMake update, build). */
+  cppProjectRoot: string | null
 }
 
 export type ConnectionTestResult =

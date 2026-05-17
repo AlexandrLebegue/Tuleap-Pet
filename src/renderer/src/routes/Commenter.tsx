@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@rend
 import { Button } from '@renderer/components/ui/button'
 import { Badge } from '@renderer/components/ui/badge'
 import { Upload, FileCode, CheckCircle2, XCircle, Download, FolderOpen, Loader2 } from 'lucide-react'
+import CppProjectBanner from '@renderer/components/CppProjectBanner'
 
 type FileEntry = { name: string; content: string }
 type ResultEntry = { name: string; content: string; ok: true } | { name: string; error: string; ok: false }
@@ -121,6 +122,8 @@ export default function Commenter(): React.JSX.Element {
           Génère automatiquement la documentation Doxygen pour des fichiers C/C++.
         </p>
       </div>
+
+      <CppProjectBanner hint="Permet l'analyse de call-graph (callers/callees) et l'évaluation des commentaires existants par fonction." />
 
       {/* Drop zone */}
       <Card

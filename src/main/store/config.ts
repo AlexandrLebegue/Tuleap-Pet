@@ -24,7 +24,8 @@ const store = new Store<Schema>({
     chatbotDoxygenMode: false,
     chatbotToolsEnabled: true,
     tempClonePath: null,
-    gitCloneSsh: true
+    gitCloneSsh: true,
+    cppProjectRoot: null
   },
   clearInvalidConfig: true
 })
@@ -53,8 +54,17 @@ export function getConfig(): AppConfig {
     chatbotDoxygenMode: store.get('chatbotDoxygenMode') ?? false,
     chatbotToolsEnabled: store.get('chatbotToolsEnabled') ?? true,
     tempClonePath: store.get('tempClonePath') ?? null,
-    gitCloneSsh: store.get('gitCloneSsh') ?? true
+    gitCloneSsh: store.get('gitCloneSsh') ?? true,
+    cppProjectRoot: store.get('cppProjectRoot') ?? null
   }
+}
+
+export function getCppProjectRoot(): string | null {
+  return store.get('cppProjectRoot') ?? null
+}
+
+export function setCppProjectRoot(p: string | null): void {
+  store.set('cppProjectRoot', p && p.trim().length > 0 ? p.trim() : null)
 }
 
 export function getTempClonePath(): string | null {

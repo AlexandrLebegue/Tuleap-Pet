@@ -394,7 +394,21 @@ const gitExplorer = {
   }
 }
 
-const api = { settings, tuleap, generation, marp, chat, auth, coder, admin, debug, commenter, corrector, testgen, commenterPr, gitExplorer }
+export type CppProjectInfo = {
+  path: string | null
+  exists: boolean
+  hasCMake: boolean
+  label: string | null
+}
+
+const projectRoot = {
+  get: (): Promise<CppProjectInfo> => ipcRenderer.invoke('project-root:get'),
+  pick: (): Promise<{ ok: boolean; project: CppProjectInfo }> =>
+    ipcRenderer.invoke('project-root:pick'),
+  clear: (): Promise<CppProjectInfo> => ipcRenderer.invoke('project-root:clear')
+}
+
+const api = { settings, tuleap, generation, marp, chat, auth, coder, admin, debug, commenter, corrector, testgen, commenterPr, gitExplorer, projectRoot }
 
 if (process.contextIsolated) {
   try {
