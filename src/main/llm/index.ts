@@ -17,6 +17,8 @@ export type { LlmErrorKind } from './errors'
 export { createOpenRouterProvider } from './openrouter'
 export { createLocalProvider } from './local'
 export { buildTuleapTools } from './tools'
+export { buildTuleapWriteTools, applyWrite } from './write-tools'
+export type { PendingWriteAction } from './write-tools'
 export type {
   LlmGenerateRequest,
   LlmGenerateResult,

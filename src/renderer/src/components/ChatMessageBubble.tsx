@@ -1,10 +1,118 @@
 import * as React from 'react'
+import { useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Download } from 'lucide-react'
 import type { ChatMessage } from '@shared/types'
 import { cn } from '@renderer/lib/utils'
 import { Badge } from '@renderer/components/ui/badge'
+import { Button } from '@renderer/components/ui/button'
+
+type PendingWritePayload = {
+  kind: 'pending-write'
+  action: 'add_comment' | 'transition_status' | 'create_artifact' | 'move_to_sprint' | 'link_artifacts'
+  summary: string
+  artifactId?: number
+  comment?: string
+  newStatus?: string
+  trackerId?: number
+  title?: string
+  description?: string | null
+  artifactIds?: number[]
+  milestoneId?: number | null
+  parentId?: number
+  childIds?: number[]
+}
+
+function isPendingWrite(value: unknown): value is PendingWritePayload {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    (value as { kind?: string }).kind === 'pending-write'
+  )
+}
+
+function PendingWriteCard({ payload }: { payload: PendingWritePayload }): React.JSX.Element {
+  const [status, setStatus] = useState<'idle' | 'applying' | 'done' | 'error'>('idle')
+  const [message, setMessage] = useState<string | null>(null)
+
+  async function confirm(): Promise<void> {
+    setStatus('applying')
+    setMessage(null)
+    try {
+      let action: Parameters<typeof window.api.tuleapWrite.apply>[0]
+      switch (payload.action) {
+        case 'add_comment':
+          action = { kind: 'add_comment', artifactId: payload.artifactId!, comment: payload.comment! }
+          break
+        case 'transition_status':
+          action = { kind: 'transition_status', artifactId: payload.artifactId!, newStatus: payload.newStatus! }
+          break
+        case 'create_artifact':
+          action = {
+            kind: 'create_artifact',
+            trackerId: payload.trackerId!,
+            title: payload.title!,
+            description: payload.description ?? null
+          }
+          break
+        case 'move_to_sprint':
+          action = {
+            kind: 'move_to_sprint',
+            artifactIds: payload.artifactIds!,
+            milestoneId: payload.milestoneId ?? null
+          }
+          break
+        case 'link_artifacts':
+          action = { kind: 'link_artifacts', parentId: payload.parentId!, childIds: payload.childIds! }
+          break
+      }
+      const result = await window.api.tuleapWrite.apply(action)
+      if (result.ok) {
+        setStatus('done')
+        setMessage(result.message)
+      } else {
+        setStatus('error')
+        setMessage(result.error)
+      }
+    } catch (e) {
+      setStatus('error')
+      setMessage(e instanceof Error ? e.message : String(e))
+    }
+  }
+
+  return (
+    <div className="my-2 rounded-md border border-amber-500/50 bg-amber-50/20 p-3 text-xs dark:bg-amber-950/20">
+      <div className="mb-2 flex items-center gap-2">
+        <Badge variant="secondary">Action proposée</Badge>
+        <code className="text-[11px]">{payload.action}</code>
+      </div>
+      <p className="mb-2 font-medium">{payload.summary}</p>
+      {payload.comment && (
+        <details className="mb-2">
+          <summary className="cursor-pointer text-muted-foreground">Voir le contenu</summary>
+          <pre className="mt-1 whitespace-pre-wrap rounded bg-muted p-2 text-[11px]">{payload.comment}</pre>
+        </details>
+      )}
+      {payload.description && (
+        <details className="mb-2">
+          <summary className="cursor-pointer text-muted-foreground">Description</summary>
+          <pre className="mt-1 whitespace-pre-wrap rounded bg-muted p-2 text-[11px]">{payload.description}</pre>
+        </details>
+      )}
+      <div className="flex items-center gap-2">
+        <Button size="sm" onClick={confirm} disabled={status === 'applying' || status === 'done'}>
+          {status === 'applying' ? 'Application…' : status === 'done' ? '✓ Appliqué' : 'Confirmer'}
+        </Button>
+        {message && (
+          <span className={cn('text-[11px]', status === 'error' ? 'text-destructive' : 'text-muted-foreground')}>
+            {message}
+          </span>
+        )}
+      </div>
+    </div>
+  )
+}
 
 type Props = {
   message: ChatMessage
@@ -109,6 +217,16 @@ function ChatMessageBubble({ message }: Props): React.JSX.Element {
                 )}
               </details>
             ))}
+            {message.toolEvents
+              .flatMap((e, idx) => {
+                if (e.kind !== 'result' || e.error || !isPendingWrite(e.result)) return []
+                return [
+                  <PendingWriteCard
+                    key={`pending-${e.toolCallId}-${idx}`}
+                    payload={e.result}
+                  />
+                ]
+              })}
           </div>
         )}
         {isUser ? (

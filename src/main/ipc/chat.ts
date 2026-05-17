@@ -11,7 +11,7 @@ import {
   updateMessageContent
 } from '../chat/manager'
 import { audit } from '../store/db'
-import { resolveLlmProvider, buildTuleapTools, toLlmError } from '../llm'
+import { resolveLlmProvider, buildTuleapTools, buildTuleapWriteTools, toLlmError } from '../llm'
 import type { LlmMessage } from '../llm'
 import { getChatbotDoxygenMode, getChatbotExpertMode, getChatbotToolsEnabled, getLlmModel, getLlmProvider, getLocalModel } from '../store/config'
 import { getCombinedPrompt, getExpertSystemPrompt } from '../prompts/expert-prompts'
@@ -209,7 +209,9 @@ export function registerChatHandlers(): void {
       const toolsEnabled = getChatbotToolsEnabled()
       debugLog('[chat] provider=%s model=%s thinking=%s tools=%s', provider.name,
         provider.name === 'local' ? getLocalModel() : getLlmModel(), thinking, toolsEnabled)
-      const tools = toolsEnabled ? buildTuleapTools() : undefined
+      const tools = toolsEnabled
+        ? { ...buildTuleapTools(), ...buildTuleapWriteTools() }
+        : undefined
       const result = await provider.stream(
         {
           messages: llmMessages,

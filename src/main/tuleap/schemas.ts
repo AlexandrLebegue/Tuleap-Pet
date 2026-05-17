@@ -209,7 +209,15 @@ export const trackerFieldSchema = z
     field_id: z.number(),
     label: z.string().optional().default(''),
     type: z.string().optional().default('unknown'),
-    values: z.array(trackerFieldBindValueSchema).optional().default([])
+    // Tuleap renvoie selon le type de champ :
+    //   - `null` pour les fields sans bind values (string, text, date, aid…)
+    //   - un object `{ resource: { ... } }` pour les fields dynamiques (tbl users)
+    //   - un array de bind values pour les select lists (sb, msb…)
+    // On normalise en array vide pour les deux premiers cas.
+    values: z
+      .union([z.array(trackerFieldBindValueSchema), z.null(), z.record(z.string(), z.unknown())])
+      .optional()
+      .transform((v) => (Array.isArray(v) ? v : []))
   })
   .passthrough()
 

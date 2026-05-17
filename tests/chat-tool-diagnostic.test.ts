@@ -46,9 +46,10 @@ function buildDummyTools() {
 // Run: OPENROUTER_API_KEY=sk-or-... npx vitest run tests/chat-tool-diagnostic.test.ts
 const API_KEY = process.env.OPENROUTER_API_KEY ?? ''
 const MODEL = 'anthropic/claude-3.5-haiku'
+const SKIP_DIAGNOSTIC = !API_KEY
 
 const provider = createOpenRouterProvider({
-  apiKey: API_KEY,
+  apiKey: API_KEY || 'sk-diagnostic-placeholder',
   defaultModel: MODEL,
   appName: 'Tuleap-Pet-Diagnostic'
 })
@@ -69,7 +70,7 @@ const USER_MSG = {
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
-describe('Diagnostic: Chat tool-calling with OpenRouter', () => {
+describe.skipIf(SKIP_DIAGNOSTIC)('Diagnostic: Chat tool-calling with OpenRouter', () => {
   // Increase timeout since we're hitting a real API
   const TIMEOUT = 60_000
 

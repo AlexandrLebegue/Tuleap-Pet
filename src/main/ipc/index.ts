@@ -12,6 +12,15 @@ import { registerCorrectorHandlers } from './corrector'
 import { registerTestGeneratorHandlers } from './test-generator'
 import { registerGitExplorerHandlers } from './git-explorer'
 import { registerProjectRootHandlers } from './project-root'
+import { registerTuleapWriteHandlers } from './tuleap-write'
+import { registerSprintBoardHandlers } from './sprint-board'
+import { registerTicketBranchHandlers } from './ticket-branch'
+import { registerPrAcHandlers } from './pr-ac'
+import { registerRagHandlers } from './rag'
+import { registerReleaseNotesHandlers } from './release-notes'
+import { registerSprintPlanningHandlers } from './sprint-planning'
+import { registerBugReproHandlers } from './bug-repro'
+import { registerTraceabilityHandlers } from './traceability'
 
 export function registerIpcHandlers(): void {
   registerSettingsHandlers()
@@ -28,4 +37,13 @@ export function registerIpcHandlers(): void {
   registerTestGeneratorHandlers()
   registerGitExplorerHandlers()
   registerProjectRootHandlers()
+  registerTuleapWriteHandlers()
+  registerSprintBoardHandlers()
+  registerTicketBranchHandlers()
+  registerPrAcHandlers()
+  registerRagHandlers()
+  registerReleaseNotesHandlers()
+  registerSprintPlanningHandlers()
+  registerBugReproHandlers()
+  registerTraceabilityHandlers()
 }

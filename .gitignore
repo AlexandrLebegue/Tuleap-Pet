@@ -5,3 +5,6 @@ out
 .eslintcache
 *.log*
 ressource/*
+
+# CI integration tests (Tuleap dockerisé) - secrets et état local
+.tuleap-test.env

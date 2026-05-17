@@ -1,0 +1,68 @@
+name: Integration (Tuleap)
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: integration-tuleap
+  cancel-in-progress: true
+
+jobs:
+  integration:
+    name: Tuleap dockerized integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      MYSQL_ROOT_PASSWORD: rootRootRoot12345678
+      TULEAP_SYS_DBPASSWD: tuleapDbPass12345678
+      SITE_ADMINISTRATOR_PASSWORD: SiteAdminPass12345678
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install npm deps
+        run: npm ci
+
+      - name: Add tuleap.local to /etc/hosts
+        run: echo "127.0.0.1 tuleap.local" | sudo tee -a /etc/hosts
+
+      - name: Boot Tuleap stack (docker compose)
+        run: docker compose -f ci/tuleap-compose.yml up -d
+
+      - name: Wait for Tuleap API to be healthy
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 120); do
+            if curl -k -sSf -o /dev/null https://localhost:8443/api/explorer/; then
+              echo "Tuleap UP after $((i * 5))s"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::Tuleap did not become healthy in 600s"
+          docker compose -f ci/tuleap-compose.yml logs --tail=300 tuleap || true
+          exit 1
+
+      - name: Bootstrap (user + token + project)
+        run: bash scripts/tuleap-bootstrap.sh
+
+      - name: Run integration tests
+        env:
+          NODE_TLS_REJECT_UNAUTHORIZED: '0'
+        run: npm run test:integration
+
+      - name: Dump Tuleap logs on failure
+        if: failure()
+        run: docker compose -f ci/tuleap-compose.yml logs --tail=500 tuleap || true
+
+      - name: Tear down
+        if: always()
+        run: docker compose -f ci/tuleap-compose.yml down -v

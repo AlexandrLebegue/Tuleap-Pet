@@ -1,0 +1,44 @@
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: tuleap-pet-mysql
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --sql-mode=NO_ENGINE_SUBSTITUTION
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?MYSQL_ROOT_PASSWORD must be set}
+    healthcheck:
+      test:
+        - CMD
+        - mysqladmin
+        - ping
+        - -uroot
+        - -p${MYSQL_ROOT_PASSWORD}
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  tuleap:
+    image: tuleap/tuleap-community-edition:latest
+    container_name: tuleap-pet-tuleap
+    privileged: true
+    hostname: tuleap.local
+    depends_on:
+      mysql:
+        condition: service_healthy
+    ports:
+      - "8443:443"
+      - "8080:80"
+    environment:
+      TULEAP_FQDN: tuleap.local
+      TULEAP_SYS_DBHOST: mysql
+      TULEAP_SYS_DBPASSWD: ${TULEAP_SYS_DBPASSWD:?TULEAP_SYS_DBPASSWD must be set}
+      SITE_ADMINISTRATOR_PASSWORD: ${SITE_ADMINISTRATOR_PASSWORD:?SITE_ADMINISTRATOR_PASSWORD must be set}
+      DB_ADMIN_USER: root
+      DB_ADMIN_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+    volumes:
+      - tuleap-data:/data
+
+volumes:
+  tuleap-data:

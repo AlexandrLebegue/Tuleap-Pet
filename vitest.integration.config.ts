@@ -9,8 +9,11 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
-    include: ['tests/**/*.test.ts'],
-    exclude: ['tests/integration/**', 'node_modules/**'],
+    include: ['tests/integration/**/*.integration.test.ts'],
+    testTimeout: 30_000,
+    hookTimeout: 60_000,
+    retry: 2,
+    reporters: ['default'],
     coverage: {
       reporter: ['text']
     }
