@@ -4,7 +4,6 @@ import { randomBytes } from 'node:crypto'
 import type { BrowserWindow } from 'electron'
 import { buildTuleapClient } from '../tuleap/build'
 import { getConfig } from '../store/config'
-import { getTuleapToken, getOAuthBundle } from '../store/secrets'
 import { processSingleFile } from '../commenter/commenter'
 import {
   cloneRepo,
@@ -17,6 +16,7 @@ import {
   findTestDirectory
 } from '../commenter/git-utils'
 import { generateTestsForFile, testOutputFilename } from './test-gen-file'
+import { injectGitCredentials, explainGitAuthFailure } from './git-credentials'
 import { debugError } from '../logger'
 import type { BackgroundJob, JobStatus, JobStreamEvent, JobType, CommentingOptions } from '@shared/types'
 
@@ -32,28 +32,8 @@ function updateStatus(win: BrowserWindow | null, jobId: string, status: JobStatu
   emit(win, { type: 'status', jobId, status })
 }
 
-function injectCredentials(cloneUrl: string): string {
-  // SSH URLs use key-based auth — no token injection needed
-  if (!cloneUrl.startsWith('http')) return cloneUrl
-
-  const { authMode } = getConfig()
-  let token: string | null = null
-  if (authMode === 'oauth2') {
-    token = getOAuthBundle()?.accessToken ?? null
-  }
-  if (!token) {
-    token = getTuleapToken()
-  }
-  if (!token) return cloneUrl
-  try {
-    const url = new URL(cloneUrl)
-    url.username = 'x'
-    url.password = encodeURIComponent(token)
-    return url.toString()
-  } catch {
-    return cloneUrl
-  }
-}
+// injectCredentials is delegated to injectGitCredentials in jobs/git-credentials.ts
+// (resolves the Tuleap username via getSelf() so Tuleap accepts the basic-auth pair).
 
 type JobStartArgs = {
   repoId: number
@@ -130,8 +110,14 @@ async function runJob(
 
     // 1. Clone the specific branch directly (avoids a separate checkout step)
     updateStatus(win, jobId, 'cloning')
-    const credUrl = injectCredentials(args.cloneUrl)
-    await cloneRepo(credUrl, targetDir, args.branchName)
+    const credUrl = await injectGitCredentials(args.cloneUrl)
+    try {
+      await cloneRepo(credUrl, targetDir, args.branchName)
+    } catch (cloneErr) {
+      const raw = cloneErr instanceof Error ? cloneErr.message : String(cloneErr)
+      const hint = explainGitAuthFailure(raw)
+      throw new Error(hint ?? raw)
+    }
 
     // 3. List source files
     const commentOptions: CommentingOptions = args.options ?? {
@@ -150,7 +136,10 @@ async function runJob(
         throw new Error('Aucun fichier C/C++ modifié trouvé dans le dernier commit.')
       }
     } else if (files.length === 0) {
-      throw new Error('Aucun fichier C/C++ trouvé dans ce dépôt.')
+      throw new Error(
+        `Aucun fichier C/C++ trouvé dans la branche "${args.branchName}" du dépôt "${args.repoName}". ` +
+          `Vérifie que la branche contient bien des fichiers .c/.h/.cpp/.hpp (et qu'ils sont commités).`
+      )
     }
 
     // 4. Find test directory (for test-generator only)

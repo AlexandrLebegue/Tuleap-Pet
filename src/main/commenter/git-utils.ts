@@ -5,7 +5,17 @@ import { join } from 'node:path'
 
 const execFileAsync = promisify(execFile)
 
-const SOURCE_GLOBS = ['*.c', '*.h', '*.cpp', '*.hpp', '*.cxx', '*.hxx', '*.cc']
+// Pathspec magic `:(icase)` rend la correspondance insensible à la casse
+// (couvre `.C`, `.CPP`, `.H`, etc. qu'on trouve sur certains projets historiques).
+const SOURCE_GLOBS = [
+  ':(icase)*.c',
+  ':(icase)*.h',
+  ':(icase)*.cpp',
+  ':(icase)*.hpp',
+  ':(icase)*.cxx',
+  ':(icase)*.hxx',
+  ':(icase)*.cc'
+]
 
 export async function execGit(args: string[], cwd: string): Promise<string> {
   try {
