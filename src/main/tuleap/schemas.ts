@@ -169,7 +169,16 @@ export type GitRepositoryRaw = z.infer<typeof gitRepositorySchema>
 
 export const gitBranchSchema = z
   .object({
-    name: z.string()
+    name: z.string(),
+    commit: z
+      .object({
+        id: z.string(),
+        title: z.string().optional().default(''),
+        author_name: z.string().optional().default(''),
+        authored_date: z.string().optional().default('')
+      })
+      .passthrough()
+      .optional()
   })
   .passthrough()
 

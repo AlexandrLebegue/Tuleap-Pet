@@ -235,6 +235,11 @@ export default function GitExplorer(): React.JSX.Element {
             {selectedBranch && !loadingCommits && commitsPage && commitsPage.items.length === 0 && (
               <p className="p-3 text-xs text-muted-foreground">Aucun commit.</p>
             )}
+            {selectedBranch && !loadingCommits && commitsPage && commitsPage.items.length > 0 && (
+              <p className="px-3 py-2 text-[11px] text-muted-foreground border-b bg-muted/30">
+                L'API REST Tuleap n'expose que le commit de tête de la branche. Pour parcourir l'historique complet, lance un job (Commenter / Tests / etc.) qui clone le repo.
+              </p>
+            )}
             {commitsPage?.items.map((c) => (
               <div key={c.id} className="px-3 py-2 border-b last:border-0 hover:bg-muted/50">
                 <div className="flex items-start gap-2">

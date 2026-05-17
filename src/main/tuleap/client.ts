@@ -479,16 +479,41 @@ export class TuleapClient {
     })
   }
 
-  listCommits(
+  /**
+   * Tuleap REST n'expose pas d'endpoint "liste de commits" : seul
+   * `GET /git/{id}/commits/{commit_reference}` existe (lookup d'un commit unique)
+   * et `GET /git/{id}/branches` embarque le commit de tête de chaque branche.
+   * On synthétise donc une page d'un seul élément : le tip de la branche demandée.
+   * Pour parcourir l'historique complet, il faudrait cloner le repo localement
+   * (ce que fait déjà `git:start-job` côté GitExplorer).
+   */
+  async listCommits(
     repoId: number,
     opts?: Pagination & { refName?: string }
   ): Promise<PaginatedResponse<GitCommitRaw>> {
-    const params: Record<string, unknown> = {
-      limit: opts?.limit ?? DEFAULT_PAGE_LIMIT,
-      offset: opts?.offset ?? 0
+    const limit = opts?.limit ?? DEFAULT_PAGE_LIMIT
+    const offset = opts?.offset ?? 0
+    if (!opts?.refName) {
+      return { items: [], total: 0, limit, offset }
     }
-    if (opts?.refName) params['ref_name'] = opts.refName
-    return this.paginated(gitCommitSchema, `/api/git/${repoId}/commits`, params)
+    const branches = await this.paginated(
+      gitBranchSchema,
+      `/api/git/${repoId}/branches`,
+      { limit: 50, offset: 0 }
+    )
+    const branch = branches.items.find((b) => b.name === opts.refName)
+    if (!branch || !branch.commit) {
+      return { items: [], total: 0, limit, offset }
+    }
+    const raw = branch.commit as Record<string, unknown>
+    const parsed = gitCommitSchema.safeParse(raw)
+    if (!parsed.success) {
+      return { items: [], total: 0, limit, offset }
+    }
+    if (offset > 0) {
+      return { items: [], total: 1, limit, offset }
+    }
+    return { items: [parsed.data], total: 1, limit, offset: 0 }
   }
 
   /**

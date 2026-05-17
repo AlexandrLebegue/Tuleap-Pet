@@ -218,6 +218,8 @@ export_env() {
     printf 'TULEAP_TOKEN=%s\n' "${token}"
     printf 'TULEAP_PROJECT_ID=%s\n' "${project_id}"
     printf 'TULEAP_TRACKER_ID=%s\n' "${tracker_id}"
+    printf 'TULEAP_RUN_GIT_COMMITS_TESTS=1\n'
+    printf 'SITE_ADMINISTRATOR_PASSWORD=%s\n' "${SITE_ADMINISTRATOR_PASSWORD}"
   } > .tuleap-test.env
   log "Écrit .tuleap-test.env"
   if [[ -n "${GITHUB_ENV:-}" ]]; then
@@ -226,6 +228,7 @@ export_env() {
       printf 'TULEAP_TOKEN=%s\n' "${token}"
       printf 'TULEAP_PROJECT_ID=%s\n' "${project_id}"
       printf 'TULEAP_TRACKER_ID=%s\n' "${tracker_id}"
+      printf 'TULEAP_RUN_GIT_COMMITS_TESTS=1\n'
     } >> "${GITHUB_ENV}"
     log "Exporté dans \$GITHUB_ENV"
   fi
