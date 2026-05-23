@@ -1,71 +1,87 @@
 import * as React from 'react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Button } from '@renderer/components/ui/button'
 import { Card } from '@renderer/components/ui/card'
-import { Input } from '@renderer/components/ui/input'
-import { Label } from '@renderer/components/ui/label'
 import { Badge } from '@renderer/components/ui/badge'
+import type { GitRepository } from '@shared/types'
 
-type AcItem = { ac: string; coverage: 'covered' | 'partial' | 'missing' | 'unverifiable'; evidence: string }
-
-const COVERAGE_BADGE: Record<AcItem['coverage'], 'default' | 'secondary' | 'destructive' | 'outline'> = {
-  covered: 'default',
-  partial: 'secondary',
-  missing: 'destructive',
-  unverifiable: 'outline'
+type PullRequestSummary = {
+  id: number
+  title: string
+  branchSrc: string
+  branchDest: string
+  status: string
+  htmlUrl: string
 }
 
-export default function PrAcReview(): React.JSX.Element {
-  const [repoPath, setRepoPath] = useState('')
-  const [baseBranch, setBaseBranch] = useState('main')
-  const [headBranch, setHeadBranch] = useState('')
-  const [artifactHint, setArtifactHint] = useState('')
-  const [items, setItems] = useState<AcItem[]>([])
-  const [summary, setSummary] = useState('')
-  const [artifactId, setArtifactId] = useState<number | null>(null)
-  const [busy, setBusy] = useState(false)
-  const [posting, setPosting] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [postResult, setPostResult] = useState<string | null>(null)
+type AcItem = {
+  ac: string
+  coverage: 'covered' | 'partial' | 'missing' | 'unverifiable'
+  evidence: string
+}
 
-  async function pickRepo(): Promise<void> {
-    const r = await window.api.ticketBranch.chooseRepo()
-    if (r.ok) setRepoPath(r.path)
-  }
+type AnalysisResult = {
+  ok: true
+  summaryMarkdown: string
+  items: AcItem[]
+  testsFound: boolean
+  docScore: number
+} | { ok: false; error: string }
+
+export default function PrAcReview(): React.JSX.Element {
+  const [repos, setRepos] = useState<GitRepository[]>([])
+  const [selectedRepo, setSelectedRepo] = useState<GitRepository | null>(null)
+  const [prs, setPrs] = useState<PullRequestSummary[]>([])
+  const [loadingPrs, setLoadingPrs] = useState(false)
+  const [selectedPr, setSelectedPr] = useState<PullRequestSummary | null>(null)
+
+  const [artifactIdOverride, setArtifactIdOverride] = useState('')
+  const [analyzing, setAnalyzing] = useState(false)
+  const [result, setResult] = useState<AnalysisResult | null>(null)
+
+  useEffect(() => {
+    window.api.prAc.listRepos().then(setRepos).catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    if (!selectedRepo) { setPrs([]); setSelectedPr(null); return }
+    setLoadingPrs(true)
+    setPrs([])
+    setSelectedPr(null)
+    setResult(null)
+    window.api.prAc.listPrs({ repoId: selectedRepo.id })
+      .then((list) => { setPrs(list); if (list.length > 0) setSelectedPr(list[0]!) })
+      .catch(() => {})
+      .finally(() => setLoadingPrs(false))
+  }, [selectedRepo])
 
   async function analyze(): Promise<void> {
-    setBusy(true)
-    setError(null)
-    setItems([])
-    setSummary('')
+    if (!selectedRepo || !selectedPr) return
+    setAnalyzing(true)
+    setResult(null)
     try {
-      const idHint = artifactHint ? Number.parseInt(artifactHint, 10) : null
+      const artifactIdHint = artifactIdOverride ? Number.parseInt(artifactIdOverride, 10) : null
       const r = await window.api.prAc.analyze({
-        repoPath,
-        baseBranch,
-        headBranch,
-        artifactIdHint: Number.isFinite(idHint) ? idHint : null
+        prId: selectedPr.id,
+        repoId: selectedRepo.id,
+        cloneUrl: selectedRepo.cloneUrl,
+        branchSrc: selectedPr.branchSrc,
+        branchDest: selectedPr.branchDest,
+        artifactIdHint: Number.isFinite(artifactIdHint) ? artifactIdHint : null
       })
-      if (!r.ok) throw new Error(r.error)
-      setItems(r.items)
-      setSummary(r.summaryMarkdown)
-      setArtifactId(r.artifact.id)
+      setResult(r as AnalysisResult)
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
+      setResult({ ok: false, error: e instanceof Error ? e.message : String(e) })
     } finally {
-      setBusy(false)
+      setAnalyzing(false)
     }
   }
 
-  async function postComment(): Promise<void> {
-    if (!artifactId) return
-    setPosting(true)
-    try {
-      const r = await window.api.prAc.postComment({ artifactId, markdown: summary })
-      setPostResult(r.ok ? '✓ Commentaire posté sur Tuleap.' : `Erreur : ${r.error}`)
-    } finally {
-      setPosting(false)
-    }
+  const coverageBadge = (c: string): 'default' | 'secondary' | 'destructive' | 'outline' => {
+    if (c === 'covered') return 'default'
+    if (c === 'partial') return 'secondary'
+    if (c === 'missing') return 'destructive'
+    return 'outline'
   }
 
   return (
@@ -73,62 +89,129 @@ export default function PrAcReview(): React.JSX.Element {
       <header>
         <h1 className="text-xl font-semibold">PR ↔ Acceptance Criteria</h1>
         <p className="text-sm text-muted-foreground">
-          Vérifie qu&apos;une PR couvre tous les critères d&apos;acceptation de l&apos;artéfact Tuleap lié.
+          Sélectionnez un dépôt et une PR — l&apos;outil clone, analyse le diff, vérifie les tests et
+          la documentation, puis poste automatiquement un commentaire sur la PR.
         </p>
       </header>
 
       <Card className="grid grid-cols-2 gap-3 p-4">
+        {/* Repo selector */}
+        <div>
+          <label className="mb-1 block text-sm font-medium">Dépôt Git</label>
+          <select
+            className="w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm"
+            value={selectedRepo?.id ?? ''}
+            onChange={(e) => {
+              const repo = repos.find((r) => r.id === Number(e.target.value)) ?? null
+              setSelectedRepo(repo)
+            }}
+          >
+            <option value="">— choisir un dépôt —</option>
+            {repos.map((r) => (
+              <option key={r.id} value={r.id}>{r.name}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* PR selector */}
+        <div>
+          <label className="mb-1 block text-sm font-medium">
+            Pull Request {loadingPrs && <span className="text-xs text-muted-foreground">(chargement…)</span>}
+          </label>
+          <select
+            className="w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm"
+            value={selectedPr?.id ?? ''}
+            onChange={(e) => {
+              const pr = prs.find((p) => p.id === Number(e.target.value)) ?? null
+              setSelectedPr(pr)
+              setResult(null)
+            }}
+            disabled={prs.length === 0}
+          >
+            <option value="">— choisir une PR —</option>
+            {prs.map((pr) => (
+              <option key={pr.id} value={pr.id}>
+                #{pr.id} — {pr.title || `${pr.branchSrc} → ${pr.branchDest}`}
+              </option>
+            ))}
+          </select>
+          {selectedPr && (
+            <p className="mt-1 text-xs text-muted-foreground">
+              {selectedPr.branchSrc} → {selectedPr.branchDest}
+            </p>
+          )}
+        </div>
+
+        {/* Optional artifact ID override */}
         <div className="col-span-2">
-          <Label>Dépôt local</Label>
-          <div className="flex gap-2">
-            <Input value={repoPath} onChange={(e) => setRepoPath(e.target.value)} placeholder="/path/to/repo" />
-            <Button variant="outline" onClick={pickRepo}>Parcourir…</Button>
-          </div>
+          <label className="mb-1 block text-sm font-medium">
+            ID Artéfact Tuleap (optionnel — déduit du nom de branche si absent)
+          </label>
+          <input
+            type="text"
+            className="w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm"
+            value={artifactIdOverride}
+            onChange={(e) => setArtifactIdOverride(e.target.value)}
+            placeholder="ex: 1234"
+          />
         </div>
-        <div>
-          <Label>Branche de base</Label>
-          <Input value={baseBranch} onChange={(e) => setBaseBranch(e.target.value)} />
-        </div>
-        <div>
-          <Label>Branche de la PR</Label>
-          <Input value={headBranch} onChange={(e) => setHeadBranch(e.target.value)} placeholder="feature/1234-…" />
-        </div>
-        <div>
-          <Label>Hint Artifact ID (optionnel)</Label>
-          <Input value={artifactHint} onChange={(e) => setArtifactHint(e.target.value)} placeholder="déduit du nom de branche sinon" />
-        </div>
+
         <div className="col-span-2">
-          <Button onClick={analyze} disabled={busy || !repoPath || !headBranch}>
-            {busy ? 'Analyse…' : 'Analyser la PR'}
+          <Button
+            onClick={analyze}
+            disabled={analyzing || !selectedRepo || !selectedPr}
+          >
+            {analyzing ? 'Analyse en cours…' : 'Analyser & Commenter la PR'}
           </Button>
         </div>
       </Card>
 
-      {error && <Card className="border-destructive p-3 text-sm text-destructive">{error}</Card>}
+      {result && !result.ok && (
+        <Card className="border-destructive p-3 text-sm text-destructive">{result.error}</Card>
+      )}
 
-      {items.length > 0 && (
-        <Card className="p-4">
-          <h2 className="mb-2 text-sm font-semibold">
-            Résultat — artéfact #{artifactId}
-          </h2>
-          <ul className="space-y-2">
-            {items.map((it, i) => (
-              <li key={i} className="rounded border p-2 text-sm">
-                <div className="flex items-center gap-2">
-                  <Badge variant={COVERAGE_BADGE[it.coverage]}>{it.coverage}</Badge>
-                  <span className="font-medium">{it.ac}</span>
-                </div>
-                <p className="mt-1 text-xs text-muted-foreground">{it.evidence}</p>
-              </li>
-            ))}
-          </ul>
-          <div className="mt-3 flex items-center gap-2">
-            <Button size="sm" onClick={postComment} disabled={posting || !artifactId}>
-              {posting ? 'Envoi…' : 'Poster le résumé sur Tuleap'}
-            </Button>
-            {postResult && <span className="text-xs text-muted-foreground">{postResult}</span>}
-          </div>
-        </Card>
+      {result && result.ok && (
+        <div className="flex flex-col gap-3">
+          {/* Checks summary */}
+          <Card className="flex items-center gap-4 p-3 text-sm">
+            <Badge variant={result.testsFound ? 'default' : 'secondary'}>
+              {result.testsFound ? '✅ Tests détectés' : '⚠️ Pas de tests'}
+            </Badge>
+            <Badge variant="outline">📝 Doc {result.docScore}%</Badge>
+            <Badge variant="outline">
+              {result.items.filter((i) => i.coverage === 'covered').length}/{result.items.length} AC couvertes
+            </Badge>
+            <span className="ml-auto text-xs text-muted-foreground">Commentaire posté sur la PR</span>
+          </Card>
+
+          {/* AC breakdown */}
+          <Card className="p-4">
+            <h2 className="mb-3 text-sm font-semibold">Critères d&apos;acceptation</h2>
+            <ul className="space-y-2">
+              {result.items.map((it, i) => (
+                <li key={i} className="rounded border p-2 text-sm">
+                  <div className="flex items-start gap-2">
+                    <Badge variant={coverageBadge(it.coverage)} className="mt-0.5 shrink-0 text-xs">
+                      {it.coverage}
+                    </Badge>
+                    <div>
+                      <p className="font-medium">{it.ac}</p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">{it.evidence}</p>
+                    </div>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </Card>
+
+          {/* Markdown */}
+          <Card className="p-4">
+            <h2 className="mb-2 text-sm font-semibold">Commentaire posté</h2>
+            <pre className="max-h-60 overflow-y-auto whitespace-pre-wrap rounded bg-muted p-2 text-xs">
+              {result.summaryMarkdown}
+            </pre>
+          </Card>
+        </div>
       )}
     </div>
   )

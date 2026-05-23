@@ -1,20 +1,13 @@
-/**
- * Prompts for the automatic code commenter tool.
- * Handles Doxygen documentation generation with optional coding rule enforcement.
- */
+import type { CommentingOptions } from '@shared/types'
 
-export type CommentingOptions = {
-  preserveExisting: boolean
-  addFileHeader: boolean
-  detailedComments: boolean
-  applyCodingRules: boolean
-}
+export type { CommentingOptions }
 
 export const DEFAULT_COMMENTING_OPTIONS: CommentingOptions = {
   preserveExisting: true,
   addFileHeader: true,
   detailedComments: true,
-  applyCodingRules: false
+  applyCodingRules: false,
+  onlyChangedFiles: false
 }
 
 export const SUPPORTED_EXTENSIONS = ['.c', '.cpp', '.cc', '.cxx', '.h', '.hpp', '.hxx']

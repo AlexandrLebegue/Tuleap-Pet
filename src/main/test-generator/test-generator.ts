@@ -1,6 +1,9 @@
 import { resolveLlmProvider } from '../llm'
 import { extractFunctionsFromFile } from '../parser/code-parser'
 import type { ParsedFunction, FileInfo } from '../parser/code-parser'
+import { buildProjectIndex, findFunction } from '../cpp-analyzer/projectIndex'
+import { buildContext, renderContext } from '../cpp-analyzer/contextBuilder'
+import type { ProjectIndex } from '../cpp-analyzer/types'
 
 export type { ParsedFunction, FileInfo }
 
@@ -48,14 +51,18 @@ Pour la fonction C suivante, liste les cas de test nécessaires.
 Réponds avec UNE LIGNE par cas de test, format pipe-délimité :
 numéro | catégorie | nom_test | description | objectif | valeurs_entrée | résultat_attendu
 
-Catégories possibles : nominal, limite, erreur, special, memory, logic
+Catégories possibles : nominal, limite, erreur, special, logic
+
+RÈGLE ABSOLUE : les tests doivent être SANS MOCK. Appels directs uniquement.
+Ne liste que des cas testables directement en appelant la fonction avec des valeurs concrètes.
+Pas de simulation de dépendances, pas de stub, pas de fake.
 
 FONCTION :
 Nom: {function_name}
 Signature: {signature}
 Code source:
 {source_code}
-
+{context_section}
 Exemple de format attendu :
 1 | nominal | test_func_basic | Test basique avec valeurs normales | Vérifier fonctionnement normal | param1=5, param2=3 | retourne 8
 2 | erreur | test_func_null | Test avec pointeur NULL | Vérifier gestion NULL | ptr=NULL | retourne -1
@@ -69,6 +76,10 @@ Réponds avec UNE LIGNE par cas de test, format pipe-délimité :
 numéro | catégorie | nom_test | description | objectif | valeurs_entrée | résultat_attendu
 
 Catégories possibles : nominal, limite, erreur, special, exception
+
+RÈGLE ABSOLUE : les tests doivent être SANS MOCK. Appels directs uniquement.
+Ne liste que des cas testables en appelant la fonction avec des valeurs concrètes.
+Pas de unittest.mock, pas de patch, pas de MagicMock.
 
 FONCTION :
 Nom: {function_name}
@@ -114,13 +125,23 @@ function parseTestList(response: string, functionName: string): TestCase[] {
   return cases
 }
 
-export async function listTestCases(func: ParsedFunction, isPython = false): Promise<TestCase[]> {
+export async function listTestCases(
+  func: ParsedFunction,
+  isPython = false,
+  contextText?: string
+): Promise<TestCase[]> {
   const provider = resolveLlmProvider()
   const template = isPython ? LIST_TESTS_PYTHON_PROMPT : LIST_TESTS_C_PROMPT
+
+  const contextSection = contextText
+    ? `\nCONTEXTE DU PROJET (sous-fonctions appelées et fonctions appelantes) :\n${contextText}\n`
+    : ''
+
   const prompt = template
     .replace('{function_name}', func.name)
     .replace('{signature}', func.signature)
     .replace('{source_code}', func.sourceCode)
+    .replace('{context_section}', contextSection)
 
   const result = await provider.generate({
     messages: [{ role: 'user', content: prompt }],
@@ -140,6 +161,21 @@ const WRITE_TEST_C_PROMPT = `Tu es un expert en tests unitaires C avec Google Te
 Écris le corps d'UN SEUL test unitaire (macro TEST) pour le cas suivant.
 Ne mets PAS de #include ni de fonction main. Juste la macro TEST.
 
+RÈGLES ABSOLUES — respecte-les sans exception :
+- AUCUN mock, stub, fake ou FFF. Appel direct de la fonction uniquement.
+- N'inclus PAS de header FFF (fff.h, mock_*.h, etc.).
+- N'utilise PAS de macro FFF (FAKE_VOID_FUNC, FAKE_VALUE_FUNC, RESET_FAKE, etc.).
+- Si la fonction nécessite un contexte (struct, buffer), crée les variables localement dans le test.
+- Reste simple : arrange les entrées, appelle la fonction, vérifie la sortie avec EXPECT_* ou ASSERT_*.
+
+Exemple de test CORRECT (sans mock) :
+\`\`\`cpp
+TEST(AddFunction, NominalPositive) {
+    int result = add(3, 5);
+    EXPECT_EQ(result, 8);
+}
+\`\`\`
+
 FONCTION À TESTER :
 Nom: {function_name}
 Signature: {signature}
@@ -158,6 +194,19 @@ const WRITE_TEST_PYTHON_PROMPT = `Tu es un expert en tests unitaires Python avec
 
 Écris le corps d'UNE SEULE fonction de test (def test_...) pour le cas suivant.
 Ne mets PAS d'import. Juste la fonction def test_...
+
+RÈGLES ABSOLUES — respecte-les sans exception :
+- AUCUN mock. Pas de unittest.mock, pas de patch(), pas de MagicMock.
+- Appel direct de la fonction avec des valeurs concrètes.
+- Si la fonction dépend d'un état, initialise-le directement dans le test.
+- Reste simple : arrange, appelle, vérifie avec assert.
+
+Exemple de test CORRECT (sans mock) :
+\`\`\`python
+def test_add_nominal():
+    result = add(3, 5)
+    assert result == 8
+\`\`\`
 
 MODULE À IMPORTER: {module_name}
 FONCTION À TESTER :
@@ -291,7 +340,10 @@ function assemblePythonTestFile(funcName: string, blocks: string[], fileInfo: Fi
 export async function generateTestsGranular(
   content: string,
   filename: string,
-  onProgress?: (step: string, detail: string, pct: number) => void
+  onlyFunctions?: string[],
+  onProgress?: (step: string, detail: string, pct: number) => void,
+  projectRoot?: string,
+  sourceFilePath?: string
 ): Promise<GranularResult> {
   const isPython = filename.endsWith('.py')
   const metrics: GenerationMetrics = { apiCalls: 0, testsGenerated: 0, testsFailed: 0, totalTime: 0 }
@@ -299,9 +351,25 @@ export async function generateTestsGranular(
 
   onProgress?.('extraction', `Extraction des fonctions de ${filename}…`, 0)
   const extraction = extractFunctions(content, filename)
-  const functions = extraction.functions
+  let functions = extraction.functions
+  if (onlyFunctions && onlyFunctions.length > 0) {
+    const filter = new Set(onlyFunctions)
+    functions = functions.filter((f) => filter.has(f.name))
+  }
   const fileInfo = extraction.fileInfo as FileInfo
   const testFiles: TestFile[] = []
+
+  // Build project index for enriched context (C/C++ only, when projectRoot is available)
+  let index: ProjectIndex | null = null
+  if (!isPython && projectRoot) {
+    try {
+      onProgress?.('indexing', `Indexation du projet ${projectRoot}…`, 0.02)
+      index = buildProjectIndex(projectRoot)
+    } catch {
+      // If indexing fails, continue without enriched context
+      index = null
+    }
+  }
 
   const total = functions.length
   for (let fi = 0; fi < total; fi++) {
@@ -309,11 +377,25 @@ export async function generateTestsGranular(
     if (!func) continue
     const basePct = fi / total
 
+    // Build enriched context for this function (callees + callers)
+    let contextText: string | undefined
+    if (index && sourceFilePath) {
+      const fnDef = findFunction(index, func.name, sourceFilePath)
+      if (fnDef) {
+        try {
+          const ctx = buildContext(index, fnDef, { depth: 3, tokenBudget: 12000 })
+          contextText = renderContext(ctx)
+        } catch {
+          // If context building fails, continue without it
+        }
+      }
+    }
+
     onProgress?.('list_tests', `Listing tests pour ${func.name} (${fi + 1}/${total})…`, basePct * 0.9)
 
     let testCases: TestCase[]
     try {
-      testCases = await listTestCases(func, isPython)
+      testCases = await listTestCases(func, isPython, contextText)
       metrics.apiCalls++
     } catch (e) {
       testCases = [{

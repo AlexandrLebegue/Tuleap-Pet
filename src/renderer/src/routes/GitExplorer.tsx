@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { api } from '@renderer/lib/api'
 import { useSettings } from '@renderer/stores/settings.store'
 import { Button } from '@renderer/components/ui/button'
+import CommentingOptionsPanel from '@renderer/components/CommentingOptionsPanel'
 import type {
   GitRepository,
   GitBranch,
@@ -17,7 +18,15 @@ const DEFAULT_OPTIONS: CommentingOptions = {
   addFileHeader: true,
   detailedComments: true,
   applyCodingRules: false,
-  onlyChangedFiles: false
+  onlyChangedFiles: false,
+  useContextPipeline: false,
+  forceAll: false,
+  contextDepth: 3,
+  inlineComments: false,
+  testPipelineMode: 'basic',
+  testBuildEnabled: true,
+  testPreset: 'ci-gcc',
+  testMaxRepairs: 3
 }
 
 type JobModal = {
@@ -45,6 +54,15 @@ export default function GitExplorer(): React.JSX.Element {
 
   const [jobModal, setJobModal] = useState<JobModal | null>(null)
   const [starting, setStarting] = useState(false)
+
+  // Release Notes modal
+  const [rnModal, setRnModal] = useState<{ repoId: number; cloneUrl: string } | null>(null)
+  const [rnTags, setRnTags] = useState<string[]>([])
+  const [rnFrom, setRnFrom] = useState('')
+  const [rnTo, setRnTo] = useState('')
+  const [rnLoading, setRnLoading] = useState(false)
+  const [rnResult, setRnResult] = useState<string | null>(null)
+  const [rnError, setRnError] = useState<string | null>(null)
 
   const noTempPath = !config.tempClonePath
 
@@ -100,6 +118,45 @@ export default function GitExplorer(): React.JSX.Element {
     },
     [selectedRepo]
   )
+
+  const openRnModal = useCallback(async () => {
+    if (!selectedRepo) return
+    setRnModal({ repoId: selectedRepo.id, cloneUrl: selectedRepo.cloneUrl })
+    setRnResult(null)
+    setRnError(null)
+    setRnFrom('')
+    setRnTo('')
+    setRnLoading(true)
+    const tags = await window.api.releaseNotes.listRemoteTags({
+      repoId: selectedRepo.id,
+      cloneUrl: selectedRepo.cloneUrl
+    }).catch(() => [] as string[])
+    setRnTags(tags)
+    if (tags.length >= 2) { setRnFrom(tags[1]!); setRnTo(tags[0]!) }
+    else if (tags.length === 1) { setRnFrom(tags[0]!); setRnTo('HEAD') }
+    setRnLoading(false)
+  }, [selectedRepo])
+
+  async function generateReleaseNotes(): Promise<void> {
+    if (!rnModal || !rnFrom || !rnTo) return
+    setRnLoading(true)
+    setRnResult(null)
+    setRnError(null)
+    try {
+      const r = await window.api.releaseNotes.generate({
+        repoId: rnModal.repoId,
+        cloneUrl: rnModal.cloneUrl,
+        fromRef: rnFrom,
+        toRef: rnTo
+      })
+      if (r.ok) setRnResult(r.markdown)
+      else setRnError(r.error)
+    } catch (e) {
+      setRnError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setRnLoading(false)
+    }
+  }
 
   const startJobFromModal = useCallback(async () => {
     if (!jobModal) return
@@ -209,6 +266,14 @@ export default function GitExplorer(): React.JSX.Element {
                   >
                     🧪
                   </button>
+                  <button
+                    onClick={() => void openRnModal()}
+                    disabled={noTempPath}
+                    className="text-xs px-1.5 py-0.5 rounded bg-primary/10 hover:bg-primary/20 text-primary disabled:opacity-40 disabled:cursor-not-allowed"
+                    title="Générer des release notes"
+                  >
+                    📋
+                  </button>
                 </div>
               </div>
             ))}
@@ -280,6 +345,78 @@ export default function GitExplorer(): React.JSX.Element {
         </div>
       </div>
 
+      {/* Release Notes modal */}
+      {rnModal && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+          <div className="bg-card rounded-lg border shadow-xl w-full max-w-lg p-6 space-y-4">
+            <h2 className="text-lg font-semibold">📋 Release Notes</h2>
+            <p className="text-sm text-muted-foreground">
+              Le dépôt sera cloné automatiquement dans votre dossier temporaire.
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                  Tag / Ref — depuis
+                </label>
+                {rnLoading && rnTags.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">Récupération des tags…</p>
+                ) : (
+                  <select
+                    className="w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm"
+                    value={rnFrom}
+                    onChange={(e) => setRnFrom(e.target.value)}
+                  >
+                    <option value="">— choisir —</option>
+                    {rnTags.map((t) => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                )}
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                  Tag / Ref — jusqu'à
+                </label>
+                <select
+                  className="w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm"
+                  value={rnTo}
+                  onChange={(e) => setRnTo(e.target.value)}
+                >
+                  <option value="HEAD">HEAD (branche courante)</option>
+                  {rnTags.map((t) => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </div>
+            </div>
+            {rnError && <p className="text-sm text-destructive">{rnError}</p>}
+            {rnResult && (
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Résultat</p>
+                  <button
+                    className="text-xs text-primary hover:underline"
+                    onClick={() => navigator.clipboard.writeText(rnResult)}
+                  >
+                    Copier
+                  </button>
+                </div>
+                <pre className="max-h-60 overflow-y-auto whitespace-pre-wrap rounded bg-muted p-2 text-xs">
+                  {rnResult}
+                </pre>
+              </div>
+            )}
+            <div className="flex gap-2 justify-end pt-2">
+              <Button variant="outline" onClick={() => { setRnModal(null); setRnResult(null); setRnError(null) }} disabled={rnLoading}>
+                Fermer
+              </Button>
+              <Button
+                onClick={() => void generateReleaseNotes()}
+                disabled={rnLoading || !rnFrom || !rnTo}
+              >
+                {rnLoading ? 'Génération…' : 'Générer'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Job launch modal */}
       {jobModal && (
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
@@ -325,48 +462,63 @@ export default function GitExplorer(): React.JSX.Element {
               )}
             </div>
 
-            <div className="space-y-2 border rounded-md p-3">
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Options</p>
-              <label className="flex items-center gap-2 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  className="rounded"
-                  checked={jobModal.options.onlyChangedFiles}
-                  onChange={(e) =>
-                    setJobModal((prev) =>
-                      prev ? { ...prev, options: { ...prev.options, onlyChangedFiles: e.target.checked } } : prev
-                    )
-                  }
-                />
-                <span className="text-sm">Fichiers modifiés uniquement (dernier commit)</span>
-              </label>
-              {jobModal.type === 'commentateur' && (
-                <>
-                  {(
-                    [
-                      ['preserveExisting', 'Conserver les commentaires existants'],
-                      ['addFileHeader', 'Ajouter un en-tête de fichier'],
-                      ['detailedComments', 'Commentaires détaillés'],
-                      ['applyCodingRules', 'Appliquer les règles de codage']
-                    ] as [keyof CommentingOptions, string][]
-                  ).map(([key, label]) => (
-                    <label key={key} className="flex items-center gap-2 cursor-pointer select-none">
-                      <input
-                        type="checkbox"
-                        className="rounded"
-                        checked={jobModal.options[key]}
-                        onChange={(e) =>
-                          setJobModal((prev) =>
-                            prev ? { ...prev, options: { ...prev.options, [key]: e.target.checked } } : prev
-                          )
-                        }
-                      />
-                      <span className="text-sm">{label}</span>
-                    </label>
-                  ))}
-                </>
-              )}
-            </div>
+            {jobModal.type === 'commentateur' ? (
+              <CommentingOptionsPanel
+                options={jobModal.options}
+                onChange={(opts) => setJobModal((prev) => prev ? { ...prev, options: opts } : prev)}
+                showOnlyChangedFiles={true}
+                showContextPipeline={true}
+                projectReady={true}
+                compact={true}
+              />
+            ) : (
+              <div className="border rounded-md p-3 space-y-3">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                  Pipeline de génération
+                </p>
+                <label className="flex items-start gap-2 cursor-pointer select-none">
+                  <input
+                    type="radio"
+                    name="test-pipeline"
+                    checked={jobModal.options.testPipelineMode !== 'advanced'}
+                    onChange={() => setJobModal((prev) => prev ? { ...prev, options: { ...prev.options, testPipelineMode: 'basic' } } : prev)}
+                    className="mt-0.5 h-4 w-4 accent-primary"
+                  />
+                  <div>
+                    <div className="text-sm font-medium">Basique</div>
+                    <div className="text-xs text-muted-foreground">
+                      Un appel LLM par fichier — rapide, sans analyse de call-graph.
+                    </div>
+                  </div>
+                </label>
+                <label className="flex items-start gap-2 cursor-pointer select-none">
+                  <input
+                    type="radio"
+                    name="test-pipeline"
+                    checked={jobModal.options.testPipelineMode === 'advanced'}
+                    onChange={() => setJobModal((prev) => prev ? { ...prev, options: { ...prev.options, testPipelineMode: 'advanced' } } : prev)}
+                    className="mt-0.5 h-4 w-4 accent-primary"
+                  />
+                  <div>
+                    <div className="text-sm font-medium">Avancée — call-graph contextuel</div>
+                    <div className="text-xs text-muted-foreground">
+                      Analyse les appelants/appelés (BFS prof. 3) pour chaque fonction avant de générer les tests.
+                    </div>
+                  </div>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={!!jobModal.options.onlyChangedFiles}
+                    onChange={() => setJobModal((prev) => prev
+                      ? { ...prev, options: { ...prev.options, onlyChangedFiles: !prev.options.onlyChangedFiles } }
+                      : prev)}
+                    className="h-4 w-4 accent-primary"
+                  />
+                  <span className="text-sm">Fichiers modifiés uniquement (dernier commit)</span>
+                </label>
+              </div>
+            )}
 
             <div className="flex gap-2 justify-end pt-2">
               <Button variant="outline" onClick={() => setJobModal(null)} disabled={starting}>

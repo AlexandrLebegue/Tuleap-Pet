@@ -34,7 +34,7 @@ export function registerSprintPlanningHandlers(): void {
         for (const milestoneRaw of closed.items) {
           const m = mapMilestone(milestoneRaw)
           try {
-            const content = await client.listMilestoneContent(m.id, { limit: 200 })
+            const content = await client.listMilestoneContent(m.id, { limit: 100 })
             const items = content.items.map(mapMilestoneContentItem)
             const closedCount = items.filter((it) => {
               const s = (it.status ?? '').toLowerCase()

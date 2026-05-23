@@ -1,32 +1,39 @@
 import * as React from 'react'
-import { useState, useRef, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect } from 'react'
+import { useRef } from 'react'
 import { api } from '@renderer/lib/api'
 import type { CommenterContextProgress, CommenterContextResult } from '../../../preload'
+import type { CommentingOptions, GitRepository, GitBranch } from '@shared/types'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@renderer/components/ui/card'
 import { Button } from '@renderer/components/ui/button'
 import { Badge } from '@renderer/components/ui/badge'
 import {
   Upload, FileCode, CheckCircle2, XCircle, Download, FolderOpen, Loader2,
-  Sparkles, AlertTriangle, SkipForward
+  Sparkles, SkipForward, GitBranch as GitBranchIcon, GitPullRequest, RefreshCw,
+  Files, Folder, AlertTriangle
 } from 'lucide-react'
 import CppProjectBanner from '@renderer/components/CppProjectBanner'
+import CommentingOptionsPanel from '@renderer/components/CommentingOptionsPanel'
 import { useCppProject } from '@renderer/stores/cppProject.store'
+import { useSettings } from '@renderer/stores/settings.store'
+
+// ─── Types ──────────────────────────────────────────────────────────────────
+
+type ImportMode = 'fichiers' | 'dossier' | 'depot'
 
 type FileEntry = { name: string; content: string }
 type ResultEntry = { name: string; content: string; ok: true } | { name: string; error: string; ok: false }
 
-type Options = {
-  preserveExisting: boolean
-  addFileHeader: boolean
-  detailedComments: boolean
-  applyCodingRules: boolean
-}
-
-const DEFAULT_OPTIONS: Options = {
+const DEFAULT_OPTIONS: CommentingOptions = {
   preserveExisting: true,
   addFileHeader: true,
   detailedComments: true,
-  applyCodingRules: false
+  applyCodingRules: false,
+  onlyChangedFiles: false,
+  useContextPipeline: false,
+  forceAll: false,
+  contextDepth: 3,
+  inlineComments: false
 }
 
 const SUPPORTED = ['.c', '.cpp', '.cc', '.cxx', '.h', '.hpp', '.hxx']
@@ -44,32 +51,82 @@ function readFileAsText(file: File): Promise<string> {
   })
 }
 
+// ─── Mode selector ───────────────────────────────────────────────────────────
+
+const MODES: { id: ImportMode; label: string; icon: React.ReactNode }[] = [
+  { id: 'fichiers', label: 'Fichiers', icon: <Files className="size-4" /> },
+  { id: 'dossier', label: 'Dossier CMake', icon: <Folder className="size-4" /> },
+  { id: 'depot', label: 'Dépôt Git', icon: <GitBranchIcon className="size-4" /> }
+]
+
+// ─── Main component ──────────────────────────────────────────────────────────
+
 export default function Commenter(): React.JSX.Element {
+  const [mode, setMode] = useState<ImportMode>('fichiers')
+  const [options, setOptions] = useState<CommentingOptions>(DEFAULT_OPTIONS)
+  const config = useSettings((s) => s.config)
+
+  // --- Mode Fichiers state ---
   const [files, setFiles] = useState<FileEntry[]>([])
-  const [options, setOptions] = useState<Options>(DEFAULT_OPTIONS)
   const [results, setResults] = useState<ResultEntry[]>([])
   const [processing, setProcessing] = useState(false)
   const [progress, setProgress] = useState('')
   const [dragging, setDragging] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  // Pipeline contextuelle (P4) state
+  // --- Mode Dossier state ---
+  const [folderPath, setFolderPath] = useState('')
+  const [folderFileCount, setFolderFileCount] = useState<number | null>(null)
+  const [folderScanning, setFolderScanning] = useState(false)
+  const [folderRunning, setFolderRunning] = useState(false)
+
+  // --- Mode Dépôt state ---
+  const [repos, setRepos] = useState<GitRepository[]>([])
+  const [reposLoading, setReposLoading] = useState(false)
+  const [reposError, setReposError] = useState('')
+  const [selectedRepo, setSelectedRepo] = useState<GitRepository | null>(null)
+  const [branches, setBranches] = useState<GitBranch[]>([])
+  const [branchesLoading, setBranchesLoading] = useState(false)
+  const [selectedBranch, setSelectedBranch] = useState('')
+  const [depotLaunched, setDepotLaunched] = useState(false)
+
+  // --- Shared contextual pipeline state ---
   const cppProject = useCppProject((s) => s.project)
-  const [contextEnabled, setContextEnabled] = useState(false)
-  const [forceAll, setForceAll] = useState(false)
   const [ctxRunning, setCtxRunning] = useState(false)
   const [ctxEvents, setCtxEvents] = useState<CommenterContextProgress[]>([])
   const [ctxResult, setCtxResult] = useState<CommenterContextResult | null>(null)
   const [ctxError, setCtxError] = useState<string | null>(null)
 
-  const projectReady = cppProject.exists && cppProject.hasCMake
-
+  // Subscribe to context pipeline progress events (used by modes Fichiers et Dossier)
   useEffect(() => {
     const unsub = api.commenter.subscribeContext((ev) => {
       setCtxEvents((prev) => [...prev, ev])
     })
     return () => { unsub() }
   }, [])
+
+  // Load repos when switching to depot mode
+  useEffect(() => {
+    if (mode !== 'depot') return
+    setReposLoading(true)
+    setReposError('')
+    api.commenterPr.listRepos()
+      .then(setRepos)
+      .catch((e: unknown) => setReposError(e instanceof Error ? e.message : String(e)))
+      .finally(() => setReposLoading(false))
+  }, [mode])
+
+  // Derived: is the project "ready" for contextual pipeline
+  const projectReady =
+    mode === 'fichiers' ? cppProject.exists && cppProject.hasCMake
+    : mode === 'dossier' ? !!folderPath
+    : true // Dépôt : le repo cloné est toujours un root valide
+
+  const noTempPath = !config.tempClonePath
+
+  const isRunning = processing || ctxRunning || folderRunning
+
+  // ─── Mode Fichiers handlers ────────────────────────────────────────────────
 
   const addFiles = useCallback(async (fileList: File[]) => {
     const supported = fileList.filter((f) => isSupported(f.name))
@@ -85,8 +142,7 @@ export default function Commenter(): React.JSX.Element {
   const onDrop = useCallback(async (e: React.DragEvent) => {
     e.preventDefault()
     setDragging(false)
-    const fileList = Array.from(e.dataTransfer.files)
-    await addFiles(fileList)
+    await addFiles(Array.from(e.dataTransfer.files))
   }, [addFiles])
 
   const onFileInput = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -96,16 +152,12 @@ export default function Commenter(): React.JSX.Element {
     }
   }, [addFiles])
 
-  const removeFile = (name: string): void => {
-    setFiles((prev) => prev.filter((f) => f.name !== name))
-  }
-
-  const toggleOption = (key: keyof Options): void => {
-    setOptions((prev) => ({ ...prev, [key]: !prev[key] }))
-  }
-
-  const onProcess = async (): Promise<void> => {
+  const onProcessFiles = async (): Promise<void> => {
     if (!files.length) return
+    if (options.useContextPipeline) {
+      await onRunContextPipelineFiles()
+      return
+    }
     setProcessing(true)
     setResults([])
     setProgress(`Traitement de ${files.length} fichier(s)…`)
@@ -124,40 +176,27 @@ export default function Commenter(): React.JSX.Element {
     }
   }
 
-  const onSaveFile = async (name: string, content: string): Promise<void> => {
-    await api.commenter.saveFile({ filename: name, content })
-  }
-
-  const onSaveAll = async (): Promise<void> => {
-    const toSave = results.filter((r): r is Extract<ResultEntry, { ok: true }> => r.ok)
-    if (!toSave.length) return
-    await api.commenter.saveAll({ files: toSave })
-  }
-
-  const onRunContextPipeline = async (): Promise<void> => {
+  const onRunContextPipelineFiles = async (): Promise<void> => {
     if (!files.length || !projectReady) return
     setCtxRunning(true)
     setCtxEvents([])
     setCtxResult(null)
     setCtxError(null)
     try {
-      const resolved = await api.commenter.resolveSources({
-        filenames: files.map((f) => f.name)
-      })
-      if (!resolved.ok) {
-        setCtxError(`Résolution échouée : ${resolved.reason}`)
-        return
-      }
+      const resolved = await api.commenter.resolveSources({ filenames: files.map((f) => f.name) })
+      if (!resolved.ok) { setCtxError(`Résolution échouée : ${resolved.reason}`); return }
       const filePaths: string[] = []
       for (const f of files) {
         const candidates = resolved.resolved[f.name]
         if (candidates && candidates[0]) filePaths.push(candidates[0])
       }
-      if (!filePaths.length) {
-        setCtxError('Aucun fichier glissé-déposé n\'a pu être résolu dans le projet sélectionné.')
-        return
-      }
-      const result = await api.commenter.runContext({ filePaths, forceAll })
+      if (!filePaths.length) { setCtxError("Aucun fichier n'a pu être résolu dans le projet."); return }
+      const result = await api.commenter.runContext({
+        filePaths,
+        forceAll: options.forceAll,
+        depth: options.contextDepth,
+        tokenBudget: options.contextTokenBudget
+      })
       setCtxResult(result)
     } catch (err) {
       setCtxError(err instanceof Error ? err.message : String(err))
@@ -166,10 +205,111 @@ export default function Commenter(): React.JSX.Element {
     }
   }
 
+  const onSaveFile = async (name: string, content: string): Promise<void> => {
+    await api.commenter.saveFile({ filename: name, content })
+  }
+  const onSaveAll = async (): Promise<void> => {
+    const toSave = results.filter((r): r is Extract<ResultEntry, { ok: true }> => r.ok)
+    if (!toSave.length) return
+    await api.commenter.saveAll({ files: toSave })
+  }
   const onSaveCtxFile = async (filePath: string, content: string): Promise<void> => {
     const filename = filePath.split(/[\\/]/).pop() ?? 'output.cpp'
     await api.commenter.saveFile({ filename, content })
   }
+
+  // ─── Mode Dossier handlers ─────────────────────────────────────────────────
+
+  const onChooseDossier = async (): Promise<void> => {
+    const result = await api.commenterPr.chooseDir()
+    if (!result.ok || !result.path) return
+    const path = result.path
+    setFolderPath(path)
+    setFolderFileCount(null)
+    setFolderScanning(true)
+    try {
+      const scan = await api.commenter.scanFolder({ folderPath: path })
+      setFolderFileCount(scan.ok ? scan.count : 0)
+    } finally {
+      setFolderScanning(false)
+    }
+  }
+
+  const onRunDossier = async (): Promise<void> => {
+    if (!folderPath) return
+    setFolderRunning(true)
+    setCtxEvents([])
+    setCtxResult(null)
+    setCtxError(null)
+    try {
+      const scan = await api.commenter.scanFolder({ folderPath })
+      if (!scan.ok) { setCtxError(scan.reason); return }
+      const result = await api.commenter.runContext({
+        filePaths: scan.filePaths,
+        forceAll: options.useContextPipeline ? options.forceAll : true,
+        depth: options.contextDepth,
+        tokenBudget: options.contextTokenBudget,
+        projectRootOverride: folderPath
+      })
+      setCtxResult(result)
+    } catch (err) {
+      setCtxError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setFolderRunning(false)
+    }
+  }
+
+  // ─── Mode Dépôt handlers ───────────────────────────────────────────────────
+
+  const loadRepos = useCallback(async () => {
+    setReposLoading(true)
+    setReposError('')
+    setRepos([])
+    setSelectedRepo(null)
+    setBranches([])
+    setSelectedBranch('')
+    try {
+      const list = await api.commenterPr.listRepos()
+      setRepos(list)
+    } catch (err) {
+      setReposError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setReposLoading(false)
+    }
+  }, [])
+
+  const onRepoChange = async (id: string): Promise<void> => {
+    const repo = repos.find((r) => String(r.id) === id) ?? null
+    setSelectedRepo(repo)
+    setSelectedBranch('')
+    setBranches([])
+    if (!repo) return
+    setBranchesLoading(true)
+    try {
+      const list = await api.commenterPr.listBranches(repo.id)
+      setBranches(list)
+    } catch {
+      setBranches([])
+    } finally {
+      setBranchesLoading(false)
+    }
+  }
+
+  const onLaunchDepotJob = async (): Promise<void> => {
+    if (!selectedRepo || !selectedBranch || noTempPath) return
+    setDepotLaunched(false)
+    await api.gitExplorer.startJob({
+      repoId: selectedRepo.id,
+      repoName: selectedRepo.name,
+      cloneUrl: selectedRepo.cloneUrl,
+      branchName: selectedBranch,
+      type: 'commentateur',
+      options
+    })
+    setDepotLaunched(true)
+  }
+
+  // ─── Render ───────────────────────────────────────────────────────────────
 
   const successCount = results.filter((r) => r.ok).length
   const errorCount = results.filter((r) => !r.ok).length
@@ -183,106 +323,208 @@ export default function Commenter(): React.JSX.Element {
         </p>
       </div>
 
-      <CppProjectBanner hint="Permet l'analyse de call-graph (callers/callees) et l'évaluation des commentaires existants par fonction." />
+      {/* Mode selector */}
+      <div className="flex gap-2">
+        {MODES.map((m) => (
+          <button
+            key={m.id}
+            onClick={() => setMode(m.id)}
+            disabled={isRunning}
+            className={`flex-1 flex flex-col items-center gap-1 rounded-lg border px-3 py-2 text-sm transition-colors
+              ${mode === m.id ? 'border-primary bg-primary/10 text-primary font-medium' : 'border-border text-muted-foreground hover:border-primary/50'}`}
+          >
+            {m.icon}
+            <span>{m.label}</span>
+          </button>
+        ))}
+      </div>
 
-      {/* Drop zone */}
-      <Card
-        className={`border-2 border-dashed transition-colors cursor-pointer ${dragging ? 'border-primary bg-primary/5' : 'border-border'}`}
-        onDrop={onDrop}
-        onDragOver={(e) => { e.preventDefault(); setDragging(true) }}
-        onDragLeave={() => setDragging(false)}
-        onClick={() => inputRef.current?.click()}
-      >
-        <CardContent className="flex flex-col items-center justify-center gap-2 py-8">
-          <Upload className="size-8 text-muted-foreground" />
-          <p className="text-sm font-medium">Glisser-déposer des fichiers C/C++</p>
-          <p className="text-xs text-muted-foreground">.c .cpp .h .hpp .cxx .hxx .cc</p>
-          <Button variant="outline" size="sm" type="button">Parcourir…</Button>
-        </CardContent>
-      </Card>
-      <input
-        ref={inputRef}
-        type="file"
-        multiple
-        accept=".c,.cpp,.cc,.cxx,.h,.hpp,.hxx"
-        className="hidden"
-        onChange={onFileInput}
-      />
+      {/* ── Mode Fichiers ── */}
+      {mode === 'fichiers' && (
+        <>
+          <CppProjectBanner hint="Requis pour la pipeline contextuelle (call-graph, évaluation par fonction)." />
 
-      {/* File list */}
-      {files.length > 0 && (
+          <Card
+            className={`border-2 border-dashed transition-colors cursor-pointer ${dragging ? 'border-primary bg-primary/5' : 'border-border'}`}
+            onDrop={onDrop}
+            onDragOver={(e) => { e.preventDefault(); setDragging(true) }}
+            onDragLeave={() => setDragging(false)}
+            onClick={() => inputRef.current?.click()}
+          >
+            <CardContent className="flex flex-col items-center justify-center gap-2 py-8">
+              <Upload className="size-8 text-muted-foreground" />
+              <p className="text-sm font-medium">Glisser-déposer des fichiers C/C++</p>
+              <p className="text-xs text-muted-foreground">.c .cpp .h .hpp .cxx .hxx .cc</p>
+              <Button variant="outline" size="sm" type="button">Parcourir…</Button>
+            </CardContent>
+          </Card>
+          <input ref={inputRef} type="file" multiple accept=".c,.cpp,.cc,.cxx,.h,.hpp,.hxx" className="hidden" onChange={onFileInput} />
+
+          {files.length > 0 && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm">Fichiers sélectionnés ({files.length})</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-1">
+                {files.map((f) => (
+                  <div key={f.name} className="flex items-center justify-between gap-2 text-sm">
+                    <span className="flex items-center gap-1.5 text-muted-foreground">
+                      <FileCode className="size-3.5" />{f.name}
+                    </span>
+                    <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={() => setFiles((prev) => prev.filter((x) => x.name !== f.name))}>✕</Button>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          )}
+        </>
+      )}
+
+      {/* ── Mode Dossier CMake ── */}
+      {mode === 'dossier' && (
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Fichiers sélectionnés ({files.length})</CardTitle>
+            <CardTitle className="text-sm flex items-center gap-2">
+              <Folder className="size-4" />Dossier du projet C/C++
+            </CardTitle>
+            <CardDescription className="text-xs">
+              Sélectionnez le dossier racine contenant votre projet C/C++ (avec ou sans CMakeLists.txt).
+            </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-1">
-            {files.map((f) => (
-              <div key={f.name} className="flex items-center justify-between gap-2 text-sm">
-                <span className="flex items-center gap-1.5 text-muted-foreground">
-                  <FileCode className="size-3.5" />
-                  {f.name}
-                </span>
-                <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={() => removeFile(f.name)}>
-                  ✕
-                </Button>
-              </div>
-            ))}
+          <CardContent className="space-y-3">
+            <div className="flex gap-2">
+              <input
+                readOnly
+                value={folderPath}
+                placeholder="Aucun dossier sélectionné"
+                className="flex-1 rounded-md border border-input bg-muted px-3 py-2 text-sm text-muted-foreground"
+              />
+              <Button variant="outline" size="sm" onClick={onChooseDossier} disabled={isRunning}>
+                <FolderOpen className="mr-2 size-4" />Parcourir…
+              </Button>
+            </div>
+            {folderScanning && <p className="text-xs text-muted-foreground flex items-center gap-1"><Loader2 className="size-3 animate-spin" />Scan en cours…</p>}
+            {folderFileCount !== null && !folderScanning && (
+              <p className="text-xs text-muted-foreground">{folderFileCount} fichier(s) C/C++ trouvé(s).</p>
+            )}
           </CardContent>
         </Card>
       )}
 
-      {/* Options */}
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm">Options</CardTitle>
-          <CardDescription className="text-xs">
-            Les règles de codage (types + nommage) sont désactivées par défaut.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {([
-            ['preserveExisting', 'Préserver les commentaires existants', ''],
-            ['addFileHeader', 'Ajouter l\'en-tête de fichier', ''],
-            ['detailedComments', 'Commentaires détaillés', ''],
-            ['applyCodingRules', 'Appliquer les règles de codage', 'Renomme les variables et convertit les types. Attention : modifie le code.']
-          ] as [keyof Options, string, string][]).map(([key, label, desc]) => (
-            <label key={key} className="flex items-start gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={options[key]}
-                onChange={() => toggleOption(key)}
-                className="mt-0.5 h-4 w-4 accent-primary"
-              />
-              <div>
-                <span className={`text-sm ${key === 'applyCodingRules' ? 'text-orange-600 dark:text-orange-400 font-medium' : ''}`}>
-                  {label}
-                </span>
-                {desc && <p className="text-xs text-muted-foreground">{desc}</p>}
+      {/* ── Mode Dépôt Git ── */}
+      {mode === 'depot' && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <GitBranchIcon className="size-4" />Dépôt et branche
+            </CardTitle>
+            <CardDescription className="text-xs">
+              Sélectionnez le dépôt Git Tuleap et la branche à commenter. Le dépôt sera cloné automatiquement dans le dossier temp configuré dans les paramètres.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {noTempPath && (
+              <div className="flex items-start gap-2 text-xs text-orange-600 dark:text-orange-400">
+                <AlertTriangle className="size-3.5 mt-0.5 shrink-0" />
+                <span>Configurez d'abord le dossier de clonage temporaire dans les <strong>Paramètres → Dossier temp</strong>.</span>
               </div>
-            </label>
-          ))}
-        </CardContent>
-      </Card>
+            )}
+            {reposError && <p className="text-sm text-destructive">{reposError}</p>}
+            <div className="flex gap-2">
+              <select
+                className="flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50"
+                value={selectedRepo?.id ?? ''}
+                onChange={(e) => onRepoChange(e.target.value)}
+                disabled={reposLoading}
+              >
+                <option value="">
+                  {reposLoading ? 'Chargement…' : repos.length === 0 ? 'Aucun dépôt trouvé' : '— Sélectionner un dépôt —'}
+                </option>
+                {repos.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+              </select>
+              <Button variant="outline" size="sm" onClick={loadRepos} disabled={reposLoading} title="Rafraîchir">
+                <RefreshCw className={`size-4 ${reposLoading ? 'animate-spin' : ''}`} />
+              </Button>
+            </div>
+            {selectedRepo && (
+              <select
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50"
+                value={selectedBranch}
+                onChange={(e) => setSelectedBranch(e.target.value)}
+                disabled={branchesLoading}
+              >
+                <option value="">{branchesLoading ? 'Chargement des branches…' : '— Sélectionner une branche —'}</option>
+                {branches.map((b) => <option key={b.name} value={b.name}>{b.name}</option>)}
+              </select>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
-      {/* Actions */}
+      {/* ── Shared options panel ── */}
+      <CommentingOptionsPanel
+        options={options}
+        onChange={setOptions}
+        disabled={isRunning}
+        showOnlyChangedFiles={mode === 'depot'}
+        showContextPipeline={true}
+        projectReady={projectReady}
+      />
+
+      {/* ── Action button ── */}
       <div className="flex gap-2">
-        <Button onClick={onProcess} disabled={!files.length || processing}>
-          {processing ? <><Loader2 className="mr-2 size-4 animate-spin" />Traitement…</> : 'Commenter'}
-        </Button>
-        {successCount > 0 && (
-          <Button variant="outline" onClick={onSaveAll}>
-            <FolderOpen className="mr-2 size-4" />
-            Tout enregistrer ({successCount})
+        {mode === 'fichiers' && (
+          <>
+            <Button onClick={onProcessFiles} disabled={!files.length || isRunning}>
+              {processing || ctxRunning
+                ? <><Loader2 className="mr-2 size-4 animate-spin" />{options.useContextPipeline ? 'Évaluation…' : 'Traitement…'}</>
+                : options.useContextPipeline
+                  ? <><Sparkles className="mr-2 size-4" />Évaluer + commenter par fonction</>
+                  : 'Commenter'
+              }
+            </Button>
+            {successCount > 0 && !options.useContextPipeline && (
+              <Button variant="outline" onClick={onSaveAll}>
+                <FolderOpen className="mr-2 size-4" />Tout enregistrer ({successCount})
+              </Button>
+            )}
+          </>
+        )}
+        {mode === 'dossier' && (
+          <Button onClick={onRunDossier} disabled={!folderPath || isRunning}>
+            {folderRunning || ctxRunning
+              ? <><Loader2 className="mr-2 size-4 animate-spin" />Traitement…</>
+              : options.useContextPipeline
+                ? <><Sparkles className="mr-2 size-4" />Évaluer + commenter le dossier</>
+                : <><Folder className="mr-2 size-4" />Commenter le dossier</>
+            }
+          </Button>
+        )}
+        {mode === 'depot' && (
+          <Button
+            onClick={onLaunchDepotJob}
+            disabled={!selectedRepo || !selectedBranch || noTempPath}
+          >
+            <GitPullRequest className="mr-2 size-4" />Lancer le job commentateur
           </Button>
         )}
       </div>
 
-      {progress && (
-        <p className="text-sm text-muted-foreground">{progress}</p>
+      {/* ── Job lancé (mode dépôt) ── */}
+      {mode === 'depot' && depotLaunched && (
+        <Card className="border-green-500/30 bg-green-500/5">
+          <CardContent className="py-3 text-sm text-green-700 dark:text-green-400 flex items-center gap-2">
+            <CheckCircle2 className="size-4" />
+            Job lancé — suivez la progression dans le panneau des jobs (icône en bas à droite).
+          </CardContent>
+        </Card>
       )}
 
-      {/* Results */}
-      {results.length > 0 && (
+      {/* ── Progress message (mode fichiers basic) ── */}
+      {progress && <p className="text-sm text-muted-foreground">{progress}</p>}
+
+      {/* ── Results (mode fichiers, basic pipeline) ── */}
+      {mode === 'fichiers' && results.length > 0 && !options.useContextPipeline && (
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm flex items-center gap-2">
@@ -295,16 +537,12 @@ export default function Commenter(): React.JSX.Element {
             {results.map((r) => (
               <div key={r.name} className="flex items-center justify-between gap-2 text-sm">
                 <span className="flex items-center gap-1.5">
-                  {r.ok
-                    ? <CheckCircle2 className="size-4 text-green-500" />
-                    : <XCircle className="size-4 text-destructive" />
-                  }
+                  {r.ok ? <CheckCircle2 className="size-4 text-green-500" /> : <XCircle className="size-4 text-destructive" />}
                   <span className={r.ok ? '' : 'text-muted-foreground line-through'}>{r.name}</span>
                   {!r.ok && <span className="text-xs text-destructive">{r.error}</span>}
                 </span>
                 {r.ok && (
-                  <Button variant="outline" size="sm" className="h-6 px-2 text-xs gap-1"
-                    onClick={() => onSaveFile(r.name, r.content)}>
+                  <Button variant="outline" size="sm" className="h-6 px-2 text-xs gap-1" onClick={() => onSaveFile(r.name, r.content)}>
                     <Download className="size-3" />Enregistrer
                   </Button>
                 )}
@@ -314,130 +552,60 @@ export default function Commenter(): React.JSX.Element {
         </Card>
       )}
 
-      {/* Pipeline contextuelle (P4) — per-function evaluation + call-graph context */}
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm flex items-center gap-2">
-            <Sparkles className="size-4" />
-            Pipeline contextuelle (évaluation par fonction)
-            <label className="ml-auto flex items-center gap-2 text-xs font-normal">
-              <input
-                type="checkbox"
-                checked={contextEnabled}
-                onChange={(e) => setContextEnabled(e.target.checked)}
-                className="h-3.5 w-3.5 accent-primary"
-              />
-              Activer
-            </label>
-          </CardTitle>
-          <CardDescription className="text-xs">
-            Pour chaque fonction du fichier, l'IA évalue si le commentaire existant est suffisant. Sinon, elle en génère un nouveau en s'appuyant sur le call-graph (callers/callees BFS prof. 3) et le header associé.
-          </CardDescription>
-        </CardHeader>
-        {contextEnabled && (
-          <CardContent className="space-y-3">
-            {!projectReady && (
-              <div className="flex items-start gap-2 text-xs text-orange-600 dark:text-orange-400">
-                <AlertTriangle className="size-3.5 mt-0.5 shrink-0" />
-                <span>
-                  Sélectionne d'abord la racine du projet C/C++ via le bandeau ci-dessus.
-                </span>
-              </div>
-            )}
+      {/* ── Contextual pipeline events log (modes fichiers + dossier) ── */}
+      {options.useContextPipeline && ctxEvents.length > 0 && (
+        <div className="rounded border bg-muted/30 p-2 text-xs font-mono max-h-40 overflow-y-auto space-y-0.5">
+          {ctxEvents.map((ev, i) => (
+            <div key={i} className="text-muted-foreground">{formatCtxEvent(ev)}</div>
+          ))}
+        </div>
+      )}
 
-            <label className="flex items-start gap-2 text-sm cursor-pointer">
-              <input
-                type="checkbox"
-                checked={forceAll}
-                onChange={(e) => setForceAll(e.target.checked)}
-                className="mt-0.5 h-4 w-4 accent-primary"
-              />
-              <div>
-                <div>Forcer la regénération sur toutes les fonctions</div>
-                <div className="text-xs text-muted-foreground">Ignore le verdict de l'évaluateur (utile pour audit / réécriture de masse).</div>
-              </div>
-            </label>
+      {/* ── Context pipeline error ── */}
+      {ctxError && (
+        <div className="flex items-start gap-2 text-xs text-destructive">
+          <XCircle className="size-3.5 mt-0.5" /><span>{ctxError}</span>
+        </div>
+      )}
 
-            <Button
-              onClick={onRunContextPipeline}
-              disabled={!projectReady || !files.length || ctxRunning}
-            >
-              {ctxRunning
-                ? <><Loader2 className="mr-2 size-4 animate-spin" />Évaluation en cours…</>
-                : <><Sparkles className="mr-2 size-4" />Évaluer + commenter par fonction</>
-              }
-            </Button>
-
-            {ctxError && (
-              <div className="flex items-start gap-2 text-xs text-destructive">
-                <XCircle className="size-3.5 mt-0.5" />
-                <span>{ctxError}</span>
+      {/* ── Context pipeline results (modes fichiers + dossier) ── */}
+      {ctxResult && (
+        <div className="space-y-2 text-sm">
+          {ctxResult.warnings.length > 0 && (
+            <ul className="text-xs text-orange-600 dark:text-orange-400 list-disc list-inside">
+              {ctxResult.warnings.map((w, i) => <li key={i}>{w}</li>)}
+            </ul>
+          )}
+          {ctxResult.files.map((f) => (
+            <div key={f.filePath} className="rounded border p-2 space-y-1.5">
+              <div className="flex items-center gap-2 text-sm">
+                <FileCode className="size-3.5 text-muted-foreground shrink-0" />
+                <span className="font-mono text-xs truncate flex-1" title={f.filePath}>{f.filePath}</span>
+                <Badge variant="success" className="text-[10px] gap-1"><Sparkles className="size-2.5" />{f.commented}</Badge>
+                <Badge variant="outline" className="text-[10px] gap-1"><SkipForward className="size-2.5" />{f.skipped}</Badge>
+                <Button variant="outline" size="sm" className="h-6 px-2 text-xs gap-1" onClick={() => void onSaveCtxFile(f.filePath, f.newContent)}>
+                  <Download className="size-3" />Enregistrer
+                </Button>
               </div>
-            )}
-
-            {ctxEvents.length > 0 && (
-              <div className="rounded border bg-muted/30 p-2 text-xs font-mono max-h-40 overflow-y-auto space-y-0.5">
-                {ctxEvents.map((ev, i) => (
-                  <div key={i} className="text-muted-foreground">
-                    {formatCtxEvent(ev)}
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {ctxResult && (
-              <div className="space-y-2 text-sm">
-                {ctxResult.warnings.length > 0 && (
-                  <ul className="text-xs text-orange-600 dark:text-orange-400 list-disc list-inside">
-                    {ctxResult.warnings.map((w, i) => <li key={i}>{w}</li>)}
-                  </ul>
-                )}
-                {ctxResult.files.map((f) => (
-                  <div key={f.filePath} className="rounded border p-2 space-y-1.5">
-                    <div className="flex items-center gap-2 text-sm">
-                      <FileCode className="size-3.5 text-muted-foreground shrink-0" />
-                      <span className="font-mono text-xs truncate flex-1" title={f.filePath}>
-                        {f.filePath}
-                      </span>
-                      <Badge variant="success" className="text-[10px] gap-1">
-                        <Sparkles className="size-2.5" />{f.commented}
-                      </Badge>
-                      <Badge variant="outline" className="text-[10px] gap-1">
-                        <SkipForward className="size-2.5" />{f.skipped}
-                      </Badge>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-6 px-2 text-xs gap-1"
-                        onClick={() => void onSaveCtxFile(f.filePath, f.newContent)}
-                      >
-                        <Download className="size-3" />Enregistrer
-                      </Button>
-                    </div>
-                    <details className="text-xs">
-                      <summary className="cursor-pointer text-muted-foreground">
-                        Détail par fonction ({f.plans.length})
-                      </summary>
-                      <ul className="mt-1 space-y-0.5 pl-2">
-                        {f.plans.map((p) => (
-                          <li key={p.fn.qualifiedName} className="flex items-start gap-1.5">
-                            {p.evaluation.sufficient
-                              ? <SkipForward className="size-3 mt-0.5 text-muted-foreground" />
-                              : <Sparkles className="size-3 mt-0.5 text-green-500" />
-                            }
-                            <span className="font-mono">{p.fn.qualifiedName}</span>
-                            <span className="text-muted-foreground truncate">— {p.evaluation.reason}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </details>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        )}
-      </Card>
+              <details className="text-xs">
+                <summary className="cursor-pointer text-muted-foreground">Détail par fonction ({f.plans.length})</summary>
+                <ul className="mt-1 space-y-0.5 pl-2">
+                  {f.plans.map((p) => (
+                    <li key={p.fn.qualifiedName} className="flex items-start gap-1.5">
+                      {p.evaluation.sufficient
+                        ? <SkipForward className="size-3 mt-0.5 text-muted-foreground" />
+                        : <Sparkles className="size-3 mt-0.5 text-green-500" />
+                      }
+                      <span className="font-mono">{p.fn.qualifiedName}</span>
+                      <span className="text-muted-foreground truncate">— {p.evaluation.reason}</span>
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
@@ -447,9 +615,7 @@ function formatCtxEvent(ev: CommenterContextProgress): string {
     case 'index': return `→ indexation : ${ev.root}`
     case 'file-start': return `→ ${ev.filePath} (${ev.functions} fonction(s))`
     case 'evaluate': return `   • évaluation ${ev.functionName} (${ev.index}/${ev.total})`
-    case 'verdict': return ev.sufficient
-      ? `     ✓ suffisant — ${ev.reason}`
-      : `     ✗ insuffisant — ${ev.reason}`
+    case 'verdict': return ev.sufficient ? `     ✓ suffisant — ${ev.reason}` : `     ✗ insuffisant — ${ev.reason}`
     case 'generate': return `     → génération du nouveau commentaire pour ${ev.functionName}`
     case 'file-done': return `→ terminé : ${ev.commented} commenté(s), ${ev.skipped} skip`
     case 'done': return '✓ pipeline contextuelle terminée'

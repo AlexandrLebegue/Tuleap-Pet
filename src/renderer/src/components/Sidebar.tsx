@@ -6,17 +6,13 @@ import {
   Sparkles,
   MessageSquare,
   Code2,
-  Gauge,
   FileCode2,
-  GitPullRequest,
   GitBranch,
   Wrench,
   FlaskConical,
   LayoutGrid,
-  BookOpen,
   ClipboardCheck,
   FileText,
-  CalendarRange,
   Bug,
   History,
   Rocket
@@ -45,14 +41,16 @@ const groups: NavGroup[] = [
     ]
   },
   {
+    label: 'Projet',
+    items: [
+      { to: '/project', label: 'Projet', icon: FolderKanban }
+    ]
+  },
+  {
     label: 'Tuleap',
     items: [
-      { to: '/project', label: 'Projet', icon: FolderKanban },
       { to: '/sprint', label: 'Sprint Board', icon: LayoutGrid },
-      { to: '/sprint-planning', label: 'Sprint Planning', icon: CalendarRange },
-      { to: '/admin', label: 'Admin', icon: Gauge },
       { to: '/generation', label: 'Génération IA', icon: Sparkles },
-      { to: '/knowledge', label: 'Knowledge Base', icon: BookOpen },
       { to: '/git', label: 'Git Explorer', icon: GitBranch }
     ]
   },
@@ -71,7 +69,6 @@ const groups: NavGroup[] = [
     items: [
       { to: '/coder', label: 'Coder', icon: Code2 },
       { to: '/commenter', label: 'Commentateur', icon: FileCode2 },
-      { to: '/commenter-pr', label: 'Commenter PR', icon: GitPullRequest },
       { to: '/corrector', label: 'Correcteur', icon: Wrench },
       { to: '/test-generator', label: 'Tests unitaires', icon: FlaskConical }
     ]

@@ -189,7 +189,15 @@ export function parseFile(filePath: string, content: string): FunctionDef[] {
           .filter(Boolean)
           .join('::')
 
-        const startLine = offsetToLine(content, closed.headStartOffset)
+        let trueStart = closed.headStartOffset
+        while (
+          trueStart < len &&
+          (cleaned[trueStart] === ' ' || cleaned[trueStart] === '\t' ||
+           cleaned[trueStart] === '\n' || cleaned[trueStart] === '\r')
+        ) {
+          trueStart++
+        }
+        const startLine = offsetToLine(content, trueStart)
         const endLine = offsetToLine(content, i)
         const body = content.slice(closed.headStartOffset, i + 1).replace(/^\s+/, '')
 

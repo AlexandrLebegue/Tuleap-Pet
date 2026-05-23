@@ -5,6 +5,8 @@ import type { BrowserWindow } from 'electron'
 import { buildTuleapClient } from '../tuleap/build'
 import { getConfig } from '../store/config'
 import { processSingleFile } from '../commenter/commenter'
+import { runContextCommenter } from '../commenter/context-commenter'
+import type { ContextCommenterProgress } from '../commenter/context-commenter'
 import {
   cloneRepo,
   listSourceFiles,
@@ -16,6 +18,7 @@ import {
   findTestDirectory
 } from '../commenter/git-utils'
 import { generateTestsForFile, testOutputFilename } from './test-gen-file'
+import { generateTestsGranular } from '../test-generator/test-generator'
 import { injectGitCredentials, explainGitAuthFailure } from './git-credentials'
 import { debugError } from '../logger'
 import type { BackgroundJob, JobStatus, JobStreamEvent, JobType, CommentingOptions } from '@shared/types'
@@ -164,23 +167,70 @@ async function runJob(
         continue
       }
 
-      try {
-        const fullPath = path.join(targetDir, filename)
-        const content = fs.readFileSync(fullPath, 'utf8')
-
-        if (args.type === 'commentateur') {
-          const commented = await processSingleFile(content, filename, commentOptions)
-          fs.writeFileSync(fullPath, commented, 'utf8')
-        } else {
-          const testCode = await generateTestsForFile(content, filename)
-          const outName = testOutputFilename(filename)
+      if (args.type !== 'commentateur') {
+        try {
+          const fullPath = path.join(targetDir, filename)
+          const content = fs.readFileSync(fullPath, 'utf8')
           const outDir = testDir ? path.join(targetDir, testDir) : targetDir
           fs.mkdirSync(outDir, { recursive: true })
-          fs.writeFileSync(path.join(outDir, outName), testCode, 'utf8')
+
+          if (commentOptions.testPipelineMode === 'advanced') {
+            const result = await generateTestsGranular(
+              content, filename, undefined, undefined, targetDir, fullPath
+            )
+            for (const tf of result.testFiles) {
+              fs.writeFileSync(path.join(outDir, tf.name), tf.content, 'utf8')
+            }
+          } else {
+            const testCode = await generateTestsForFile(content, filename)
+            const outName = testOutputFilename(filename)
+            fs.writeFileSync(path.join(outDir, outName), testCode, 'utf8')
+          }
+        } catch (fileErr) {
+          skipped++
+          debugError('[job-manager] skipped %s: %s', filename, fileErr instanceof Error ? fileErr.message : String(fileErr))
         }
-      } catch (fileErr) {
-        skipped++
-        debugError('[job-manager] skipped %s: %s', filename, fileErr instanceof Error ? fileErr.message : String(fileErr))
+        continue
+      }
+
+      if (!commentOptions.useContextPipeline) {
+        try {
+          const fullPath = path.join(targetDir, filename)
+          const content = fs.readFileSync(fullPath, 'utf8')
+          const commented = await processSingleFile(content, filename, commentOptions)
+          fs.writeFileSync(fullPath, commented, 'utf8')
+        } catch (fileErr) {
+          skipped++
+          debugError('[job-manager] skipped %s: %s', filename, fileErr instanceof Error ? fileErr.message : String(fileErr))
+        }
+      }
+    }
+
+    // Contextual pipeline: process all commenter files in batch after the loop
+    if (args.type === 'commentateur' && commentOptions.useContextPipeline) {
+      const absolutePaths = files.map((f) => path.join(targetDir, f))
+      const emitCtx = (ev: ContextCommenterProgress): void => {
+        win?.webContents.send('commenter:context-progress', ev)
+      }
+      try {
+        const ctxResult = await runContextCommenter(
+          {
+            projectRoot: targetDir,
+            filePaths: absolutePaths,
+            forceAll: commentOptions.forceAll,
+            depth: commentOptions.contextDepth,
+            tokenBudget: commentOptions.contextTokenBudget,
+            inlineComments: commentOptions.inlineComments
+          },
+          emitCtx
+        )
+        for (const f of ctxResult.files) {
+          fs.writeFileSync(f.filePath, f.newContent, 'utf8')
+        }
+        skipped = files.length - ctxResult.files.length
+      } catch (ctxErr) {
+        debugError('[job-manager] context pipeline error: %s', ctxErr instanceof Error ? ctxErr.message : String(ctxErr))
+        throw ctxErr
       }
     }
 

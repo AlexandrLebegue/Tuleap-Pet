@@ -1,16 +1,17 @@
 import * as React from 'react'
-import { useState, useRef, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { api } from '@renderer/lib/api'
 import type { TestgenPipelineProgress, TestgenPipelineResult } from '../../../preload'
 import { Card, CardContent, CardHeader, CardTitle } from '@renderer/components/ui/card'
 import { Button } from '@renderer/components/ui/button'
 import { Badge } from '@renderer/components/ui/badge'
 import {
-  Upload, FileCode, Download, FolderOpen, Loader2, CheckCircle2, AlertCircle, FlaskConical,
+  FileCode, Download, FolderOpen, Loader2, CheckCircle2, AlertCircle, FlaskConical,
   Hammer, Wrench, AlertTriangle
 } from 'lucide-react'
-import CppProjectBanner from '@renderer/components/CppProjectBanner'
+import SourceInputPanel from '@renderer/components/SourceInputPanel'
 import { useCppProject } from '@renderer/stores/cppProject.store'
+import type { SourceInputMode, GitRepository, GitBranch } from '@shared/types'
 
 type ParsedFunction = {
   name: string
@@ -38,35 +39,52 @@ type GenerationMetrics = {
 
 type Phase = 'idle' | 'extracting' | 'generating' | 'done'
 
-function readFileAsText(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(reader.result as string)
-    reader.onerror = () => reject(reader.error)
-    reader.readAsText(file, 'utf-8')
-  })
-}
-
-const SUPPORTED = ['.c', '.cpp', '.cc', '.cxx', '.h', '.hpp', '.hxx', '.py']
-function isSupported(name: string): boolean {
-  return SUPPORTED.some((e) => name.toLowerCase().endsWith(e))
+const SOURCE_EXTS = ['.c', '.cpp', '.cc', '.cxx']
+function isSourceFile(name: string): boolean {
+  return SOURCE_EXTS.some((e) => name.toLowerCase().endsWith(e))
 }
 
 export default function TestGenerator(): React.JSX.Element {
+  // ---- Source file ----
   const [filename, setFilename] = useState('')
   const [content, setContent] = useState('')
-  const [dragging, setDragging] = useState(false)
+  const [sourceFilePath, setSourceFilePath] = useState<string | null>(null)
+
+  // ---- Source input mode ----
+  const [sourceMode, setSourceMode] = useState<SourceInputMode>('files')
+
+  // ---- Folder mode ----
+  const cppProjectStore = useCppProject()
+  const cppProject = cppProjectStore.project
+  const [folderFiles, setFolderFiles] = useState<string[]>([])
+  const [folderLoading, setFolderLoading] = useState(false)
+  const [selectedFolderFile, setSelectedFolderFile] = useState<string | null>(null)
+
+  // ---- Git mode (Tuleap) ----
+  const [gitRepos, setGitRepos] = useState<GitRepository[]>([])
+  const [gitLoadingRepos, setGitLoadingRepos] = useState(false)
+  const [gitSelectedRepo, setGitSelectedRepo] = useState<GitRepository | null>(null)
+  const [gitBranches, setGitBranches] = useState<GitBranch[]>([])
+  const [gitLoadingBranches, setGitLoadingBranches] = useState(false)
+  const [gitSelectedBranch, setGitSelectedBranch] = useState<string | null>(null)
+  const [gitOnlyRecent, setGitOnlyRecent] = useState(false)
+  const [gitCloneState, setGitCloneState] = useState<'idle' | 'cloning' | 'ready' | 'error'>('idle')
+  const [gitFiles, setGitFiles] = useState<string[]>([])
+  const [gitError, setGitError] = useState<string | null>(null)
+  const [selectedGitFile, setSelectedGitFile] = useState<string | null>(null)
+  const gitCloneDirRef = useRef<string | null>(null)
+
+  // ---- Extraction & generation ----
   const [phase, setPhase] = useState<Phase>('idle')
   const [status, setStatus] = useState('')
-  const [progressDetail, setProgressDetail] = useState('')
   const [functions, setFunctions] = useState<ParsedFunction[]>([])
   const [fileInfo, setFileInfo] = useState<FileInfo | null>(null)
+  const [selectedFunctions, setSelectedFunctions] = useState<Set<string>>(new Set())
   const [testFiles, setTestFiles] = useState<TestFile[]>([])
   const [metrics, setMetrics] = useState<GenerationMetrics | null>(null)
 
-  // Pipeline (P3) state
-  const cppProject = useCppProject((s) => s.project)
-  const [pipelineEnabled, setPipelineEnabled] = useState(false)
+  // ---- Pipeline (P3) ----
+  const [pipelineMode, setPipelineMode] = useState<'basic' | 'advanced'>('basic')
   const [buildEnabled, setBuildEnabled] = useState(true)
   const [preset, setPreset] = useState('ci-gcc')
   const [maxRepairs, setMaxRepairs] = useState(3)
@@ -75,11 +93,9 @@ export default function TestGenerator(): React.JSX.Element {
   const [pipelineResult, setPipelineResult] = useState<TestgenPipelineResult | null>(null)
   const [pipelineError, setPipelineError] = useState<string | null>(null)
 
-  const inputRef = useRef<HTMLInputElement>(null)
-
   const projectReady = cppProject.exists && cppProject.hasCMake
-  const isPipelineRoute = !filename.endsWith('.py')
 
+  // Subscribe to pipeline events
   useEffect(() => {
     const unsub = api.testgen.subscribePipeline((ev) => {
       setPipelineEvents((prev) => [...prev, ev])
@@ -87,63 +103,187 @@ export default function TestGenerator(): React.JSX.Element {
     return () => { unsub() }
   }, [])
 
-  const loadFile = useCallback(async (file: File) => {
-    if (!isSupported(file.name)) return
-    const text = await readFileAsText(file)
-    setFilename(file.name)
-    setContent(text)
+  // Cleanup git clone dir on unmount
+  useEffect(() => {
+    return () => {
+      if (gitCloneDirRef.current) {
+        void api.testgen.cleanupCloneDir({ cloneDir: gitCloneDirRef.current })
+      }
+    }
+  }, [])
+
+  // Load Tuleap repos when entering git mode
+  useEffect(() => {
+    if (sourceMode !== 'git' || gitRepos.length > 0) return
+    setGitLoadingRepos(true)
+    api.gitExplorer.listRepos()
+      .then(setGitRepos)
+      .catch(() => setGitRepos([]))
+      .finally(() => setGitLoadingRepos(false))
+  }, [sourceMode, gitRepos.length])
+
+  // Auto-extract functions whenever a file is loaded
+  useEffect(() => {
+    if (!filename || !content) return
+    void doExtract(filename, content)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filename, content])
+
+  async function doExtract(name: string, src: string): Promise<void> {
+    setPhase('extracting')
+    setStatus('Extraction des fonctions…')
     setFunctions([])
     setFileInfo(null)
+    setSelectedFunctions(new Set())
+    setTestFiles([])
+    setMetrics(null)
+    try {
+      const result = await api.testgen.extractFunctions({ filename: name, content: src })
+      const fns = result.functions as ParsedFunction[]
+      setFunctions(fns)
+      setFileInfo(result.fileInfo as FileInfo)
+      setSelectedFunctions(new Set(fns.map((f) => f.name)))
+      setStatus('')
+      setPhase('idle')
+    } catch (err) {
+      setStatus(`Erreur d'extraction : ${err instanceof Error ? err.message : String(err)}`)
+      setPhase('idle')
+    }
+  }
+
+  // ---- Reset helper ----
+  const resetFile = useCallback(() => {
+    setFilename('')
+    setContent('')
+    setSourceFilePath(null)
+    setFunctions([])
+    setFileInfo(null)
+    setSelectedFunctions(new Set())
     setTestFiles([])
     setMetrics(null)
     setStatus('')
     setPhase('idle')
   }, [])
 
-  const onDrop = useCallback(async (e: React.DragEvent) => {
-    e.preventDefault()
-    setDragging(false)
-    const file = Array.from(e.dataTransfer.files).find((f) => isSupported(f.name))
-    if (file) await loadFile(file)
-  }, [loadFile])
-
-  const onFileInput = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files?.[0]) { await loadFile(e.target.files[0]); e.target.value = '' }
-  }, [loadFile])
-
-  const onExtract = async (): Promise<void> => {
-    if (!filename || !content) return
-    setPhase('extracting')
-    setStatus('Extraction des fonctions…')
-    setFunctions([])
-    setFileInfo(null)
-    setTestFiles([])
-    setMetrics(null)
+  // ---- Folder mode handlers ----
+  const onFolderPick = useCallback(async () => {
+    setFolderLoading(true)
     try {
-      const result = await api.testgen.extractFunctions({ filename, content })
-      setFunctions(result.functions as ParsedFunction[])
-      setFileInfo(result.fileInfo as FileInfo)
-      setStatus('')
-      setPhase('idle')
-    } catch (err) {
-      setStatus(`Erreur : ${err instanceof Error ? err.message : String(err)}`)
-      setPhase('idle')
+      const picked = await cppProjectStore.pick()
+      if (!picked.path) return
+      const res = await api.testgen.listFolderFiles({ folderPath: picked.path })
+      if (res.ok) {
+        setFolderFiles(res.files.filter(isSourceFile))
+        setSelectedFolderFile(null)
+        resetFile()
+      }
+    } finally {
+      setFolderLoading(false)
     }
+  }, [cppProjectStore, resetFile])
+
+  const onFolderFileSelect = useCallback(async (rel: string) => {
+    if (!cppProject.path) return
+    setSelectedFolderFile(rel)
+    const res = await api.testgen.readFileFromDir({ cloneDir: cppProject.path, relativePath: rel })
+    if (res.ok) {
+      const name = rel.split('/').pop() ?? rel
+      setFilename(name)
+      setContent(res.content)
+      setSourceFilePath(`${cppProject.path}/${rel}`.replace(/\\/g, '/'))
+    }
+  }, [cppProject.path])
+
+  // ---- Git mode handlers ----
+  const onGitRepoSelect = useCallback((repo: GitRepository) => {
+    setGitSelectedRepo(repo)
+    setGitSelectedBranch(null)
+    setGitBranches([])
+    setGitFiles([])
+    setGitCloneState('idle')
+    setGitError(null)
+    setSelectedGitFile(null)
+    resetFile()
+    setGitLoadingBranches(true)
+    api.gitExplorer.listBranches(repo.id)
+      .then(setGitBranches)
+      .catch(() => setGitBranches([]))
+      .finally(() => setGitLoadingBranches(false))
+  }, [resetFile])
+
+  const onGitBranchSelect = useCallback(async (branch: string) => {
+    if (!gitSelectedRepo) return
+    setGitSelectedBranch(branch)
+    setGitFiles([])
+    setGitError(null)
+    setSelectedGitFile(null)
+    resetFile()
+    if (gitCloneDirRef.current) {
+      void api.testgen.cleanupCloneDir({ cloneDir: gitCloneDirRef.current })
+      gitCloneDirRef.current = null
+    }
+    setGitCloneState('cloning')
+    const res = await api.testgen.gitCloneAndList({
+      repoUrl: gitSelectedRepo.cloneUrl,
+      branch,
+      onlyRecentFiles: gitOnlyRecent
+    })
+    if (res.ok) {
+      gitCloneDirRef.current = res.cloneDir
+      setGitFiles(res.files.filter(isSourceFile))
+      setGitCloneState('ready')
+    } else {
+      setGitError(res.error)
+      setGitCloneState('error')
+    }
+  }, [gitSelectedRepo, gitOnlyRecent, resetFile])
+
+  const onGitFileSelect = useCallback(async (rel: string) => {
+    const cloneDir = gitCloneDirRef.current
+    if (!cloneDir) return
+    setSelectedGitFile(rel)
+    const res = await api.testgen.readFileFromDir({ cloneDir, relativePath: rel })
+    if (res.ok) {
+      const name = rel.split('/').pop() ?? rel
+      setFilename(name)
+      setContent(res.content)
+      setSourceFilePath(`${cloneDir}/${rel}`.replace(/\\/g, '/'))
+    }
+  }, [])
+
+  // ---- Function selection ----
+  const toggleFunction = (name: string): void => {
+    setSelectedFunctions((prev) => {
+      const next = new Set(prev)
+      if (next.has(name)) next.delete(name)
+      else next.add(name)
+      return next
+    })
   }
 
-  const onGenerateAll = async (): Promise<void> => {
-    if (!filename || !content) return
+  const toggleAllFunctions = (): void => {
+    setSelectedFunctions((prev) =>
+      prev.size === functions.length ? new Set() : new Set(functions.map((f) => f.name))
+    )
+  }
+
+  // ---- Generation ----
+  const onGenerate = async (): Promise<void> => {
+    if (!filename || !content || selectedFunctions.size === 0) return
     setPhase('generating')
-    setStatus('Génération des tests en cours…')
-    setProgressDetail('')
+    setStatus(`Génération des tests pour ${selectedFunctions.size} fonction(s)…`)
     setTestFiles([])
     setMetrics(null)
     try {
-      const result = await api.testgen.generateAll({ filename, content })
+      const result = await api.testgen.generateAll({
+        filename,
+        content,
+        onlyFunctions: [...selectedFunctions],
+        sourceFilePath: sourceFilePath ?? undefined
+      })
       setTestFiles(result.testFiles as TestFile[])
       setMetrics(result.metrics as GenerationMetrics)
       setStatus('')
-      setProgressDetail('')
       setPhase('done')
     } catch (err) {
       setStatus(`Erreur : ${err instanceof Error ? err.message : String(err)}`)
@@ -167,22 +307,24 @@ export default function TestGenerator(): React.JSX.Element {
     setPipelineResult(null)
     setPipelineError(null)
     try {
-      const resolved = await api.testgen.resolveSource({ filename })
-      if (!resolved.ok) {
-        setPipelineError(
-          resolved.reason === 'not-found'
-            ? `Fichier "${filename}" introuvable dans la racine projet sélectionnée.`
-            : `Source non résolue (${resolved.reason}).`
-        )
-        return
+      // Use the full sourceFilePath when available (folder/git mode), fall back to resolve
+      let resolvedPath = sourceFilePath
+      if (!resolvedPath) {
+        const resolved = await api.testgen.resolveSource({ filename })
+        if (!resolved.ok) {
+          setPipelineError(
+            resolved.reason === 'not-found'
+              ? `Fichier "${filename}" introuvable dans la racine projet.`
+              : `Source non résolue (${resolved.reason}).`
+          )
+          return
+        }
+        resolvedPath = resolved.candidates[0] ?? null
       }
-      const sourceFilePath = resolved.candidates[0]
-      if (!sourceFilePath) {
-        setPipelineError('Aucun fichier candidat retourné par la résolution.')
-        return
-      }
+      if (!resolvedPath) { setPipelineError('Aucun fichier source résolu.'); return }
       const result = await api.testgen.runPipeline({
-        sourceFilePath,
+        sourceFilePath: resolvedPath,
+        onlyFunctions: selectedFunctions.size > 0 ? [...selectedFunctions] : undefined,
         buildEnabled,
         preset,
         maxRepairs
@@ -195,12 +337,14 @@ export default function TestGenerator(): React.JSX.Element {
     }
   }
 
-  const isLoading = phase === 'extracting' || phase === 'generating'
-  const canExtract = !!filename && !isLoading
-  const canGenerate = !!filename && !isLoading
-
+  const isExtracting = phase === 'extracting'
+  const isGenerating = phase === 'generating'
+  const isLoading = isExtracting || isGenerating
   const isPython = filename.endsWith('.py')
   const framework = isPython ? 'pytest' : 'Google Test'
+  const showPipeline = !isPython && projectReady
+  const canGenerate = !isLoading && selectedFunctions.size > 0
+  const isAdvanced = pipelineMode === 'advanced' && showPipeline
 
   return (
     <div className="flex flex-col gap-4 p-4 max-w-3xl mx-auto">
@@ -211,69 +355,126 @@ export default function TestGenerator(): React.JSX.Element {
         </p>
       </div>
 
-      <CppProjectBanner hint="Indispensable pour l'analyse de call-graph (callers/callees) et la mise à jour du CMakeLists." />
+      {/* Source input panel */}
+      <SourceInputPanel
+        mode={sourceMode}
+        onModeChange={(m) => {
+          setSourceMode(m)
+          setSelectedFolderFile(null)
+          setSelectedGitFile(null)
+          resetFile()
+        }}
+        currentFileName={filename || null}
+        onFileLoaded={({ name, content: text }) => {
+          setFilename(name)
+          setContent(text)
+        }}
+        folderRoot={cppProject.path}
+        folderFiles={folderFiles}
+        folderLoading={folderLoading}
+        selectedFolderFile={selectedFolderFile}
+        onFolderPick={() => { void onFolderPick() }}
+        onFolderFileSelect={(rel) => { void onFolderFileSelect(rel) }}
+        gitRepos={gitRepos}
+        gitLoadingRepos={gitLoadingRepos}
+        gitSelectedRepo={gitSelectedRepo}
+        gitBranches={gitBranches}
+        gitLoadingBranches={gitLoadingBranches}
+        gitSelectedBranch={gitSelectedBranch}
+        gitOnlyRecent={gitOnlyRecent}
+        gitCloneState={gitCloneState}
+        gitFiles={gitFiles}
+        gitError={gitError}
+        selectedGitFile={selectedGitFile}
+        onGitRepoSelect={onGitRepoSelect}
+        onGitBranchSelect={(b) => { void onGitBranchSelect(b) }}
+        onGitOnlyRecentChange={setGitOnlyRecent}
+        onGitFileSelect={(rel) => { void onGitFileSelect(rel) }}
+      />
 
-      {/* Drop zone */}
-      <Card
-        className={`border-2 border-dashed transition-colors cursor-pointer ${dragging ? 'border-primary bg-primary/5' : 'border-border'}`}
-        onDrop={onDrop}
-        onDragOver={(e) => { e.preventDefault(); setDragging(true) }}
-        onDragLeave={() => setDragging(false)}
-        onClick={() => inputRef.current?.click()}
-      >
-        <CardContent className="flex flex-col items-center justify-center gap-2 py-8">
-          <Upload className="size-8 text-muted-foreground" />
-          {filename
-            ? <p className="text-sm font-medium text-primary">{filename}</p>
-            : <p className="text-sm font-medium">Glisser-déposer un fichier source</p>
-          }
-          <p className="text-xs text-muted-foreground">.c .cpp .h .hpp .cxx .hxx .cc .py</p>
-          <Button variant="outline" size="sm" type="button">{filename ? 'Changer…' : 'Parcourir…'}</Button>
-        </CardContent>
-      </Card>
-      <input ref={inputRef} type="file" accept=".c,.cpp,.cc,.cxx,.h,.hpp,.hxx,.py" className="hidden" onChange={onFileInput} />
-
-      {/* Actions */}
-      <div className="flex flex-wrap gap-2">
-        <Button onClick={onExtract} disabled={!canExtract} variant="outline">
-          {phase === 'extracting' ? <><Loader2 className="mr-2 size-4 animate-spin" />Extraction…</> : 'Extraire les fonctions'}
-        </Button>
-        <Button onClick={onGenerateAll} disabled={!canGenerate}>
-          {phase === 'generating'
-            ? <><Loader2 className="mr-2 size-4 animate-spin" />Génération…</>
-            : <><FlaskConical className="mr-2 size-4" />Générer tous les tests</>
-          }
-        </Button>
-        {testFiles.length > 0 && (
-          <Button variant="outline" onClick={onSaveAll}>
-            <FolderOpen className="mr-2 size-4" />Tout enregistrer ({testFiles.length})
-          </Button>
-        )}
-      </div>
-
-      {status && <p className="text-sm text-muted-foreground">{status}</p>}
-      {progressDetail && <p className="text-xs text-muted-foreground">{progressDetail}</p>}
-
-      {/* Extracted functions */}
-      {functions.length > 0 && fileInfo && (
+      {/* Function selection — shown after auto-extract */}
+      {(isExtracting || functions.length > 0) && (
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm flex items-center gap-2">
-              Fonctions extraites
-              <Badge variant="outline">{functions.length} fonction(s)</Badge>
-              <Badge variant="secondary" className="text-xs">{fileInfo.language}</Badge>
+              {isExtracting
+                ? <><Loader2 className="size-4 animate-spin" />Extraction…</>
+                : (
+                  <>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 accent-primary"
+                        checked={selectedFunctions.size === functions.length && functions.length > 0}
+                        onChange={toggleAllFunctions}
+                      />
+                      <span>{filename}</span>
+                    </label>
+                    <Badge variant="outline" className="ml-auto">
+                      {selectedFunctions.size}/{functions.length} sélectionnée(s)
+                    </Badge>
+                    {fileInfo && <Badge variant="secondary" className="text-xs">{fileInfo.language}</Badge>}
+                  </>
+                )
+              }
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-1">
-            {functions.map((f) => (
-              <div key={`${f.name}-${f.lineNumber}`} className="flex items-center gap-2 text-sm py-0.5">
-                <FileCode className="size-3.5 text-muted-foreground shrink-0" />
-                <span className="font-mono text-xs">{f.signature}</span>
-                <span className="text-xs text-muted-foreground ml-auto shrink-0">L.{f.lineNumber}</span>
-              </div>
-            ))}
-          </CardContent>
+          {!isExtracting && functions.length > 0 && (
+            <CardContent className="space-y-1 pt-0">
+              {functions.map((f) => (
+                <label
+                  key={`${f.name}-${f.lineNumber}`}
+                  className="flex items-center gap-2 py-0.5 cursor-pointer hover:bg-muted/30 rounded px-1"
+                >
+                  <input
+                    type="checkbox"
+                    className="h-3.5 w-3.5 accent-primary shrink-0"
+                    checked={selectedFunctions.has(f.name)}
+                    onChange={() => toggleFunction(f.name)}
+                  />
+                  <FileCode className="size-3.5 text-muted-foreground shrink-0" />
+                  <span className="font-mono text-xs flex-1 truncate">{f.signature}</span>
+                  <span className="text-xs text-muted-foreground shrink-0">L.{f.lineNumber}</span>
+                </label>
+              ))}
+            </CardContent>
+          )}
+          {!isExtracting && functions.length === 0 && (
+            <CardContent className="pt-0">
+              <p className="text-xs text-muted-foreground">
+                Aucune fonction trouvée dans ce fichier. Assurez-vous de sélectionner un fichier source (.c) contenant des implémentations (avec corps de fonction).
+              </p>
+            </CardContent>
+          )}
         </Card>
+      )}
+
+      {/* Actions */}
+      {functions.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          <Button
+            onClick={() => { void (isAdvanced ? onRunPipeline() : onGenerate()) }}
+            disabled={isAdvanced ? (!projectReady || !filename || pipelineRunning) : !canGenerate}
+          >
+            {(isGenerating || pipelineRunning)
+              ? <><Loader2 className="mr-2 size-4 animate-spin" />{isAdvanced ? 'Pipeline en cours…' : 'Génération…'}</>
+              : isAdvanced
+                ? <><Wrench className="mr-2 size-4" />Générer + Build pipeline ({selectedFunctions.size})</>
+                : <><FlaskConical className="mr-2 size-4" />Générer les tests ({selectedFunctions.size})</>
+            }
+          </Button>
+          {testFiles.length > 0 && (
+            <Button variant="outline" onClick={() => { void onSaveAll() }}>
+              <FolderOpen className="mr-2 size-4" />Tout enregistrer ({testFiles.length})
+            </Button>
+          )}
+        </div>
+      )}
+
+      {status && (
+        <p className={`text-sm ${status.startsWith('Erreur') ? 'text-destructive' : 'text-muted-foreground'}`}>
+          {status}
+        </p>
       )}
 
       {/* Generated test files */}
@@ -304,7 +505,7 @@ export default function TestGenerator(): React.JSX.Element {
                   {f.name}
                 </span>
                 <Button variant="outline" size="sm" className="h-6 px-2 text-xs gap-1"
-                  onClick={() => onSaveFile(f.name, f.content)}>
+                  onClick={() => { void onSaveFile(f.name, f.content) }}>
                   <Download className="size-3" />Enregistrer
                 </Button>
               </div>
@@ -323,106 +524,94 @@ export default function TestGenerator(): React.JSX.Element {
         </div>
       )}
 
-      {/* Pipeline avancée (P3) — C/C++ only, requires project root + CMake */}
-      {isPipelineRoute && (
+      {/* Pipeline choice — folder mode only, C/C++ only */}
+      {showPipeline && (
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm flex items-center gap-2">
               <Hammer className="size-4" />
-              Pipeline avancée (call-graph + CMake + build)
-              <label className="ml-auto flex items-center gap-2 text-xs font-normal">
-                <input
-                  type="checkbox"
-                  checked={pipelineEnabled}
-                  onChange={(e) => setPipelineEnabled(e.target.checked)}
-                  className="h-3.5 w-3.5 accent-primary"
-                />
-                Activer
-              </label>
+              Pipeline
             </CardTitle>
           </CardHeader>
-          {pipelineEnabled && (
-            <CardContent className="space-y-3">
-              {!projectReady && (
-                <div className="flex items-start gap-2 text-xs text-orange-600 dark:text-orange-400">
-                  <AlertTriangle className="size-3.5 mt-0.5 shrink-0" />
-                  <span>
-                    Sélectionne d'abord la racine du projet C/C++ contenant un <code>CMakeLists.txt</code> via le bandeau ci-dessus.
-                  </span>
+          <CardContent className="space-y-3">
+            <div className="grid grid-cols-2 gap-2">
+              <label className={`flex items-start gap-2 cursor-pointer rounded-md border p-2 transition-colors ${pipelineMode === 'basic' ? 'border-primary bg-primary/5' : ''}`}>
+                <input
+                  type="radio"
+                  name="pipeline-mode"
+                  checked={pipelineMode === 'basic'}
+                  onChange={() => setPipelineMode('basic')}
+                  className="mt-0.5 h-4 w-4 accent-primary"
+                />
+                <div>
+                  <div className="text-sm font-medium">Basique</div>
+                  <div className="text-xs text-muted-foreground">Génération rapide, un appel par fonction</div>
                 </div>
-              )}
+              </label>
+              <label className={`flex items-start gap-2 cursor-pointer rounded-md border p-2 transition-colors ${pipelineMode === 'advanced' ? 'border-primary bg-primary/5' : ''}`}>
+                <input
+                  type="radio"
+                  name="pipeline-mode"
+                  checked={pipelineMode === 'advanced'}
+                  onChange={() => setPipelineMode('advanced')}
+                  className="mt-0.5 h-4 w-4 accent-primary"
+                />
+                <div>
+                  <div className="text-sm font-medium">Avancée</div>
+                  <div className="text-xs text-muted-foreground">Call-graph + CMake build + self-repair</div>
+                </div>
+              </label>
+            </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <label className="flex items-start gap-2 text-sm cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={buildEnabled}
-                    onChange={(e) => setBuildEnabled(e.target.checked)}
-                    className="mt-0.5 h-4 w-4 accent-primary"
-                    disabled={!projectReady}
-                  />
-                  <div>
-                    <div>Build self-repair</div>
-                    <div className="text-xs text-muted-foreground">cmake --workflow → réessaye sur erreur</div>
+            {pipelineMode === 'advanced' && (
+              <div className="space-y-3 pt-1 border-t">
+                {!projectReady && (
+                  <div className="flex items-start gap-2 text-xs text-orange-600 dark:text-orange-400">
+                    <AlertTriangle className="size-3.5 mt-0.5 shrink-0" />
+                    <span>Sélectionne d'abord un dossier C/C++ contenant un <code>CMakeLists.txt</code>.</span>
                   </div>
-                </label>
-
-                <label className="flex flex-col gap-1 text-sm">
-                  <span>Preset CMake</span>
-                  <input
-                    type="text"
-                    value={preset}
-                    onChange={(e) => setPreset(e.target.value)}
-                    className="border rounded px-2 py-1 text-xs font-mono bg-background"
-                    placeholder="ci-gcc"
-                    disabled={!projectReady}
-                  />
-                </label>
-
-                <label className="flex flex-col gap-1 text-sm">
-                  <span>Itérations de réparation max.</span>
-                  <input
-                    type="number"
-                    min={0}
-                    max={5}
-                    value={maxRepairs}
-                    onChange={(e) => setMaxRepairs(Number.parseInt(e.target.value || '0', 10))}
-                    className="border rounded px-2 py-1 text-xs font-mono bg-background"
-                    disabled={!projectReady || !buildEnabled}
-                  />
-                </label>
-              </div>
-
-              <Button
-                onClick={onRunPipeline}
-                disabled={!projectReady || !filename || pipelineRunning}
-              >
-                {pipelineRunning
-                  ? <><Loader2 className="mr-2 size-4 animate-spin" />Pipeline en cours…</>
-                  : <><Wrench className="mr-2 size-4" />Générer + Build pipeline</>
-                }
-              </Button>
-
-              {pipelineError && (
-                <div className="flex items-start gap-2 text-xs text-destructive">
-                  <AlertCircle className="size-3.5 mt-0.5" />
-                  <span>{pipelineError}</span>
-                </div>
-              )}
-
-              {pipelineEvents.length > 0 && (
-                <div className="rounded border bg-muted/30 p-2 text-xs font-mono max-h-40 overflow-y-auto space-y-0.5">
-                  {pipelineEvents.map((ev, i) => (
-                    <div key={i} className="text-muted-foreground">
-                      {formatPipelineEvent(ev)}
+                )}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <label className="flex items-start gap-2 text-sm cursor-pointer">
+                    <input type="checkbox" checked={buildEnabled}
+                      onChange={(e) => setBuildEnabled(e.target.checked)}
+                      className="mt-0.5 h-4 w-4 accent-primary" disabled={!projectReady} />
+                    <div>
+                      <div>Build self-repair</div>
+                      <div className="text-xs text-muted-foreground">cmake --workflow → réessaye sur erreur</div>
                     </div>
-                  ))}
+                  </label>
+                  <label className="flex flex-col gap-1 text-sm">
+                    <span>Preset CMake</span>
+                    <input type="text" value={preset} onChange={(e) => setPreset(e.target.value)}
+                      className="border rounded px-2 py-1 text-xs font-mono bg-background"
+                      placeholder="ci-gcc" disabled={!projectReady} />
+                  </label>
+                  <label className="flex flex-col gap-1 text-sm">
+                    <span>Réparations max.</span>
+                    <input type="number" min={0} max={5} value={maxRepairs}
+                      onChange={(e) => setMaxRepairs(Number.parseInt(e.target.value || '0', 10))}
+                      className="border rounded px-2 py-1 text-xs font-mono bg-background"
+                      disabled={!projectReady || !buildEnabled} />
+                  </label>
                 </div>
-              )}
+              </div>
+            )}
 
-              {pipelineResult && <PipelineResultPanel result={pipelineResult} />}
-            </CardContent>
-          )}
+            {pipelineError && (
+              <div className="flex items-start gap-2 text-xs text-destructive">
+                <AlertCircle className="size-3.5 mt-0.5" /><span>{pipelineError}</span>
+              </div>
+            )}
+            {pipelineEvents.length > 0 && (
+              <div className="rounded border bg-muted/30 p-2 text-xs font-mono max-h-40 overflow-y-auto space-y-0.5">
+                {pipelineEvents.map((ev, i) => (
+                  <div key={i} className="text-muted-foreground">{formatPipelineEvent(ev)}</div>
+                ))}
+              </div>
+            )}
+            {pipelineResult && <PipelineResultPanel result={pipelineResult} />}
+          </CardContent>
         </Card>
       )}
     </div>
@@ -461,13 +650,11 @@ function PipelineResultPanel({ result }: { result: TestgenPipelineResult }): Rea
           <Badge variant="outline" className="text-xs">{result.iterations} itération(s)</Badge>
         )}
       </div>
-
       {result.warnings.length > 0 && (
         <ul className="text-xs text-orange-600 dark:text-orange-400 list-disc list-inside">
           {result.warnings.map((w, i) => <li key={i}>{w}</li>)}
         </ul>
       )}
-
       <div className="space-y-1">
         {result.testFiles.map((f) => (
           <div key={f.filePath} className="flex items-center gap-2 text-xs font-mono">
@@ -477,7 +664,6 @@ function PipelineResultPanel({ result }: { result: TestgenPipelineResult }): Rea
           </div>
         ))}
       </div>
-
       {result.build && !result.build.ok && result.build.errors.length > 0 && (
         <details className="text-xs">
           <summary className="cursor-pointer text-destructive">

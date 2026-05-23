@@ -4,7 +4,7 @@ import { resolveLlmProvider } from '../llm'
 import { buildContext, buildProjectIndex, parseFile } from '../cpp-analyzer'
 import type { FunctionDef, ProjectIndex } from '../cpp-analyzer/types'
 import { buildFirstShotPrompt, buildRepairPrompt, extractCppBlock } from './context-prompts'
-import { discoverTests } from './test-discovery'
+import { discoverTests, resolveTestDirByProximity } from './test-discovery'
 import type { TestDiscovery, TestMarker } from './test-discovery'
 import { discoverCMake } from './cmake-discovery'
 import { updateCMakeLists } from './cmake-updater'
@@ -188,7 +188,15 @@ export async function runPipeline(
     }
   }
 
-  const discovery = discoverTests(opts.projectRoot)
+  const rawDiscovery = discoverTests(opts.projectRoot)
+  // Resolve the best test directory by proximity to the source file being tested.
+  const resolved = resolveTestDirByProximity(opts.sourceFilePath, rawDiscovery)
+  const discovery: TestDiscovery = {
+    ...rawDiscovery,
+    testDir: resolved.testDir,
+    templateFile: resolved.templateFile,
+    marker: resolved.marker
+  }
   onProgress?.({
     type: 'discover',
     testDir: discovery.testDir,
@@ -212,10 +220,28 @@ export async function runPipeline(
   for (let i = 0; i < targets.length; i++) {
     const fn = targets[i]!
     onProgress?.({ type: 'generate', functionName: fn.name, index: i + 1, total: targets.length })
-    const { filePath, content } = await generateForFunction(index, fn, discovery, opts)
-    fs.writeFileSync(filePath, content, 'utf8')
-    onProgress?.({ type: 'write', filePath })
-    produced.push({ filePath, functionName: fn.name, content, iteration: 1 })
+    try {
+      const { filePath, content } = await generateForFunction(index, fn, discovery, opts)
+      fs.writeFileSync(filePath, content, 'utf8')
+      onProgress?.({ type: 'write', filePath })
+      produced.push({ filePath, functionName: fn.name, content, iteration: 1 })
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      warnings.push(`LLM generation failed for ${fn.name}: ${msg}`)
+    }
+  }
+
+  if (produced.length === 0) {
+    onProgress?.({ type: 'done' })
+    return {
+      testFiles: [],
+      discovery,
+      cmakeFile: null,
+      cmakeInserted: [],
+      build: null,
+      iterations: 0,
+      warnings: [...warnings, 'No test files were generated (all LLM calls failed).']
+    }
   }
 
   // CMake update.
@@ -261,11 +287,35 @@ export async function runPipeline(
       const failing = failingFilesFromBuild(build, produced)
       onProgress?.({ type: 'repair', iteration: i, failingFiles: failing.map((f) => f.filePath) })
       const summary = summarizeBuildFailure(build)
+      const dropped: string[] = []
       for (const f of failing) {
-        const newContent = await repairFile(f.filePath, f.content, summary, i, maxRepairs)
-        fs.writeFileSync(f.filePath, newContent, 'utf8')
-        f.content = newContent
-        f.iteration = i + 1
+        try {
+          const newContent = await repairFile(f.filePath, f.content, summary, i, maxRepairs)
+          fs.writeFileSync(f.filePath, newContent, 'utf8')
+          f.content = newContent
+          f.iteration = i + 1
+        } catch (err) {
+          // LLM repair failed → drop this file entirely
+          const basename = path.basename(f.filePath)
+          const msg = err instanceof Error ? err.message : String(err)
+          warnings.push(`LLM repair failed for ${basename} (iteration ${i}): ${msg} — file dropped.`)
+          try { fs.unlinkSync(f.filePath) } catch { /* ignore */ }
+          dropped.push(f.filePath)
+        }
+      }
+      // Remove dropped files from the produced list
+      if (dropped.length > 0) {
+        const droppedSet = new Set(dropped)
+        for (let j = produced.length - 1; j >= 0; j--) {
+          if (droppedSet.has(produced[j]!.filePath)) {
+            produced.splice(j, 1)
+          }
+        }
+        // If all files were dropped, stop the repair loop
+        if (produced.length === 0) {
+          warnings.push('All generated test files were dropped after LLM repair failures.')
+          break
+        }
       }
     }
   }

@@ -4,6 +4,8 @@ import path from 'node:path'
 import { buildTuleapClient } from '../tuleap/build'
 import { getConfig } from '../store/config'
 import { processSingleFile } from '../commenter/commenter'
+import { runContextCommenter } from '../commenter/context-commenter'
+import type { ContextCommenterProgress } from '../commenter/context-commenter'
 import {
   checkoutBranch,
   createBranch,
@@ -16,7 +18,7 @@ import {
 import { audit } from '../store/db'
 import { debugError } from '../logger'
 import type { CommenterPRProgress, GitBranch, GitRepository } from '@shared/types'
-import type { CommentingOptions } from '../prompts/commenter-prompts'
+import type { CommentingOptions } from '@shared/types'
 
 function computeEta(nextIndex: number, total: number, timings: number[]): number {
   const remaining = total - nextIndex
@@ -101,28 +103,51 @@ export function registerCommenterPRHandlers(): void {
       emit({ type: 'start', totalFiles: files.length, estimatedSeconds: files.length * 30 })
 
       // 3. Process each file
-      const timings: number[] = []
       let skipped = 0
+      let processed = 0
 
-      for (let i = 0; i < files.length; i++) {
-        const filename = files[i]!
-        const etaSeconds = computeEta(i, files.length, timings)
-        emit({ type: 'file', index: i, total: files.length, filename, etaSeconds })
-
-        const t0 = Date.now()
-        try {
-          const fullPath = path.join(workDir, filename)
-          const content = fs.readFileSync(fullPath, 'utf8')
-          const commented = await processSingleFile(content, filename, options)
-          fs.writeFileSync(fullPath, commented, 'utf8')
-          timings.push((Date.now() - t0) / 1000)
-        } catch (fileErr) {
-          skipped++
-          debugError('[commenter-pr] skipped %s: %s', filename, fileErr instanceof Error ? fileErr.message : String(fileErr))
+      if (options.useContextPipeline) {
+        const absolutePaths = files.map((f) => path.join(workDir, f))
+        const emitCtx = (ev: ContextCommenterProgress): void => {
+          win?.webContents.send('commenter:context-progress', ev)
         }
-      }
+        const ctxResult = await runContextCommenter(
+          {
+            projectRoot: workDir,
+            filePaths: absolutePaths,
+            forceAll: options.forceAll,
+            depth: options.contextDepth,
+            tokenBudget: options.contextTokenBudget,
+            inlineComments: options.inlineComments
+          },
+          emitCtx
+        )
+        for (const f of ctxResult.files) {
+          fs.writeFileSync(f.filePath, f.newContent, 'utf8')
+        }
+        processed = ctxResult.files.length
+        skipped = files.length - processed
+      } else {
+        const timings: number[] = []
+        for (let i = 0; i < files.length; i++) {
+          const filename = files[i]!
+          const etaSeconds = computeEta(i, files.length, timings)
+          emit({ type: 'file', index: i, total: files.length, filename, etaSeconds })
 
-      const processed = files.length - skipped
+          const t0 = Date.now()
+          try {
+            const fullPath = path.join(workDir, filename)
+            const content = fs.readFileSync(fullPath, 'utf8')
+            const commented = await processSingleFile(content, filename, options)
+            fs.writeFileSync(fullPath, commented, 'utf8')
+            timings.push((Date.now() - t0) / 1000)
+          } catch (fileErr) {
+            skipped++
+            debugError('[commenter-pr] skipped %s: %s', filename, fileErr instanceof Error ? fileErr.message : String(fileErr))
+          }
+        }
+        processed = files.length - skipped
+      }
 
       // 4. Create new branch
       emit({ type: 'git', step: 'branch' })

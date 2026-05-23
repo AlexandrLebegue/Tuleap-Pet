@@ -1,12 +1,18 @@
 import { ipcMain } from 'electron'
 import { execa } from 'execa'
+import { mkdir } from 'fs/promises'
+import { join } from 'path'
 import { buildTuleapClient, mapArtifactSummary } from '../tuleap'
 import { resolveLlmProvider } from '../llm'
 import { audit } from '../store/db'
 import { getConfig } from '../store/config'
+import { cloneRepo, execGit } from '../commenter/git-utils'
+import { injectGitCredentials } from '../jobs/git-credentials'
 
 export type ReleaseNotesRequest = {
-  repoPath: string
+  repoPath?: string
+  repoId?: number
+  cloneUrl?: string
   fromRef: string
   toRef: string
   windowDays?: number
@@ -24,22 +30,56 @@ export type ReleaseNotesResult =
 
 const DEFAULT_REF_REGEX = '#(\\d{2,7})'
 
+async function resolveRepoPath(
+  args: Pick<ReleaseNotesRequest, 'repoPath' | 'repoId' | 'cloneUrl'>
+): Promise<string> {
+  if (args.repoPath) return args.repoPath
+  if (!args.repoId || !args.cloneUrl) throw new Error('repoPath ou (repoId + cloneUrl) requis.')
+  const tempClonePath = getConfig().tempClonePath
+  if (!tempClonePath) throw new Error('Chemin de clonage non configuré dans les Paramètres.')
+  const targetDir = join(tempClonePath, `rn-${args.repoId}`)
+  const authenticatedUrl = await injectGitCredentials(args.cloneUrl)
+  try {
+    await execGit(['rev-parse', '--git-dir'], targetDir)
+    // Already cloned — just refresh tags
+    await execa('git', ['-C', targetDir, 'fetch', '--all', '--quiet', '--tags'], { reject: false })
+    return targetDir
+  } catch { /* not yet cloned */ }
+  await mkdir(targetDir, { recursive: true }).catch(() => {})
+  await cloneRepo(authenticatedUrl, targetDir)
+  return targetDir
+}
+
 export function registerReleaseNotesHandlers(): void {
+  ipcMain.handle(
+    'release-notes:list-remote-tags',
+    async (_evt, args: { repoId: number; cloneUrl: string }): Promise<string[]> => {
+      try {
+        const repoPath = await resolveRepoPath(args)
+        const { stdout } = await execa('git', ['-C', repoPath, 'tag', '--sort=-creatordate'])
+        return stdout.split('\n').map((s) => s.trim()).filter(Boolean).slice(0, 50)
+      } catch {
+        return []
+      }
+    }
+  )
+
   ipcMain.handle(
     'release-notes:generate',
     async (_evt, args: ReleaseNotesRequest): Promise<ReleaseNotesResult> => {
       try {
+        const repoPath = await resolveRepoPath(args)
         const { stdout: log } = await execa(
           'git',
-          ['log', `${args.fromRef}..${args.toRef}`, '--pretty=format:%h%an%s%b'],
-          { cwd: args.repoPath, maxBuffer: 4 * 1024 * 1024 }
+          ['log', `${args.fromRef}..${args.toRef}`, '--pretty=format:%h%an%s%b'],
+          { cwd: repoPath, maxBuffer: 4 * 1024 * 1024 }
         )
         const commits = log
-          .split('')
+          .split('')
           .map((c) => c.trim())
           .filter(Boolean)
           .map((c) => {
-            const [hash, author, subject, body] = c.split('')
+            const [hash, author, subject, body] = c.split('')
             return { hash: hash ?? '', author: author ?? '', subject: subject ?? '', body: body ?? '' }
           })
 

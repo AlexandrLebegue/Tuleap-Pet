@@ -1,12 +1,15 @@
 import { ipcMain } from 'electron'
 import { execa } from 'execa'
-import { mkdtemp, mkdir } from 'fs/promises'
+import { mkdtemp, mkdir, access } from 'fs/promises'
 import { join } from 'path'
 import { tmpdir } from 'os'
-import { buildTuleapClient, mapArtifactDetail } from '../tuleap'
+import { buildTuleapClient, mapArtifactDetail, mapArtifactSummary } from '../tuleap'
 import { formatArtifactContext } from '../coder/context'
 import { audit } from '../store/db'
 import { applyWrite } from '../llm/write-tools'
+import { getConfig } from '../store/config'
+import { cloneRepo } from '../commenter/git-utils'
+import { injectGitCredentials } from '../jobs/git-credentials'
 
 export type TicketBranchRequest = {
   artifactId: number
@@ -121,6 +124,70 @@ export function registerTicketBranchHandlers(): void {
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err)
         return { ok: false, error: message }
+      }
+    }
+  )
+
+  ipcMain.handle(
+    'ticket-branch:search-artifacts',
+    async (_evt, args: { query: string }): Promise<Array<{ id: number; title: string; trackerId: number | null }>> => {
+      try {
+        const projectId = getConfig().projectId
+        if (!projectId) return []
+        const client = await buildTuleapClient()
+        const trackers = await client.listTrackers(projectId, { limit: 50 })
+        const results: Array<{ id: number; title: string; trackerId: number | null }> = []
+        const q = args.query.trim().toLowerCase()
+        const numericId = Number.parseInt(q, 10)
+
+        for (const tracker of trackers.items.slice(0, 6)) {
+          try {
+            const page = await client.listArtifacts(tracker.id, { limit: 30, offset: 0 })
+            for (const raw of page.items) {
+              const item = mapArtifactSummary(raw)
+              if (
+                !q ||
+                (Number.isFinite(numericId) && item.id === numericId) ||
+                item.title.toLowerCase().includes(q) ||
+                String(item.id).includes(q)
+              ) {
+                results.push({ id: item.id, title: item.title, trackerId: item.trackerId ?? null })
+                if (results.length >= 50) break
+              }
+            }
+          } catch { /* skip unreachable trackers */ }
+          if (results.length >= 50) break
+        }
+        return results
+      } catch {
+        return []
+      }
+    }
+  )
+
+  ipcMain.handle(
+    'ticket-branch:clone-repo',
+    async (
+      _evt,
+      args: { repoName: string; cloneUrl: string }
+    ): Promise<{ ok: true; path: string } | { ok: false; error: string }> => {
+      try {
+        const tempClonePath = getConfig().tempClonePath
+        if (!tempClonePath) {
+          return { ok: false, error: 'Chemin de clonage non configuré dans les paramètres.' }
+        }
+        const targetDir = join(tempClonePath, args.repoName)
+        const authenticatedUrl = await injectGitCredentials(args.cloneUrl)
+        // If the directory already exists and is a git repo, skip clone
+        try {
+          await access(join(targetDir, '.git'))
+          return { ok: true, path: targetDir }
+        } catch { /* not yet cloned */ }
+        await mkdir(targetDir, { recursive: true }).catch(() => {})
+        await cloneRepo(authenticatedUrl, targetDir)
+        return { ok: true, path: targetDir }
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) }
       }
     }
   )

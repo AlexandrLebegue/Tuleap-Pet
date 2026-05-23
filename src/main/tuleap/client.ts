@@ -18,6 +18,7 @@ import {
   milestoneSchema,
   projectSchema,
   pullRequestCreatedSchema,
+  pullRequestSummarySchema,
   trackerSchema,
   trackerStructureSchema,
   userSelfSchema,
@@ -29,6 +30,7 @@ import {
   type MilestoneContentItemRaw,
   type MilestoneRaw,
   type ProjectRaw,
+  type PullRequestSummaryRaw,
   type TrackerRaw,
   type TrackerStructureRaw,
   type UserSelf
@@ -608,6 +610,39 @@ export class TuleapClient {
       throw new TuleapSchemaError(`Réponse PR invalide: ${parsed.error.message.slice(0, 300)}`)
     }
     return { id: parsed.data.id, htmlUrl: parsed.data.html_url ?? '' }
+  }
+
+  async listPullRequests(
+    repoId: number,
+    opts?: Pagination
+  ): Promise<PaginatedResponse<PullRequestSummaryRaw>> {
+    const limit = opts?.limit ?? 50
+    const offset = opts?.offset ?? 0
+    const path = `/api/git/${repoId}/pull_requests`
+    const response = await this.request(path, { limit, offset, status: 'review' })
+    const totalHeader = response.headers.get('X-PAGINATION-SIZE')
+    const total = totalHeader ? Number.parseInt(totalHeader, 10) : Number.NaN
+    let raw: unknown
+    try {
+      raw = await response.json()
+    } catch {
+      throw new TuleapSchemaError(`Réponse non-JSON pour ${path}`)
+    }
+    const itemsRaw = Array.isArray(raw) ? raw : (raw as Record<string, unknown> | null)?.['collection'] ?? raw
+    const parsed = arrayOf(pullRequestSummarySchema).safeParse(itemsRaw)
+    if (!parsed.success) {
+      return { items: [], total: 0, limit, offset }
+    }
+    return {
+      items: parsed.data,
+      total: Number.isFinite(total) ? total : parsed.data.length,
+      limit,
+      offset
+    }
+  }
+
+  async postPrComment(prId: number, content: string): Promise<void> {
+    await this.mutate('POST', `/api/pull_requests/${prId}/comments`, { content })
   }
 
   /** Fetch every page of a paginated endpoint and return a flat array of all items. */

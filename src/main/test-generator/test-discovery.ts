@@ -151,3 +151,78 @@ export function discoverTests(projectRoot: string): TestDiscovery {
     marker
   }
 }
+
+/**
+ * Compute the "directory distance" between two absolute paths — the number of
+ * path segments you must traverse (up + down) to go from `a` to `b`.
+ */
+function dirDistance(a: string, b: string): number {
+  const aParts = path.resolve(a).split(path.sep).filter(Boolean)
+  const bParts = path.resolve(b).split(path.sep).filter(Boolean)
+  let common = 0
+  while (common < aParts.length && common < bParts.length && aParts[common] === bParts[common]) {
+    common++
+  }
+  // Steps up from a to common ancestor + steps down from common ancestor to b
+  return (aParts.length - common) + (bParts.length - common)
+}
+
+/**
+ * Given a source file path and a `TestDiscovery` result, resolve the best test
+ * directory by proximity to the source file. Falls back to `discovery.testDir`
+ * if no hits are available.
+ *
+ * When multiple test directories exist (e.g. `tests/`, `src/tests/`, `module/tests/`),
+ * the one whose path is closest to the source file is chosen.
+ */
+export function resolveTestDirByProximity(
+  sourceFilePath: string,
+  discovery: TestDiscovery
+): { testDir: string | null; templateFile: string | null; marker: TestMarker | null } {
+  if (discovery.hits.length === 0) {
+    return { testDir: discovery.testDir, templateFile: discovery.templateFile, marker: discovery.marker }
+  }
+
+  // Group hits by directory.
+  const byDir = new Map<string, TestFileHit[]>()
+  for (const h of discovery.hits) {
+    const dir = path.dirname(h.filePath)
+    const arr = byDir.get(dir)
+    if (arr) arr.push(h)
+    else byDir.set(dir, [h])
+  }
+
+  // Pick the directory closest to the source file's directory.
+  const sourceDir = path.dirname(path.resolve(sourceFilePath))
+  let bestDir = discovery.testDir
+  let bestDist = bestDir !== null ? dirDistance(sourceDir, bestDir) : Infinity
+
+  for (const [dir] of byDir) {
+    const dist = dirDistance(sourceDir, dir)
+    if (dist < bestDist) {
+      bestDist = dist
+      bestDir = dir
+    }
+  }
+
+  // Pick the best template from that directory.
+  const dirHits = (byDir.get(bestDir ?? '') ?? []).sort((a, b) => b.score - a.score)
+  const template = dirHits[0] ?? null
+
+  // Aggregate marker for this directory.
+  let hasGtest = false
+  let hasFff = false
+  for (const h of dirHits) {
+    if (h.markers === 'gtest' || h.markers === 'gtest+fff') hasGtest = true
+    if (h.markers === 'fff' || h.markers === 'gtest+fff') hasFff = true
+  }
+  const marker: TestMarker | null = dirHits.length > 0
+    ? (hasGtest && hasFff ? 'gtest+fff' : hasGtest ? 'gtest' : 'fff')
+    : discovery.marker
+
+  return {
+    testDir: bestDir,
+    templateFile: template?.filePath ?? discovery.templateFile,
+    marker
+  }
+}

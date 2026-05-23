@@ -1,6 +1,6 @@
 import { resolveLlmProvider } from '../llm'
 import { getCommenterSystemPrompt, buildUserPrompt, isSupported } from '../prompts/commenter-prompts'
-import type { CommentingOptions } from '../prompts/commenter-prompts'
+import type { CommentingOptions } from '@shared/types'
 
 export type { CommentingOptions }
 

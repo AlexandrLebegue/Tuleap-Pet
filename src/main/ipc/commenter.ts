@@ -2,7 +2,7 @@ import { BrowserWindow, dialog, ipcMain } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
 import { processMultipleFiles } from '../commenter/commenter'
-import type { CommentingOptions } from '../prompts/commenter-prompts'
+import type { CommentingOptions } from '@shared/types'
 import { runContextCommenter } from '../commenter/context-commenter'
 import type { ContextCommenterProgress } from '../commenter/context-commenter'
 import { getCppProjectRoot } from '../store/config'
@@ -10,6 +10,8 @@ import { audit } from '../store/db'
 import { debugError } from '../logger'
 
 const SKIP_DIRS = new Set(['build', 'node_modules', '.git', '_deps', 'CMakeFiles', 'out', 'dist'])
+const CPP_EXTS = new Set(['.c', '.cpp', '.cc', '.cxx', '.h', '.hpp', '.hxx'])
+
 function walkForBasenames(root: string, targets: Set<string>, out: Map<string, string[]>, limit: number): void {
   if (Array.from(out.values()).flat().length >= limit) return
   let entries: fs.Dirent[]
@@ -27,6 +29,24 @@ function walkForBasenames(root: string, targets: Set<string>, out: Map<string, s
       const arr = out.get(e.name)
       if (arr) arr.push(full)
       else out.set(e.name, [full])
+    }
+  }
+}
+
+function walkCppFiles(dir: string, out: string[]): void {
+  let entries: fs.Dirent[]
+  try {
+    entries = fs.readdirSync(dir, { withFileTypes: true })
+  } catch {
+    return
+  }
+  for (const e of entries) {
+    if (e.isDirectory()) {
+      if (SKIP_DIRS.has(e.name)) continue
+      walkCppFiles(path.join(dir, e.name), out)
+    } else if (e.isFile()) {
+      const ext = path.extname(e.name).toLowerCase()
+      if (CPP_EXTS.has(ext)) out.push(path.join(dir, e.name))
     }
   }
 }
@@ -105,14 +125,26 @@ export function registerCommenterHandlers(): void {
     return { ok: true as const, resolved }
   })
 
+  ipcMain.handle('commenter:scan-folder', async (_event, args: unknown) => {
+    const { folderPath } = args as { folderPath: string }
+    if (!folderPath || !fs.existsSync(folderPath)) {
+      return { ok: false as const, reason: 'Dossier introuvable.' }
+    }
+    const filePaths: string[] = []
+    walkCppFiles(folderPath, filePaths)
+    return { ok: true as const, filePaths, count: filePaths.length }
+  })
+
   ipcMain.handle('commenter:run-context', async (event, args: unknown) => {
-    const { filePaths, forceAll, depth, tokenBudget } = args as {
+    const { filePaths, forceAll, depth, tokenBudget, projectRootOverride, inlineComments } = args as {
       filePaths: string[]
       forceAll?: boolean
       depth?: number
       tokenBudget?: number
+      projectRootOverride?: string
+      inlineComments?: boolean
     }
-    const root = getCppProjectRoot()
+    const root = projectRootOverride ?? getCppProjectRoot()
     if (!root) throw new Error('no project root configured')
 
     const win = BrowserWindow.fromWebContents(event.sender)
@@ -123,7 +155,7 @@ export function registerCommenterHandlers(): void {
     audit('commenter.context.start', null, { files: filePaths.length, forceAll })
     try {
       const result = await runContextCommenter(
-        { projectRoot: root, filePaths, forceAll, depth, tokenBudget },
+        { projectRoot: root, filePaths, forceAll, depth, tokenBudget, inlineComments },
         emit
       )
       audit('commenter.context.done', null, {

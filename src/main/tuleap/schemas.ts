@@ -193,6 +193,19 @@ export const pullRequestCreatedSchema = z
 
 export type PullRequestCreatedRaw = z.infer<typeof pullRequestCreatedSchema>
 
+export const pullRequestSummarySchema = z
+  .object({
+    id: z.number(),
+    title: z.string().optional().default(''),
+    branch_src: z.string().optional().default(''),
+    branch_dest: z.string().optional().default(''),
+    status: z.string().optional().default('review'),
+    html_url: z.string().optional().default('')
+  })
+  .passthrough()
+
+export type PullRequestSummaryRaw = z.infer<typeof pullRequestSummarySchema>
+
 // ---- Git commits ----
 
 export const gitCommitSchema = z

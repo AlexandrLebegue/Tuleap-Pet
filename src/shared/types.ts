@@ -304,6 +304,24 @@ export type CommentingOptions = {
   detailedComments: boolean
   applyCodingRules: boolean
   onlyChangedFiles: boolean
+  useContextPipeline?: boolean
+  forceAll?: boolean
+  contextDepth?: number
+  contextTokenBudget?: number
+  inlineComments?: boolean
+  /** Test-generator pipeline mode ('basic' = fast single call, 'advanced' = call-graph context). */
+  testPipelineMode?: 'basic' | 'advanced'
+  testBuildEnabled?: boolean
+  testPreset?: string
+  testMaxRepairs?: number
+}
+
+export type SourceInputMode = 'folder' | 'files' | 'git'
+
+export interface GitSourceInput {
+  repoUrl: string
+  branch: string
+  onlyRecentFiles: boolean
 }
 
 export type JobType = 'commentateur' | 'test-generator'

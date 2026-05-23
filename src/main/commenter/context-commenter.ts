@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { resolveLlmProvider } from '../llm'
+import { debugError } from '../logger'
 import { buildContext, buildProjectIndex, parseFile, renderContext } from '../cpp-analyzer'
 import type { FunctionDef, ProjectIndex } from '../cpp-analyzer/types'
 import { findExistingCommentRange, detectFunctionIndent } from './comment-locator'
@@ -25,6 +26,8 @@ export type ContextCommenterOptions = {
   forceAll?: boolean
   depth?: number
   tokenBudget?: number
+  /** When true, a second LLM call adds inline comments (if/for/variables) inside each function body. */
+  inlineComments?: boolean
 }
 
 export type FunctionPlan = {
@@ -32,6 +35,7 @@ export type FunctionPlan = {
   evaluation: CommentEvaluation
   existing: CommentRange | null
   newComment?: string
+  inlineCommentedBody?: string
 }
 
 export type FileCommentResult = {
@@ -53,6 +57,27 @@ industrial C/C++ code. You receive rich static context (the function, its
 paired header, callers, callees) and produce ONLY a Doxygen comment block.
 You do NOT modify the function body, never rename identifiers, and never
 change types.`
+
+function buildInlineCommentPrompt(fnText: string): { system: string; user: string } {
+  const system = `Tu es un expert en documentation inline de code C/C++ (style Doxygen).
+Ajoute des commentaires de flux dans le corps d'une fonction. Règles :
+- NE PAS ajouter ou modifier le header Doxygen — retourne seulement la signature + le corps.
+- Ajoute /*! \\brief Définition des variables */ avant le premier bloc de déclarations.
+- Ajoute /*! \\brief \\b SI <condition> */ avant chaque if.
+- Ajoute /*! \\brief \\b SINON */ avant chaque else.
+- Ajoute /*! \\brief \\b POUR <desc> */ avant chaque for/while.
+- Ajoute /*! \\brief \\b FIN \\b SI */ à la fermeture d'un bloc significatif.
+- Ne modifie pas la logique, les types, ni les noms de variables.
+- Retourne UNIQUEMENT la fonction (de la signature à la }) entre \`\`\`cpp et \`\`\`.`
+  const user = `Ajoute les commentaires inline à cette fonction C/C++ :
+
+\`\`\`cpp
+${fnText}
+\`\`\`
+
+Retourne UNIQUEMENT la fonction (signature + corps avec commentaires inline), entre \`\`\`cpp et \`\`\`. Pas de header Doxygen.`
+  return { system, user }
+}
 
 function buildGeneratePrompt(args: {
   fn: FunctionDef
@@ -191,7 +216,21 @@ async function processFile(
     const { system, user } = buildGeneratePrompt({ fn, ctxText, indent })
     const raw = await callLlm(system, user)
     const newComment = extractCommentBlock(raw)
-    plans.push({ fn, evaluation, existing, newComment })
+
+    let inlineCommentedBody: string | undefined
+    if (opts.inlineComments) {
+      try {
+        const fnLines = originalContent.split('\n')
+        const fnText = fnLines.slice(fn.startLine - 1, fn.endLine).join('\n')
+        const { system: inlSys, user: inlUser } = buildInlineCommentPrompt(fnText)
+        const inlRaw = await callLlm(inlSys, inlUser)
+        inlineCommentedBody = extractCommentBlock(inlRaw)
+      } catch (inlErr) {
+        debugError('[context-commenter] inline comments failed for %s: %s', fn.name, inlErr instanceof Error ? inlErr.message : String(inlErr))
+      }
+    }
+
+    plans.push({ fn, evaluation, existing, newComment, inlineCommentedBody })
   }
 
   // Splice the new comments. Operate on ranges so the existing comment is
@@ -201,15 +240,24 @@ async function processFile(
   for (const p of plans) {
     if (!p.newComment) continue
     const fnStartIdx = p.fn.startLine - 1
-    if (p.existing) {
-      // Replace [existing.startLine-1, existing.endLine] (exclusive end)
+
+    if (p.inlineCommentedBody) {
+      // Replace existing comment (if any) + entire function with new header + commented body
+      const opStart = p.existing ? p.existing.startLine - 1 : fnStartIdx
+      ops.push({
+        startLine: opStart,
+        endLineExclusive: p.fn.endLine,
+        replacement: p.newComment + '\n' + p.inlineCommentedBody
+      })
+    } else if (p.existing) {
+      // Replace only the existing comment block
       ops.push({
         startLine: p.existing.startLine - 1,
         endLineExclusive: p.existing.endLine,
         replacement: p.newComment
       })
     } else {
-      // Insert at the function signature line (no removal)
+      // Insert header above function signature (no removal)
       ops.push({
         startLine: fnStartIdx,
         endLineExclusive: fnStartIdx,

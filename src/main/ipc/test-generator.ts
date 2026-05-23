@@ -2,19 +2,34 @@ import { BrowserWindow, dialog, ipcMain } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
 import { extractFunctions, generateTestsGranular } from '../test-generator/test-generator'
+import { parseFile } from '../cpp-analyzer/parser'
+import { functionDefToParsed, buildFileInfoFromDefs } from '../test-generator/fn-adapter'
 import { runPipeline } from '../test-generator/pipeline'
 import type { PipelineProgress } from '../test-generator/pipeline'
-import { getCppProjectRoot } from '../store/config'
+import { getCppProjectRoot, getConfig } from '../store/config'
 import { audit } from '../store/db'
 import { debugError } from '../logger'
+import { cloneRepo, listSourceFiles, listChangedFiles } from '../commenter/git-utils'
+import { injectGitCredentials } from '../jobs/git-credentials'
+
+const CPP_EXTS = new Set(['.c', '.cpp', '.cc', '.cxx', '.h', '.hpp', '.hxx'])
 
 export function registerTestGeneratorHandlers(): void {
   ipcMain.handle('testgen:extract-functions', async (_event, args: unknown) => {
     const { filename, content } = args as { filename: string; content: string }
     audit('testgen.extract', null, { filename })
     try {
-      const result = extractFunctions(content, filename)
-      return { functions: result.functions, fileInfo: result.fileInfo }
+      const isPython = filename.endsWith('.py')
+      if (isPython) {
+        // Python: use the original code-parser
+        const result = extractFunctions(content, filename)
+        return { functions: result.functions, fileInfo: result.fileInfo }
+      }
+      // C/C++: use the superior cpp-analyzer parser
+      const defs = parseFile(filename, content)
+      const functions = defs.map(functionDefToParsed)
+      const fileInfo = buildFileInfoFromDefs(defs, filename)
+      return { functions, fileInfo }
     } catch (err) {
       debugError('[testgen] extract error: %s', err instanceof Error ? err.message : String(err))
       throw err
@@ -22,10 +37,18 @@ export function registerTestGeneratorHandlers(): void {
   })
 
   ipcMain.handle('testgen:generate-all', async (_event, args: unknown) => {
-    const { filename, content } = args as { filename: string; content: string }
-    audit('testgen.generate', null, { filename })
+    const { filename, content, onlyFunctions, sourceFilePath } = args as {
+      filename: string
+      content: string
+      onlyFunctions?: string[]
+      sourceFilePath?: string
+    }
+    audit('testgen.generate', null, { filename, selectedCount: onlyFunctions?.length ?? null })
     try {
-      const result = await generateTestsGranular(content, filename)
+      const root = getCppProjectRoot() ?? undefined
+      const result = await generateTestsGranular(
+        content, filename, onlyFunctions, undefined, root, sourceFilePath
+      )
       return {
         testFiles: result.testFiles,
         metrics: result.metrics
@@ -131,6 +154,73 @@ export function registerTestGeneratorHandlers(): void {
       throw err
     }
   })
+
+  // ---- Source input: git repo mode ----
+
+  ipcMain.handle('testgen:git-clone-and-list', async (_event, args: unknown) => {
+    const { repoUrl, branch, onlyRecentFiles } = args as {
+      repoUrl: string
+      branch: string
+      onlyRecentFiles: boolean
+    }
+    const { tempClonePath } = getConfig()
+    if (!tempClonePath) {
+      return { ok: false as const, error: 'Chemin de clonage temporaire non configuré dans les Paramètres.' }
+    }
+
+    const cloneDir = path.join(tempClonePath, `testgen-clone-${Date.now()}`)
+    try {
+      const credUrl = await injectGitCredentials(repoUrl)
+      await cloneRepo(credUrl, cloneDir, branch || undefined)
+
+      let files: string[]
+      if (onlyRecentFiles) {
+        const changed = await listChangedFiles(cloneDir)
+        files = changed.filter((f) => CPP_EXTS.has(path.extname(f).toLowerCase()))
+      } else {
+        files = await listSourceFiles(cloneDir)
+      }
+
+      return { ok: true as const, cloneDir, files }
+    } catch (err) {
+      try { fs.rmSync(cloneDir, { recursive: true, force: true }) } catch { /* ignore */ }
+      return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
+    }
+  })
+
+  ipcMain.handle('testgen:cleanup-clone-dir', async (_event, args: unknown) => {
+    const { cloneDir } = args as { cloneDir: string }
+    try { fs.rmSync(cloneDir, { recursive: true, force: true }) } catch { /* ignore */ }
+  })
+
+  ipcMain.handle('testgen:read-file-from-dir', async (_event, args: unknown) => {
+    const { cloneDir, relativePath } = args as { cloneDir: string; relativePath: string }
+    try {
+      const content = fs.readFileSync(path.join(cloneDir, relativePath), 'utf8')
+      return { ok: true as const, content }
+    } catch (err) {
+      return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
+    }
+  })
+
+  // ---- Source input: local folder mode ----
+
+  ipcMain.handle('testgen:list-folder-files', async (_event, args: unknown) => {
+    const { folderPath } = args as { folderPath: string }
+    if (!fs.existsSync(folderPath)) return { ok: false as const, error: 'Dossier introuvable.' }
+    const files: string[] = []
+    walkForCppFiles(folderPath, folderPath, files, 5000)
+    return { ok: true as const, files }
+  })
+
+  ipcMain.handle('testgen:choose-folder-for-source', async () => {
+    const { canceled, filePaths } = await dialog.showOpenDialog({
+      title: 'Choisir un dossier C/C++',
+      properties: ['openDirectory']
+    })
+    if (canceled || !filePaths[0]) return { ok: false as const, cancelled: true as const }
+    return { ok: true as const, path: filePaths[0] }
+  })
 }
 
 function walkForBasename(root: string, target: string, out: string[], limit: number): void {
@@ -149,6 +239,26 @@ function walkForBasename(root: string, target: string, out: string[], limit: num
       walkForBasename(full, target, out, limit)
     } else if (e.isFile() && e.name === target) {
       out.push(full)
+    }
+  }
+}
+
+function walkForCppFiles(root: string, current: string, out: string[], limit: number): void {
+  if (out.length >= limit) return
+  let entries: fs.Dirent[]
+  try {
+    entries = fs.readdirSync(current, { withFileTypes: true })
+  } catch {
+    return
+  }
+  for (const e of entries) {
+    if (out.length >= limit) break
+    const full = path.join(current, e.name)
+    if (e.isDirectory()) {
+      if (e.name === 'build' || e.name === 'node_modules' || e.name.startsWith('.git') || e.name === '_deps' || e.name === 'CMakeFiles') continue
+      walkForCppFiles(root, full, out, limit)
+    } else if (e.isFile() && CPP_EXTS.has(path.extname(e.name).toLowerCase())) {
+      out.push(path.relative(root, full))
     }
   }
 }

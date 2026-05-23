@@ -5,7 +5,7 @@ import type { TestMarker } from './test-discovery'
 const FRAMEWORK_LABEL: Record<TestMarker, string> = {
   gtest: 'GoogleTest',
   fff: 'Fake Function Framework + GoogleTest',
-  'gtest+fff': 'GoogleTest with FFF mocks'
+  'gtest+fff': 'GoogleTest with FFF'
 }
 
 function truncate(text: string, max: number): string {
@@ -24,11 +24,19 @@ export type FirstShotPromptArgs = {
   testFileName: string
 }
 
-const SYSTEM_PROMPT = `You are an expert C++ test engineer specialising in GoogleTest, FFF, and
+const SYSTEM_PROMPT = `You are an expert C++ test engineer specialising in GoogleTest and
 disciplined unit-test design for embedded/industrial C++ code. You receive
 rich static context (target function, paired header, callers, callees) and
 produce a single, complete test source file that compiles and links against
-the project's existing test target.`
+the project's existing test target.
+
+ABSOLUTE RULES — never break them:
+- NO mocks, stubs, fakes, or FFF. Direct calls only.
+- Do NOT include fff.h, mock_*.h, or any mocking header.
+- Do NOT use FAKE_VOID_FUNC, FAKE_VALUE_FUNC, RESET_FAKE, or any FFF macro.
+- If the function under test needs context (structs, buffers), create them
+  as local variables inside the TEST body.
+- Keep it simple: arrange inputs, call the function, assert the output.`
 
 export function buildFirstShotPrompt(args: FirstShotPromptArgs): { system: string; user: string } {
   const framework = FRAMEWORK_LABEL[args.marker]
@@ -60,6 +68,7 @@ Use **${framework}**. Required constraints:
   (preserve namespaces).
 - Only include headers that the project already exposes — do not invent
   third-party dependencies.
+- NO mocks, NO FFF — direct calls with concrete values only.
 
 Output ONLY the C++ source between \`\`\`cpp and \`\`\`. No commentary, no
 Markdown headings, no leading or trailing prose.`
@@ -93,8 +102,8 @@ ${args.previousContent}
 
 Produce a corrected version of **${args.testFileName}** that addresses the
 errors above. Same constraints as the original task: no \`main()\`,
-GoogleTest-only, no new third-party dependencies, keep test names stable
-where possible.
+GoogleTest-only, no mocks, no FFF, no new third-party dependencies,
+keep test names stable where possible.
 
 Output ONLY the C++ source between \`\`\`cpp and \`\`\`. No commentary.`
 

@@ -271,12 +271,7 @@ const admin = {
 }
 
 export type CommenterFile = { name: string; content: string }
-export type CommenterOptions = {
-  preserveExisting: boolean
-  addFileHeader: boolean
-  detailedComments: boolean
-  applyCodingRules: boolean
-}
+export type CommenterOptions = CommentingOptions
 export type CommenterResult = { results: CommenterFile[]; errors: { name: string; error: string }[] }
 
 export type CommenterContextProgress =
@@ -314,11 +309,15 @@ const commenter = {
   resolveSources: (args: { filenames: string[] }): Promise<
     { ok: true; resolved: Record<string, string[]> } | { ok: false; reason: string }
   > => ipcRenderer.invoke('commenter:resolve-sources', args),
+  scanFolder: (args: { folderPath: string }): Promise<
+    { ok: true; filePaths: string[]; count: number } | { ok: false; reason: string }
+  > => ipcRenderer.invoke('commenter:scan-folder', args),
   runContext: (args: {
     filePaths: string[]
     forceAll?: boolean
     depth?: number
     tokenBudget?: number
+    projectRootOverride?: string
   }): Promise<CommenterContextResult> => ipcRenderer.invoke('commenter:run-context', args),
   subscribeContext: (handler: (event: CommenterContextProgress) => void): (() => void) => {
     const wrapped = (_e: unknown, payload: CommenterContextProgress): void => handler(payload)
@@ -400,7 +399,7 @@ export type TestgenPipelineResult = {
 const testgen = {
   extractFunctions: (args: { filename: string; content: string }): Promise<{ functions: ParsedFunction[]; fileInfo: Record<string, unknown> }> =>
     ipcRenderer.invoke('testgen:extract-functions', args),
-  generateAll: (args: { filename: string; content: string }): Promise<TestGenResult> =>
+  generateAll: (args: { filename: string; content: string; onlyFunctions?: string[]; sourceFilePath?: string }): Promise<TestGenResult> =>
     ipcRenderer.invoke('testgen:generate-all', args),
   saveFile: (args: { filename: string; content: string }): Promise<{ ok: boolean }> =>
     ipcRenderer.invoke('testgen:save-file', args),
@@ -421,7 +420,34 @@ const testgen = {
     const wrapped = (_e: unknown, payload: TestgenPipelineProgress): void => handler(payload)
     ipcRenderer.on('testgen:pipeline-progress', wrapped)
     return () => ipcRenderer.removeListener('testgen:pipeline-progress', wrapped)
-  }
+  },
+
+  // Source input: git repo mode
+  gitCloneAndList: (args: {
+    repoUrl: string
+    branch: string
+    onlyRecentFiles: boolean
+  }): Promise<{ ok: true; cloneDir: string; files: string[] } | { ok: false; error: string }> =>
+    ipcRenderer.invoke('testgen:git-clone-and-list', args),
+
+  cleanupCloneDir: (args: { cloneDir: string }): Promise<void> =>
+    ipcRenderer.invoke('testgen:cleanup-clone-dir', args),
+
+  readFileFromDir: (args: {
+    cloneDir: string
+    relativePath: string
+  }): Promise<{ ok: true; content: string } | { ok: false; error: string }> =>
+    ipcRenderer.invoke('testgen:read-file-from-dir', args),
+
+  // Source input: local folder mode
+  listFolderFiles: (args: {
+    folderPath: string
+  }): Promise<{ ok: true; files: string[] } | { ok: false; error: string }> =>
+    ipcRenderer.invoke('testgen:list-folder-files', args),
+
+  chooseFolderForSource: (): Promise<
+    { ok: true; path: string } | { ok: false; cancelled: true }
+  > => ipcRenderer.invoke('testgen:choose-folder-for-source')
 }
 
 const commenterPr = {
@@ -438,7 +464,7 @@ const commenterPr = {
     workDir: string
     repoId: number
     branch: string
-    options: CommenterOptions
+    options: CommentingOptions
   }): Promise<{ ok: boolean; branchName?: string; prId?: number; prUrl?: string; error?: string }> =>
     ipcRenderer.invoke('commenter-pr:start', args),
 
@@ -526,7 +552,13 @@ const sprintBoard = {
   scanRisks: (
     args: { items: ArtifactSummary[] }
   ): Promise<{ ok: true; risks: Array<{ id: number; level: 'low' | 'medium' | 'high'; reason: string }> }> =>
-    ipcRenderer.invoke('sprint:scan-risks', args)
+    ipcRenderer.invoke('sprint:scan-risks', args),
+  moveItem: (args: {
+    artifactId: number
+    trackerId: number
+    targetStatus: string
+  }): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('sprint:move-item', args)
 }
 
 const ticketBranch = {
@@ -547,11 +579,21 @@ const ticketBranch = {
   chooseRepo: (): Promise<{ ok: true; path: string } | { ok: false; cancelled: true }> =>
     ipcRenderer.invoke('ticket-branch:choose-repo'),
   makeTempDir: (): Promise<{ ok: true; path: string }> =>
-    ipcRenderer.invoke('ticket-branch:make-tempdir')
+    ipcRenderer.invoke('ticket-branch:make-tempdir'),
+  searchArtifacts: (query: string): Promise<Array<{ id: number; title: string; trackerId: number | null }>> =>
+    ipcRenderer.invoke('ticket-branch:search-artifacts', { query }),
+  cloneRepo: (args: { repoName: string; cloneUrl: string }): Promise<{ ok: true; path: string } | { ok: false; error: string }> =>
+    ipcRenderer.invoke('ticket-branch:clone-repo', args)
 }
 
 const prAc = {
-  analyze: (args: { repoPath: string; baseBranch: string; headBranch: string; artifactIdHint?: number | null }) =>
+  listRepos: (): Promise<GitRepository[]> =>
+    ipcRenderer.invoke('pr-ac:list-repos'),
+  listPrs: (args: { repoId: number }) =>
+    ipcRenderer.invoke('pr-ac:list-prs', args) as Promise<
+      Array<{ id: number; title: string; branchSrc: string; branchDest: string; status: string; htmlUrl: string }>
+    >,
+  analyze: (args: { prId: number; repoId: number; cloneUrl: string; artifactIdHint?: number | null; branchSrc: string; branchDest: string }) =>
     ipcRenderer.invoke('pr-ac:analyze', args),
   postComment: (args: { artifactId: number; markdown: string }) =>
     ipcRenderer.invoke('pr-ac:post-comment', args)
@@ -569,14 +611,18 @@ const rag = {
 
 const releaseNotes = {
   generate: (args: {
-    repoPath: string
+    repoPath?: string
+    repoId?: number
+    cloneUrl?: string
     fromRef: string
     toRef: string
     windowDays?: number
     artifactRefRegex?: string
   }) => ipcRenderer.invoke('release-notes:generate', args),
   listTags: (repoPath: string): Promise<string[]> =>
-    ipcRenderer.invoke('release-notes:list-tags', repoPath)
+    ipcRenderer.invoke('release-notes:list-tags', repoPath),
+  listRemoteTags: (args: { repoId: number; cloneUrl: string }): Promise<string[]> =>
+    ipcRenderer.invoke('release-notes:list-remote-tags', args)
 }
 
 const sprintPlanning = {
