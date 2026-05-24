@@ -51,6 +51,15 @@ function readFileAsText(file: File): Promise<string> {
   })
 }
 
+/** Chemin relatif lisible d'un fichier absolu par rapport à la racine du dossier. */
+function toRelative(abs: string, root: string): string {
+  const normRoot = root.replace(/[\\/]+$/, '')
+  if (normRoot && abs.startsWith(normRoot)) {
+    return abs.slice(normRoot.length).replace(/^[\\/]+/, '')
+  }
+  return abs.split(/[\\/]/).pop() ?? abs
+}
+
 // ─── Mode selector ───────────────────────────────────────────────────────────
 
 const MODES: { id: ImportMode; label: string; icon: React.ReactNode }[] = [
@@ -77,6 +86,8 @@ export default function Commenter(): React.JSX.Element {
   // --- Mode Dossier state ---
   const [folderPath, setFolderPath] = useState('')
   const [folderFileCount, setFolderFileCount] = useState<number | null>(null)
+  const [folderFiles, setFolderFiles] = useState<string[]>([])
+  const [selectedFolderFiles, setSelectedFolderFiles] = useState<Set<string>>(new Set())
   const [folderScanning, setFolderScanning] = useState(false)
   const [folderRunning, setFolderRunning] = useState(false)
 
@@ -226,26 +237,48 @@ export default function Commenter(): React.JSX.Element {
     const path = result.path
     setFolderPath(path)
     setFolderFileCount(null)
+    setFolderFiles([])
+    setSelectedFolderFiles(new Set())
     setFolderScanning(true)
     try {
       const scan = await api.commenter.scanFolder({ folderPath: path })
-      setFolderFileCount(scan.ok ? scan.count : 0)
+      if (scan.ok) {
+        setFolderFileCount(scan.count)
+        setFolderFiles(scan.filePaths)
+        // Tout sélectionné par défaut (comme la sélection de fonctions du testeur).
+        setSelectedFolderFiles(new Set(scan.filePaths))
+      } else {
+        setFolderFileCount(0)
+      }
     } finally {
       setFolderScanning(false)
     }
   }
 
+  const toggleFolderFile = (p: string): void => {
+    setSelectedFolderFiles((prev) => {
+      const next = new Set(prev)
+      if (next.has(p)) next.delete(p)
+      else next.add(p)
+      return next
+    })
+  }
+
+  const toggleAllFolderFiles = (): void => {
+    setSelectedFolderFiles((prev) =>
+      prev.size === folderFiles.length ? new Set() : new Set(folderFiles)
+    )
+  }
+
   const onRunDossier = async (): Promise<void> => {
-    if (!folderPath) return
+    if (!folderPath || selectedFolderFiles.size === 0) return
     setFolderRunning(true)
     setCtxEvents([])
     setCtxResult(null)
     setCtxError(null)
     try {
-      const scan = await api.commenter.scanFolder({ folderPath })
-      if (!scan.ok) { setCtxError(scan.reason); return }
       const result = await api.commenter.runContext({
-        filePaths: scan.filePaths,
+        filePaths: [...selectedFolderFiles],
         forceAll: options.useContextPipeline ? options.forceAll : true,
         depth: options.contextDepth,
         tokenBudget: options.contextTokenBudget,
@@ -404,8 +437,44 @@ export default function Commenter(): React.JSX.Element {
               </Button>
             </div>
             {folderScanning && <p className="text-xs text-muted-foreground flex items-center gap-1"><Loader2 className="size-3 animate-spin" />Scan en cours…</p>}
-            {folderFileCount !== null && !folderScanning && (
-              <p className="text-xs text-muted-foreground">{folderFileCount} fichier(s) C/C++ trouvé(s).</p>
+            {folderFileCount === 0 && !folderScanning && (
+              <p className="text-xs text-muted-foreground">Aucun fichier C/C++ trouvé dans ce dossier.</p>
+            )}
+
+            {folderFiles.length > 0 && !folderScanning && (
+              <div className="space-y-1">
+                <label className="flex items-center gap-2 cursor-pointer border-b pb-1">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 accent-primary"
+                    checked={selectedFolderFiles.size === folderFiles.length && folderFiles.length > 0}
+                    onChange={toggleAllFolderFiles}
+                    disabled={isRunning}
+                  />
+                  <span className="text-sm font-medium">Tout sélectionner</span>
+                  <Badge variant="outline" className="ml-auto text-xs">
+                    {selectedFolderFiles.size}/{folderFiles.length} fichier(s)
+                  </Badge>
+                </label>
+                <div className="rounded-md border bg-background max-h-52 overflow-y-auto">
+                  {folderFiles.map((p) => (
+                    <label
+                      key={p}
+                      className="flex items-center gap-2 px-2 py-1 cursor-pointer hover:bg-muted/30"
+                    >
+                      <input
+                        type="checkbox"
+                        className="h-3.5 w-3.5 accent-primary shrink-0"
+                        checked={selectedFolderFiles.has(p)}
+                        onChange={() => toggleFolderFile(p)}
+                        disabled={isRunning}
+                      />
+                      <FileCode className="size-3.5 text-muted-foreground shrink-0" />
+                      <span className="font-mono text-xs truncate" title={p}>{toRelative(p, folderPath)}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
             )}
           </CardContent>
         </Card>
@@ -491,12 +560,12 @@ export default function Commenter(): React.JSX.Element {
           </>
         )}
         {mode === 'dossier' && (
-          <Button onClick={onRunDossier} disabled={!folderPath || isRunning}>
+          <Button onClick={onRunDossier} disabled={!folderPath || selectedFolderFiles.size === 0 || isRunning}>
             {folderRunning || ctxRunning
               ? <><Loader2 className="mr-2 size-4 animate-spin" />Traitement…</>
               : options.useContextPipeline
-                ? <><Sparkles className="mr-2 size-4" />Évaluer + commenter le dossier</>
-                : <><Folder className="mr-2 size-4" />Commenter le dossier</>
+                ? <><Sparkles className="mr-2 size-4" />Évaluer + commenter ({selectedFolderFiles.size})</>
+                : <><Folder className="mr-2 size-4" />Commenter ({selectedFolderFiles.size})</>
             }
           </Button>
         )}
