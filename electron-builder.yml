@@ -12,6 +12,13 @@ files:
 asarUnpack:
   - resources/**
   - node_modules/better-sqlite3/**/*
+extraResources:
+  # Embarque le Chromium headless (~150 Mo compressé) utilisé par marp-cli pour
+  # l'export PPTX. Peuplé par `.puppeteerrc.cjs` au `npm install`/postinstall.
+  - from: .puppeteer-cache
+    to: puppeteer-cache
+    filter:
+      - '**/*'
 win:
   executableName: tuleap-ai-companion
 nsis:

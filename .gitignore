@@ -8,3 +8,6 @@ ressource/*
 
 # CI integration tests (Tuleap dockerisé) - secrets et état local
 .tuleap-test.env
+
+# Chromium headless téléchargé par puppeteer (embarqué au build via extraResources)
+.puppeteer-cache

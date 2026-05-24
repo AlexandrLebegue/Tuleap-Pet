@@ -18,10 +18,11 @@
     "test:watch": "vitest",
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "postinstall": "electron-builder install-app-deps",
-    "build:unpack": "npm run build && electron-builder --dir",
-    "build:win": "npm run build && electron-builder --win",
-    "build:mac": "electron-vite build && electron-builder --mac",
-    "build:linux": "electron-vite build && electron-builder --linux"
+    "ensure-chrome": "puppeteer browsers install chrome-headless-shell",
+    "build:unpack": "npm run build && npm run ensure-chrome && electron-builder --dir",
+    "build:win": "npm run build && npm run ensure-chrome && electron-builder --win",
+    "build:mac": "electron-vite build && npm run ensure-chrome && electron-builder --mac",
+    "build:linux": "electron-vite build && npm run ensure-chrome && electron-builder --linux"
   },
   "dependencies": {
     "@ai-sdk/openai": "^3.0.63",

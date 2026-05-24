@@ -1,5 +1,5 @@
 import { marpCli } from '@marp-team/marp-cli'
-import { mkdtempSync, writeFileSync, rmSync, existsSync } from 'fs'
+import { mkdtempSync, writeFileSync, rmSync, existsSync, readdirSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
 
@@ -8,20 +8,65 @@ export type PptxExportResult = {
 }
 
 /**
+ * Locate the `chrome-headless-shell` binary inside a puppeteer cache root.
+ * Layout: `<root>/chrome-headless-shell/<build>/chrome-headless-shell-<platform>/chrome-headless-shell[.exe]`
+ * The build + platform folders are version-specific, so we walk them.
+ */
+function findHeadlessShell(cacheRoot: string): string | null {
+  const base = join(cacheRoot, 'chrome-headless-shell')
+  if (!existsSync(base)) return null
+  const exe = process.platform === 'win32' ? 'chrome-headless-shell.exe' : 'chrome-headless-shell'
+  let builds: string[]
+  try {
+    builds = readdirSync(base)
+  } catch {
+    return null
+  }
+  for (const build of builds) {
+    let platDirs: string[]
+    try {
+      platDirs = readdirSync(join(base, build))
+    } catch {
+      continue
+    }
+    for (const platDir of platDirs) {
+      const candidate = join(base, build, platDir, exe)
+      if (existsSync(candidate)) return candidate
+    }
+  }
+  return null
+}
+
+/**
  * Resolve a Chromium binary path that marp-cli can drive for PPTX rendering.
  *
  * Preference order:
  *   1) MARP_CHROME_PATH or CHROME_PATH env var (escape hatch).
- *   2) puppeteer's bundled Chromium (~270 MB, fetched at install time).
- *   3) `null` → let marp-cli auto-detect a system Chrome / Chromium.
+ *   2) Bundled chrome-headless-shell, copied next to the packaged app by
+ *      electron-builder (`extraResources` → `process.resourcesPath/puppeteer-cache`).
+ *   3) Project-local `.puppeteer-cache` (dev / tests, see `.puppeteerrc.cjs`).
+ *   4) puppeteer's default Chromium in the user cache (last-resort fallback).
+ *   5) `null` → let marp-cli auto-detect a system Chrome / Chromium.
  *
- * Marp-cli's PPTX backend always needs a real Chromium, even with the
- * 'editable' mode. We do NOT try to use Electron's bundled Chromium
- * because Electron's binary doesn't accept Chrome's CLI / DevTools args.
+ * Marp-cli's PPTX backend always needs a real Chromium. We do NOT reuse
+ * Electron's bundled Chromium because its binary doesn't accept Chrome's
+ * CLI / DevTools args.
  */
 function resolveChromePath(): string | null {
   const fromEnv = process.env['MARP_CHROME_PATH'] ?? process.env['CHROME_PATH']
   if (fromEnv && fromEnv.trim().length > 0) return fromEnv.trim()
+
+  // Packaged app: extraResources copies .puppeteer-cache → resources/puppeteer-cache
+  const resourcesPath = process.resourcesPath
+  if (resourcesPath) {
+    const bundled = findHeadlessShell(join(resourcesPath, 'puppeteer-cache'))
+    if (bundled) return bundled
+  }
+
+  // Dev / tests: the project-local cache populated by `.puppeteerrc.cjs`
+  const devCache = findHeadlessShell(join(process.cwd(), '.puppeteer-cache'))
+  if (devCache) return devCache
+
   try {
     // Lazy require: keeps the dependency graph optional and lets the
     // app degrade gracefully if puppeteer's Chromium download was skipped.
