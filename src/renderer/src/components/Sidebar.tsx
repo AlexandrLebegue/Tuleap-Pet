@@ -15,7 +15,8 @@ import {
   FileText,
   Bug,
   History,
-  Rocket
+  Rocket,
+  Eye
 } from 'lucide-react'
 import { cn } from '@renderer/lib/utils'
 import ConnectionStatusBadge from './ConnectionStatusBadge'
@@ -59,6 +60,7 @@ const groups: NavGroup[] = [
     items: [
       { to: '/ticket-branch', label: 'Ticket → Branche', icon: Rocket },
       { to: '/pr-ac', label: 'PR ↔ AC', icon: ClipboardCheck },
+      { to: '/pr-reviewer', label: 'PR Reviewer', icon: Eye },
       { to: '/release-notes', label: 'Release Notes', icon: FileText },
       { to: '/bug-repro', label: 'Bug Repro', icon: Bug },
       { to: '/traceability', label: 'Traceability', icon: History }

@@ -16,6 +16,7 @@ import { registerTuleapWriteHandlers } from './tuleap-write'
 import { registerSprintBoardHandlers } from './sprint-board'
 import { registerTicketBranchHandlers } from './ticket-branch'
 import { registerPrAcHandlers } from './pr-ac'
+import { registerPrReviewerHandlers } from './pr-reviewer'
 import { registerRagHandlers } from './rag'
 import { registerReleaseNotesHandlers } from './release-notes'
 import { registerSprintPlanningHandlers } from './sprint-planning'
@@ -41,6 +42,7 @@ export function registerIpcHandlers(): void {
   registerSprintBoardHandlers()
   registerTicketBranchHandlers()
   registerPrAcHandlers()
+  registerPrReviewerHandlers()
   registerRagHandlers()
   registerReleaseNotesHandlers()
   registerSprintPlanningHandlers()

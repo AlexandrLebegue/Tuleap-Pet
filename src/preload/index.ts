@@ -599,6 +599,23 @@ const prAc = {
     ipcRenderer.invoke('pr-ac:post-comment', args)
 }
 
+const prReviewer = {
+  listRepos: (): Promise<GitRepository[]> =>
+    ipcRenderer.invoke('pr-reviewer:list-repos'),
+  listPrs: (args: { repoId: number }) =>
+    ipcRenderer.invoke('pr-reviewer:list-prs', args) as Promise<
+      Array<{ id: number; title: string; branchSrc: string; branchDest: string; status: string; htmlUrl: string }>
+    >,
+  analyze: (args: {
+    prId: number
+    repoId: number
+    cloneUrl: string
+    branchSrc: string
+    branchDest: string
+    sections: { overview: boolean; codingRules: boolean; tests: boolean }
+  }) => ipcRenderer.invoke('pr-reviewer:analyze', args)
+}
+
 const rag = {
   index: () => ipcRenderer.invoke('rag:index'),
   search: (args: { query: string; limit?: number }) => ipcRenderer.invoke('rag:search', args),
@@ -643,7 +660,7 @@ const traceability = {
 const api = {
   settings, tuleap, generation, marp, chat, auth, coder, admin, debug, commenter, corrector, testgen, commenterPr, gitExplorer,
   projectRoot,
-  tuleapWrite, sprintBoard, ticketBranch, prAc, rag, releaseNotes, sprintPlanning, bugRepro, traceability
+  tuleapWrite, sprintBoard, ticketBranch, prAc, prReviewer, rag, releaseNotes, sprintPlanning, bugRepro, traceability
 }
 
 if (process.contextIsolated) {
