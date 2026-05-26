@@ -9,10 +9,6 @@ on:
 permissions:
   contents: write
 
-concurrency:
-  group: release-windows-${{ github.ref }}
-  cancel-in-progress: false
-
 jobs:
   release-windows:
     name: Build & release Windows
