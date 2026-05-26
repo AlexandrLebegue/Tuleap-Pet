@@ -49,19 +49,47 @@ type TestsReport = {
   rationale: string
 }
 
+type AcItem = {
+  ac: string
+  coverage: 'covered' | 'partial' | 'missing' | 'unverifiable'
+  evidence: string
+}
+
+type AcceptanceCriteriaReport = {
+  applicable: boolean
+  artifactId: number | null
+  artifactTitle: string
+  items: AcItem[]
+  coveredCount: number
+  message: string
+}
+
 type PrReviewResult =
   | {
       ok: true
       overview?: OverviewReport
       codingRules?: CodingRulesReport
       tests?: TestsReport
+      acceptanceCriteria?: AcceptanceCriteriaReport
       commentMarkdown: string
       posted: boolean
       postError?: string
     }
   | { ok: false; error: string }
 
-type Sections = { overview: boolean; codingRules: boolean; tests: boolean }
+type Sections = {
+  overview: boolean
+  codingRules: boolean
+  tests: boolean
+  acceptanceCriteria: boolean
+}
+
+function coverageVariant(c: string): 'default' | 'secondary' | 'destructive' | 'outline' {
+  if (c === 'covered') return 'default'
+  if (c === 'partial') return 'secondary'
+  if (c === 'missing') return 'destructive'
+  return 'outline'
+}
 
 function complianceVariant(p: number): 'default' | 'secondary' | 'destructive' {
   if (p >= 75) return 'default'
@@ -79,8 +107,10 @@ export default function PrReviewer(): React.JSX.Element {
   const [sections, setSections] = useState<Sections>({
     overview: true,
     codingRules: true,
-    tests: true
+    tests: true,
+    acceptanceCriteria: true
   })
+  const [artifactIdOverride, setArtifactIdOverride] = useState('')
   const [analyzing, setAnalyzing] = useState(false)
   const [result, setResult] = useState<PrReviewResult | null>(null)
 
@@ -120,13 +150,15 @@ export default function PrReviewer(): React.JSX.Element {
     setAnalyzing(true)
     setResult(null)
     try {
+      const parsedId = artifactIdOverride ? Number.parseInt(artifactIdOverride, 10) : null
       const r = await window.api.prReviewer.analyze({
         prId: selectedPr.id,
         repoId: selectedRepo.id,
         cloneUrl: selectedRepo.cloneUrl,
         branchSrc: selectedPr.branchSrc,
         branchDest: selectedPr.branchDest,
-        sections
+        sections,
+        artifactIdHint: parsedId !== null && Number.isFinite(parsedId) ? parsedId : null
       })
       setResult(r as PrReviewResult)
     } catch (e) {
@@ -329,6 +361,83 @@ export default function PrReviewer(): React.JSX.Element {
         ) : (
           <p className="text-xs text-muted-foreground">
             Tests ajoutés et besoin de tests du code ajouté. {sections.tests ? '' : '(désactivé)'}
+          </p>
+        )}
+      </Card>
+
+      {/* Encart 4 — Respect des critères d'acceptation */}
+      <Card className="p-4">
+        <div className="mb-2 flex items-center gap-2">
+          <input
+            type="checkbox"
+            id="sec-ac"
+            checked={sections.acceptanceCriteria}
+            onChange={() => toggle('acceptanceCriteria')}
+          />
+          <label htmlFor="sec-ac" className="text-sm font-semibold">
+            Respect des critères d&apos;acceptation
+          </label>
+        </div>
+        {sections.acceptanceCriteria && (
+          <div className="mb-3">
+            <label className="mb-1 block text-xs font-medium text-muted-foreground">
+              ID Artéfact Tuleap (optionnel — déduit du nom de branche si absent)
+            </label>
+            <input
+              type="text"
+              className="w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm"
+              value={artifactIdOverride}
+              onChange={(e) => setArtifactIdOverride(e.target.value)}
+              placeholder="ex: 1234"
+            />
+          </div>
+        )}
+        {result && result.ok && sections.acceptanceCriteria && result.acceptanceCriteria ? (
+          result.acceptanceCriteria.applicable ? (
+            <div className="space-y-2 text-sm">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant="outline">
+                  Artéfact #{result.acceptanceCriteria.artifactId}
+                </Badge>
+                <Badge
+                  variant={
+                    result.acceptanceCriteria.coveredCount === result.acceptanceCriteria.items.length
+                      ? 'default'
+                      : 'secondary'
+                  }
+                >
+                  {result.acceptanceCriteria.coveredCount}/{result.acceptanceCriteria.items.length}{' '}
+                  couverts
+                </Badge>
+                {result.acceptanceCriteria.artifactTitle && (
+                  <span className="text-xs text-muted-foreground">
+                    {result.acceptanceCriteria.artifactTitle}
+                  </span>
+                )}
+              </div>
+              <ul className="space-y-1.5">
+                {result.acceptanceCriteria.items.map((it, i) => (
+                  <li key={i} className="rounded border p-2">
+                    <div className="flex items-start gap-2">
+                      <Badge variant={coverageVariant(it.coverage)} className="mt-0.5 shrink-0 text-xs">
+                        {it.coverage}
+                      </Badge>
+                      <div>
+                        <p className="font-medium">{it.ac}</p>
+                        <p className="mt-0.5 text-xs text-muted-foreground">{it.evidence}</p>
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground">{result.acceptanceCriteria.message}</p>
+          )
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            Vérifie la couverture des critères d&apos;acceptation du ticket Tuleap lié.{' '}
+            {sections.acceptanceCriteria ? '' : '(désactivé)'}
           </p>
         )}
       </Card>

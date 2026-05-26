@@ -612,7 +612,8 @@ const prReviewer = {
     cloneUrl: string
     branchSrc: string
     branchDest: string
-    sections: { overview: boolean; codingRules: boolean; tests: boolean }
+    sections: { overview: boolean; codingRules: boolean; tests: boolean; acceptanceCriteria: boolean }
+    artifactIdHint?: number | null
   }) => ipcRenderer.invoke('pr-reviewer:analyze', args)
 }
 

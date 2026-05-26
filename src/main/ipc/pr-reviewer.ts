@@ -2,7 +2,7 @@ import { ipcMain } from 'electron'
 import { execa } from 'execa'
 import { mkdir } from 'fs/promises'
 import { join } from 'path'
-import { buildTuleapClient } from '../tuleap'
+import { buildTuleapClient, mapArtifactDetail } from '../tuleap'
 import { resolveLlmProvider } from '../llm'
 import { audit } from '../store/db'
 import { getConfig } from '../store/config'
@@ -26,7 +26,7 @@ import {
   type CommitInfo,
   type SourceFile
 } from '../pr-reviewer/analysis'
-import type { GitRepository } from '@shared/types'
+import type { ArtifactDetail, GitRepository } from '@shared/types'
 
 export type PrReviewerPrSummary = {
   id: number
@@ -41,6 +41,24 @@ export type PrReviewSections = {
   overview: boolean
   codingRules: boolean
   tests: boolean
+  acceptanceCriteria: boolean
+}
+
+export type AcCoverage = 'covered' | 'partial' | 'missing' | 'unverifiable'
+
+export type AcItem = {
+  ac: string
+  coverage: AcCoverage
+  evidence: string
+}
+
+export type AcceptanceCriteriaReport = {
+  applicable: boolean
+  artifactId: number | null
+  artifactTitle: string
+  items: AcItem[]
+  coveredCount: number
+  message: string
 }
 
 export type OverviewReport = {
@@ -75,6 +93,7 @@ export type PrReviewResult =
       overview?: OverviewReport
       codingRules?: CodingRulesReport
       tests?: TestsReport
+      acceptanceCriteria?: AcceptanceCriteriaReport
       commentMarkdown: string
       posted: boolean
       postError?: string
@@ -88,6 +107,7 @@ type AnalyzeArgs = {
   branchSrc: string
   branchDest: string
   sections: PrReviewSections
+  artifactIdHint?: number | null
 }
 
 const MAX_FILE_CHARS = 8000
@@ -276,11 +296,117 @@ async function buildTests(
   return { testsAdded, testFiles, needsTests, rationale }
 }
 
+function extractAcceptanceCriteria(detail: ArtifactDetail): string[] {
+  const sources: string[] = []
+  if (detail.description) sources.push(detail.description)
+  for (const v of detail.values) {
+    const label = (v.label || '').toLowerCase()
+    if (label.includes('accept') || label.includes('critere') || label.includes('critère')) {
+      const raw = (v as unknown as { value?: { value?: string } }).value
+      const text = raw && typeof raw === 'object' && 'value' in raw ? String(raw.value ?? '') : ''
+      if (text) sources.push(text)
+    }
+  }
+  const lines = sources.join('\n').split(/\r?\n/)
+  const ac: string[] = []
+  for (const line of lines) {
+    const t = line.trim()
+    if (!t) continue
+    if (/^[-*•]\s+/.test(t) || /^\d+[.)]\s+/.test(t) || /^\[\s?[ x]\s?\]/i.test(t)) {
+      ac.push(t.replace(/^[-*•\d.)\s]+|^\[\s?[ x]\s?\]\s*/i, '').trim())
+    }
+  }
+  if (ac.length === 0 && detail.description) {
+    return detail.description
+      .split(/\.\s+/)
+      .map((s) => s.trim())
+      .filter((s) => s.length >= 12)
+      .slice(0, 8)
+  }
+  return ac
+}
+
+function inferArtifactIdFromBranch(branch: string): number | null {
+  const m = branch.match(/(?:^|[-/_])(\d{2,7})(?:[-_]|$)/)
+  return m ? Number.parseInt(m[1]!, 10) : null
+}
+
+async function buildAcceptanceCriteria(
+  diff: string,
+  branchSrc: string,
+  artifactIdHint: number | null | undefined
+): Promise<AcceptanceCriteriaReport> {
+  const empty = (message: string, artifactId: number | null = null): AcceptanceCriteriaReport => ({
+    applicable: false,
+    artifactId,
+    artifactTitle: '',
+    items: [],
+    coveredCount: 0,
+    message
+  })
+
+  const artifactId = artifactIdHint ?? inferArtifactIdFromBranch(branchSrc)
+  if (!artifactId) {
+    return empty(
+      "Aucun artéfact lié : précisez l'ID Tuleap, ou nommez la branche avec l'ID (ex: 1234-ma-feature)."
+    )
+  }
+
+  let detail: ArtifactDetail
+  try {
+    const client = await buildTuleapClient()
+    detail = mapArtifactDetail(await client.getArtifact(artifactId))
+  } catch (err) {
+    return empty(
+      `Impossible de récupérer l'artéfact #${artifactId} (${err instanceof Error ? err.message : String(err)}).`,
+      artifactId
+    )
+  }
+
+  const acItems = extractAcceptanceCriteria(detail)
+  if (acItems.length === 0) {
+    return empty(`Aucun critère d'acceptation trouvé dans l'artéfact #${artifactId}.`, artifactId)
+  }
+
+  const provider = resolveLlmProvider()
+  const prompt = `Tu es un reviewer technique. Voici un diff git et une liste de critères d'acceptation (AC) du ticket lié.\n\nPour CHAQUE AC, dis si le diff le couvre :\n- covered : implémenté/testé clairement\n- partial : partiel ou conditionnel\n- missing : pas implémenté\n- unverifiable : impossible à vérifier sans contexte runtime\n\nRéponds STRICTEMENT en JSON :\n[{"ac":"...","coverage":"covered|partial|missing|unverifiable","evidence":"<1-2 phrases citant fichiers/fonctions du diff>"}, ...]\n\n# Critères d'acceptation\n${acItems.map((a, i) => `${i + 1}. ${a}`).join('\n')}\n\n# Diff\n\n\`\`\`diff\n${diff}\n\`\`\``
+
+  let items: AcItem[]
+  try {
+    const llm = await provider.generate({
+      messages: [
+        { role: 'system', content: 'Tu réponds toujours en JSON valide, sans markdown autour.' },
+        { role: 'user', content: prompt }
+      ],
+      temperature: 0.2,
+      maxOutputTokens: 2000
+    })
+    const text = llm.text.trim().replace(/^```(?:json)?\s*|```$/g, '')
+    items = JSON.parse(text) as AcItem[]
+  } catch {
+    items = acItems.map((ac) => ({
+      ac,
+      coverage: 'unverifiable' as const,
+      evidence: 'Analyse LLM indisponible.'
+    }))
+  }
+
+  return {
+    applicable: true,
+    artifactId,
+    artifactTitle: detail.title ?? '',
+    items,
+    coveredCount: items.filter((i) => i.coverage === 'covered').length,
+    message: ''
+  }
+}
+
 function assembleComment(
   prId: number,
   overview: OverviewReport | undefined,
   codingRules: CodingRulesReport | undefined,
-  tests: TestsReport | undefined
+  tests: TestsReport | undefined,
+  acceptanceCriteria: AcceptanceCriteriaReport | undefined
 ): string {
   const parts: string[] = [`# Revue automatique — PR #${prId}`]
 
@@ -333,6 +459,21 @@ function assembleComment(
     )
   }
 
+  if (acceptanceCriteria) {
+    parts.push('', "## Respect des critères d'acceptation", '')
+    if (!acceptanceCriteria.applicable) {
+      parts.push(`_${acceptanceCriteria.message}_`)
+    } else {
+      const a = acceptanceCriteria
+      parts.push(
+        `Artéfact Tuleap #${a.artifactId}${a.artifactTitle ? ` — ${a.artifactTitle}` : ''}`,
+        `**${a.coveredCount}/${a.items.length} critères couverts**`,
+        '',
+        ...a.items.map((it) => `- **${it.coverage}** — ${it.ac}\n  > ${it.evidence}`)
+      )
+    }
+  }
+
   return parts.join('\n')
 }
 
@@ -379,7 +520,12 @@ export function registerPrReviewerHandlers(): void {
     async (_evt, args: AnalyzeArgs): Promise<PrReviewResult> => {
       try {
         const { sections } = args
-        if (!sections.overview && !sections.codingRules && !sections.tests) {
+        if (
+          !sections.overview &&
+          !sections.codingRules &&
+          !sections.tests &&
+          !sections.acceptanceCriteria
+        ) {
           return { ok: false, error: 'Aucune section activée à analyser.' }
         }
 
@@ -405,6 +551,7 @@ export function registerPrReviewerHandlers(): void {
         let overview: OverviewReport | undefined
         let codingRules: CodingRulesReport | undefined
         let tests: TestsReport | undefined
+        let acceptanceCriteria: AcceptanceCriteriaReport | undefined
 
         if (sections.overview) {
           overview = await buildOverview(
@@ -429,7 +576,21 @@ export function registerPrReviewerHandlers(): void {
           )
         }
 
-        const commentMarkdown = assembleComment(args.prId, overview, codingRules, tests)
+        if (sections.acceptanceCriteria) {
+          acceptanceCriteria = await buildAcceptanceCriteria(
+            trimmedDiff,
+            args.branchSrc,
+            args.artifactIdHint
+          )
+        }
+
+        const commentMarkdown = assembleComment(
+          args.prId,
+          overview,
+          codingRules,
+          tests,
+          acceptanceCriteria
+        )
 
         let posted = false
         let postError: string | undefined
@@ -447,7 +608,16 @@ export function registerPrReviewerHandlers(): void {
           posted
         })
 
-        return { ok: true, overview, codingRules, tests, commentMarkdown, posted, postError }
+        return {
+          ok: true,
+          overview,
+          codingRules,
+          tests,
+          acceptanceCriteria,
+          commentMarkdown,
+          posted,
+          postError
+        }
       } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : String(err) }
       }
