@@ -1,12 +1,12 @@
 import { ipcMain } from 'electron'
 import { execa } from 'execa'
-import { mkdir } from 'fs/promises'
+import { mkdir, rm } from 'fs/promises'
 import { join } from 'path'
 import { buildTuleapClient, mapArtifactDetail } from '../tuleap'
 import { resolveLlmProvider } from '../llm'
 import { audit } from '../store/db'
 import { getConfig } from '../store/config'
-import { cloneRepo, execGit } from '../commenter/git-utils'
+import { execGit } from '../commenter/git-utils'
 import { injectGitCredentials } from '../jobs/git-credentials'
 import { getExpertSystemPrompt } from '../prompts/expert-prompts'
 import { resolveCloneUrl } from '../tuleap/clone-url'
@@ -113,20 +113,53 @@ type AnalyzeArgs = {
 const MAX_FILE_CHARS = 8000
 const MAX_FILES_FOR_LLM = 20
 
-async function ensureRepoCloned(repoId: number, cloneUrl: string): Promise<string> {
+async function ensureRepoCloned(
+  repoId: number,
+  cloneUrl: string,
+  branchSrc: string,
+  branchDest: string
+): Promise<string> {
   const tempClonePath = getConfig().tempClonePath
   if (!tempClonePath) throw new Error('Chemin de clonage non configuré dans les Paramètres.')
   const targetDir = join(tempClonePath, `pr-review-${repoId}`)
   const authenticatedUrl = await injectGitCredentials(cloneUrl)
+
+  // Reuse the existing clone only if it's a full (non-shallow) clone. A shallow
+  // or single-branch clone lacks the history/refs needed to diff PR branches.
+  let usable = false
   try {
     await execGit(['rev-parse', '--git-dir'], targetDir)
-    await execa('git', ['-C', targetDir, 'fetch', '--all', '--quiet'], { reject: false })
-    return targetDir
+    const { stdout } = await execa('git', ['-C', targetDir, 'rev-parse', '--is-shallow-repository'], {
+      reject: false
+    })
+    usable = stdout.trim() === 'false'
   } catch {
     /* not cloned yet */
   }
-  await mkdir(targetDir, { recursive: true }).catch(() => {})
-  await cloneRepo(authenticatedUrl, targetDir)
+
+  if (!usable) {
+    await rm(targetDir, { recursive: true, force: true }).catch(() => {})
+    await mkdir(targetDir, { recursive: true }).catch(() => {})
+    // Full clone: every branch + full history, required to compute the diff and
+    // commit list between the PR's source and destination branches.
+    await execa('git', ['clone', authenticatedUrl, targetDir], { maxBuffer: 200 * 1024 * 1024 })
+  }
+
+  // Make sure both PR branches exist as remote-tracking refs and are up to date.
+  await execa(
+    'git',
+    [
+      '-C',
+      targetDir,
+      'fetch',
+      '--no-tags',
+      '--prune',
+      'origin',
+      `+refs/heads/${branchDest}:refs/remotes/origin/${branchDest}`,
+      `+refs/heads/${branchSrc}:refs/remotes/origin/${branchSrc}`
+    ],
+    { reject: false }
+  )
   return targetDir
 }
 
@@ -529,7 +562,12 @@ export function registerPrReviewerHandlers(): void {
           return { ok: false, error: 'Aucune section activée à analyser.' }
         }
 
-        const repoPath = await ensureRepoCloned(args.repoId, args.cloneUrl)
+        const repoPath = await ensureRepoCloned(
+          args.repoId,
+          args.cloneUrl,
+          args.branchSrc,
+          args.branchDest
+        )
         const range = `origin/${args.branchDest}...origin/${args.branchSrc}`
 
         const { stdout: diff } = await execa(
