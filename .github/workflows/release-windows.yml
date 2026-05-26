@@ -1,0 +1,59 @@
+name: Release Windows
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Required for softprops/action-gh-release to create releases and upload assets.
+permissions:
+  contents: write
+
+concurrency:
+  group: release-windows-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release-windows:
+    name: Build & release Windows
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Compiles (typecheck + electron-vite build), downloads the bundled
+      # chrome-headless-shell, then packages the Windows targets (nsis + zip)
+      # into ./dist via electron-builder.
+      - name: Build Windows distributable
+        run: npm run build:win
+
+      - name: Resolve release metadata
+        id: meta
+        shell: bash
+        run: |
+          version=$(node -p "require('./package.json').version")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=v$version-build.${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: Tuleap AI Companion ${{ steps.meta.outputs.version }} (build ${{ github.run_number }})
+          body: |
+            Build Windows automatique pour le commit ${{ github.sha }}.
+
+            - Installeur : `*-setup.exe`
+            - Archive portable : `*-win-*.zip`
+          files: |
+            dist/*-win-*.zip
+            dist/*-setup.exe
+          fail_on_unmatched_files: true
