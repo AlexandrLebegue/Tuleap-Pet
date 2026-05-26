@@ -586,19 +586,6 @@ const ticketBranch = {
     ipcRenderer.invoke('ticket-branch:clone-repo', args)
 }
 
-const prAc = {
-  listRepos: (): Promise<GitRepository[]> =>
-    ipcRenderer.invoke('pr-ac:list-repos'),
-  listPrs: (args: { repoId: number }) =>
-    ipcRenderer.invoke('pr-ac:list-prs', args) as Promise<
-      Array<{ id: number; title: string; branchSrc: string; branchDest: string; status: string; htmlUrl: string }>
-    >,
-  analyze: (args: { prId: number; repoId: number; cloneUrl: string; artifactIdHint?: number | null; branchSrc: string; branchDest: string }) =>
-    ipcRenderer.invoke('pr-ac:analyze', args),
-  postComment: (args: { artifactId: number; markdown: string }) =>
-    ipcRenderer.invoke('pr-ac:post-comment', args)
-}
-
 const prReviewer = {
   listRepos: (): Promise<GitRepository[]> =>
     ipcRenderer.invoke('pr-reviewer:list-repos'),
@@ -661,7 +648,7 @@ const traceability = {
 const api = {
   settings, tuleap, generation, marp, chat, auth, coder, admin, debug, commenter, corrector, testgen, commenterPr, gitExplorer,
   projectRoot,
-  tuleapWrite, sprintBoard, ticketBranch, prAc, prReviewer, rag, releaseNotes, sprintPlanning, bugRepro, traceability
+  tuleapWrite, sprintBoard, ticketBranch, prReviewer, rag, releaseNotes, sprintPlanning, bugRepro, traceability
 }
 
 if (process.contextIsolated) {

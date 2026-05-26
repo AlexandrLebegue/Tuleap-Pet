@@ -15,7 +15,6 @@ import TestGenerator from './routes/TestGenerator'
 import GitExplorer from './routes/GitExplorer'
 import SprintBoard from './routes/SprintBoard'
 import TicketBranch from './routes/TicketBranch'
-import PrAcReview from './routes/PrAcReview'
 import PrReviewer from './routes/PrReviewer'
 import ReleaseNotes from './routes/ReleaseNotes'
 import BugRepro from './routes/BugRepro'
@@ -40,7 +39,6 @@ const router = createHashRouter([
       { path: 'git', element: <GitExplorer /> },
       { path: 'sprint', element: <SprintBoard /> },
       { path: 'ticket-branch', element: <TicketBranch /> },
-      { path: 'pr-ac', element: <PrAcReview /> },
       { path: 'pr-reviewer', element: <PrReviewer /> },
       { path: 'release-notes', element: <ReleaseNotes /> },
       { path: 'sprint-planning', element: <Navigate to="/sprint" replace /> },

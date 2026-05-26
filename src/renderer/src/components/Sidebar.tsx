@@ -11,7 +11,6 @@ import {
   Wrench,
   FlaskConical,
   LayoutGrid,
-  ClipboardCheck,
   FileText,
   Bug,
   History,
@@ -59,7 +58,6 @@ const groups: NavGroup[] = [
     label: 'Dev × Tuleap',
     items: [
       { to: '/ticket-branch', label: 'Ticket → Branche', icon: Rocket },
-      { to: '/pr-ac', label: 'PR ↔ AC', icon: ClipboardCheck },
       { to: '/pr-reviewer', label: 'PR Reviewer', icon: Eye },
       { to: '/release-notes', label: 'Release Notes', icon: FileText },
       { to: '/bug-repro', label: 'Bug Repro', icon: Bug },
