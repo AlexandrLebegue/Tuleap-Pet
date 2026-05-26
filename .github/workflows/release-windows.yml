@@ -52,8 +52,8 @@ jobs:
             Build Windows automatique pour le commit ${{ github.sha }}.
 
             - Installeur : `*-setup.exe`
-            - Archive portable : `*-win-*.zip`
+            - Archive portable : `*.zip`
           files: |
-            dist/*-win-*.zip
+            dist/*.zip
             dist/*-setup.exe
           fail_on_unmatched_files: true
