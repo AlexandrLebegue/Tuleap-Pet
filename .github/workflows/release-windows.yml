@@ -9,6 +9,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: release-windows-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   release-windows:
     name: Build & release Windows
@@ -31,29 +35,6 @@ jobs:
       - name: Build Windows distributable
         run: npm run build:win
 
-      - name: List dist output
-        if: always()
-        shell: pwsh
-        run: |
-          if (Test-Path dist) {
-            Get-ChildItem dist -File | Select-Object Name, @{n='SizeMB';e={[math]::Round($_.Length/1MB,1)}} | Format-Table -AutoSize
-          } else {
-            Write-Host "::warning::dist/ introuvable — le build a probablement échoué avant le packaging."
-          }
-
-      # Toujours uploader les binaires produits : récupérables depuis le run
-      # même si la création de release échoue.
-      - name: Upload build artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: windows-build
-          path: |
-            dist/*.zip
-            dist/*-setup.exe
-          if-no-files-found: warn
-          retention-days: 14
-
       - name: Resolve release metadata
         id: meta
         shell: bash
@@ -75,4 +56,4 @@ jobs:
           files: |
             dist/*.zip
             dist/*-setup.exe
-          fail_on_unmatched_files: false
+          fail_on_unmatched_files: true
