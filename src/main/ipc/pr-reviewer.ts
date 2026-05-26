@@ -9,6 +9,7 @@ import { getConfig } from '../store/config'
 import { cloneRepo, execGit } from '../commenter/git-utils'
 import { injectGitCredentials } from '../jobs/git-credentials'
 import { getExpertSystemPrompt } from '../prompts/expert-prompts'
+import { resolveCloneUrl } from '../tuleap/clone-url'
 import {
   parseNameStatus,
   parseCommitLog,
@@ -338,7 +339,7 @@ function assembleComment(
 export function registerPrReviewerHandlers(): void {
   ipcMain.handle('pr-reviewer:list-repos', async (): Promise<GitRepository[]> => {
     try {
-      const projectId = getConfig().projectId
+      const { projectId, tuleapUrl, gitCloneSsh } = getConfig()
       if (!projectId) return []
       const client = await buildTuleapClient()
       const page = await client.listGitRepositories(projectId, { limit: 50 })
@@ -346,7 +347,7 @@ export function registerPrReviewerHandlers(): void {
         id: raw.id,
         name: raw.name ?? '',
         description: raw.description ?? '',
-        cloneUrl: raw.clone_http_url ?? raw.http_url ?? ''
+        cloneUrl: resolveCloneUrl(raw, tuleapUrl, gitCloneSsh)
       }))
     } catch {
       return []

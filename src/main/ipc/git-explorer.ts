@@ -2,59 +2,8 @@ import { BrowserWindow, dialog, ipcMain } from 'electron'
 import { buildTuleapClient, mapGitCommit } from '../tuleap'
 import { getConfig, setTempClonePath, setGitCloneSsh } from '../store/config'
 import { startJob, cancelJob } from '../jobs/job-manager'
-import { debugError } from '../logger'
+import { resolveCloneUrl } from '../tuleap/clone-url'
 import type { GitBranch, GitRepository, Page, GitCommit, JobType, CommentingOptions } from '@shared/types'
-import type { GitRepositoryRaw } from '../tuleap/schemas'
-
-function pickString(raw: Record<string, unknown>, ...keys: string[]): string {
-  for (const k of keys) {
-    const v = raw[k]
-    if (typeof v === 'string' && v.trim().length > 0) return v.trim()
-  }
-  return ''
-}
-
-function resolveCloneUrl(r: GitRepositoryRaw, tuleapUrl: string | null, useSsh: boolean): string {
-  const raw = r as Record<string, unknown>
-
-  if (useSsh) {
-    // Prefer SSH URL directly from Tuleap response — use as-is, no .git appended
-    const ssh = pickString(raw, 'clone_ssh_url', 'ssh_url')
-      || (raw['clone_url'] as Record<string, unknown> | undefined)?.['ssh'] as string | undefined
-      || ''
-    if (ssh) return ssh
-
-    // Fallback: construct standard Tuleap SSH URL from the repo path
-    const repoPath = pickString(raw, 'path').replace(/\.git$/, '')
-    if (tuleapUrl && repoPath) {
-      try {
-        const host = new URL(tuleapUrl).hostname
-        return `ssh://gitolite@${host}/${repoPath}.git`
-      } catch { /* ignore */ }
-    }
-  } else {
-    // HTTP mode — try all known field names
-    const http = pickString(raw, 'clone_http_url', 'http_url', 'clone_http', 'repository_http_url')
-      || (raw['clone_url'] as Record<string, unknown> | undefined)?.['http'] as string | undefined
-      || ''
-    if (http) return http
-
-    // Fallback: construct standard Tuleap HTTPS URL from the repo path
-    const repoPath = pickString(raw, 'path').replace(/\.git$/, '')
-    if (tuleapUrl && repoPath) {
-      const base = tuleapUrl.replace(/\/+$/, '')
-      return `${base}/plugins/git/${repoPath}.git`
-    }
-  }
-
-  debugError(
-    '[git-explorer] Cannot resolve %s clone URL for repo "%s". Raw: %s',
-    useSsh ? 'SSH' : 'HTTP',
-    r.name,
-    JSON.stringify(raw, null, 2).slice(0, 1000)
-  )
-  return ''
-}
 
 function buildSettingsState() {
   const config = getConfig()
