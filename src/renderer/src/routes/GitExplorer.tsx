@@ -8,10 +8,30 @@ import type {
   GitRepository,
   GitBranch,
   GitCommit,
+  JenkinsBranchStatus,
+  JenkinsBuildResult,
   Page,
   CommentingOptions,
   JobType
 } from '@shared/types'
+
+function jenkinsBadge(status: JenkinsBranchStatus | null | undefined): React.JSX.Element | null {
+  if (!status) return null
+  if (status.building) {
+    return <span title="Build en cours" className="text-xs px-1 rounded bg-yellow-100 text-yellow-700">⟳</span>
+  }
+  const result: JenkinsBuildResult = status.result
+  if (result === 'SUCCESS') {
+    return <span title="Build OK" className="text-xs px-1 rounded bg-green-100 text-green-700">✓</span>
+  }
+  if (result === 'FAILURE') {
+    return <span title="Build échoué" className="text-xs px-1 rounded bg-red-100 text-red-700">✗</span>
+  }
+  if (result === 'UNSTABLE') {
+    return <span title="Build instable" className="text-xs px-1 rounded bg-yellow-100 text-yellow-700">!</span>
+  }
+  return null
+}
 
 const DEFAULT_OPTIONS: CommentingOptions = {
   preserveExisting: true,
@@ -46,6 +66,9 @@ export default function GitExplorer(): React.JSX.Element {
   const [selectedRepo, setSelectedRepo] = useState<GitRepository | null>(null)
   const [branches, setBranches] = useState<GitBranch[]>([])
   const [loadingBranches, setLoadingBranches] = useState(false)
+  const [jenkinsBuildStatuses, setJenkinsBuildStatuses] = useState<
+    Record<string, JenkinsBranchStatus | null>
+  >({})
 
   const [selectedBranch, setSelectedBranch] = useState<string | null>(null)
   const [commitsPage, setCommitsPage] = useState<Page<GitCommit> | null>(null)
@@ -63,6 +86,27 @@ export default function GitExplorer(): React.JSX.Element {
   const [rnLoading, setRnLoading] = useState(false)
   const [rnResult, setRnResult] = useState<string | null>(null)
   const [rnError, setRnError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!selectedRepo || branches.length === 0) return
+    if (!config.jenkinsUrl || !config.hasJenkinsToken) return
+    const jobName = selectedRepo.name
+    let cancelled = false
+    void (async () => {
+      const statuses: Record<string, JenkinsBranchStatus | null> = {}
+      await Promise.all(
+        branches.map(async (b) => {
+          try {
+            statuses[b.name] = await api.jenkins.getBranchStatus({ jobName, branchName: b.name })
+          } catch {
+            statuses[b.name] = null
+          }
+        })
+      )
+      if (!cancelled) setJenkinsBuildStatuses(statuses)
+    })()
+    return () => { cancelled = true }
+  }, [selectedRepo, branches, config.jenkinsUrl, config.hasJenkinsToken])
 
   const noTempPath = !config.tempClonePath
 
@@ -82,6 +126,7 @@ export default function GitExplorer(): React.JSX.Element {
     setCommitsPage(null)
     setCommitsOffset(0)
     setBranches([])
+    setJenkinsBuildStatuses({})
     setLoadingBranches(true)
     api.gitExplorer
       .listBranches(repo.id)
@@ -244,10 +289,11 @@ export default function GitExplorer(): React.JSX.Element {
               >
                 <button
                   onClick={() => selectBranch(b.name, 0)}
-                  className="flex-1 text-left text-sm truncate min-w-0 mr-1"
+                  className="flex-1 text-left text-sm truncate min-w-0 mr-1 flex items-center gap-1"
                   title={b.name}
                 >
-                  {b.name}
+                  <span className="truncate">{b.name}</span>
+                  {jenkinsBadge(jenkinsBuildStatuses[b.name])}
                 </button>
                 <div className="flex gap-1 shrink-0">
                   <button

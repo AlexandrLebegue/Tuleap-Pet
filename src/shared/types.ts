@@ -33,6 +33,12 @@ export type AppConfig = {
   gitCloneSsh: boolean
   /** Root of the C/C++ project the TestGenerator + Commenter analyze (call-graph, CMake update, build). */
   cppProjectRoot: string | null
+  /** Jenkins base URL (e.g. https://jenkins.example.com). */
+  jenkinsUrl: string | null
+  /** Jenkins username for HTTP Basic auth. */
+  jenkinsUser: string | null
+  /** Map repoId (string) → Jenkins job name for branch status lookup. */
+  jenkinsRepoMapping: Record<string, string> | null
 }
 
 export type ConnectionTestResult =
@@ -359,3 +365,91 @@ export type JobStreamEvent =
   | { type: 'done'; jobId: string; prId: number | null; prUrl: string | null; branchCreated: string }
   | { type: 'error'; jobId: string; error: string }
   | { type: 'cancelled'; jobId: string }
+
+// ---- Jenkins ----
+
+export type JenkinsBuildResult = 'SUCCESS' | 'FAILURE' | 'UNSTABLE' | 'ABORTED' | 'NOT_BUILT' | null
+
+export type JenkinsJob = {
+  name: string
+  displayName: string
+  url: string
+  /** Jenkins color field: 'blue' | 'red' | 'yellow' | 'grey' | '*_anime' | 'disabled' | 'notbuilt' */
+  color: string
+  lastBuildNumber: number | null
+  lastBuildTimestamp: string | null
+  lastBuildResult: JenkinsBuildResult
+  isFolder: boolean
+  jobClass: string
+}
+
+export type JenkinsBuildSummary = {
+  number: number
+  url: string
+  result: JenkinsBuildResult
+  duration: number | null
+  timestamp: string
+  displayName: string
+  building: boolean
+}
+
+export type JenkinsBuildDetail = JenkinsBuildSummary & {
+  jobName: string
+  description: string | null
+  fullDisplayName: string
+  consoleUrl: string
+  parameters: Array<{ name: string; value: string | number | boolean | null; type: string }>
+  testReport: {
+    totalCount: number
+    failCount: number
+    skipCount: number
+    passCount: number
+  } | null
+}
+
+export type JenkinsBranchStatus = {
+  branchName: string
+  buildNumber: number | null
+  result: JenkinsBuildResult
+  building: boolean
+  timestamp: string | null
+  url: string | null
+}
+
+export type JenkinsQueueItem = {
+  id: number
+  why: string | null
+  inQueueSince: string
+  jobName: string
+  jobUrl: string
+  blocked: boolean
+  buildable: boolean
+  stuck: boolean
+}
+
+export type JenkinsNode = {
+  displayName: string
+  description: string | null
+  offline: boolean
+  temporarilyOffline: boolean
+  offlineCauseReason: string | null
+  status: 'online' | 'offline' | 'temporarily-offline' | 'unknown'
+  numExecutors: number
+  idle: boolean
+  monitorData: {
+    responseTime: number | null
+    diskSpaceGb: number | null
+    availableRamMb: number | null
+  }
+}
+
+export type JenkinsConnectionTestResult =
+  | { ok: true; version: string; nodeName: string }
+  | { ok: false; error: string; kind: 'auth' | 'network' | 'http' | 'schema' | 'unknown'; status?: number }
+
+export type JenkinsFailureAnalysis = {
+  rootCause: string
+  affectedSteps: string[]
+  suggestion: string
+  severity: 'error' | 'warning' | 'info'
+}

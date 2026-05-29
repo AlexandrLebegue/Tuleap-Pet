@@ -23,7 +23,9 @@ import {
   setProjectId,
   setTuleapUrl,
   getTempClonePath,
-  getGitCloneSsh
+  getGitCloneSsh,
+  setJenkinsUrl,
+  setJenkinsUser
 } from '../store/config'
 import {
   clearLocalLlmKey,
@@ -39,7 +41,10 @@ import {
   isSecretStorageAvailable,
   setLocalLlmKey,
   setOpenRouterKey,
-  setTuleapToken
+  setTuleapToken,
+  setJenkinsToken,
+  clearJenkinsToken,
+  hasJenkinsToken
 } from '../store/secrets'
 import { audit } from '../store/db'
 import type { LlmProviderKind } from '@shared/types'
@@ -70,6 +75,9 @@ export type SettingsState = {
   chatbotToolsEnabled: boolean
   tempClonePath: string | null
   gitCloneSsh: boolean
+  jenkinsUrl: string | null
+  jenkinsUser: string | null
+  hasJenkinsToken: boolean
 }
 
 function buildState(): SettingsState {
@@ -99,7 +107,10 @@ function buildState(): SettingsState {
     chatbotDoxygenMode: getChatbotDoxygenMode(),
     chatbotToolsEnabled: getChatbotToolsEnabled(),
     tempClonePath: getTempClonePath(),
-    gitCloneSsh: getGitCloneSsh()
+    gitCloneSsh: getGitCloneSsh(),
+    jenkinsUrl: config.jenkinsUrl,
+    jenkinsUser: config.jenkinsUser,
+    hasJenkinsToken: hasJenkinsToken()
   }
 }
 
@@ -240,8 +251,42 @@ export function registerSettingsHandlers(): void {
     clearOpenRouterKey()
     clearLocalLlmKey()
     clearOAuthBundle()
+    clearJenkinsToken()
     clearConfig()
     audit('settings.reset')
+    return buildState()
+  })
+
+  ipcMain.handle('settings:set-jenkins-url', (_event, url: unknown) => {
+    if (url !== null && typeof url !== 'string') {
+      throw new Error("Le paramètre 'url' doit être une chaîne ou null.")
+    }
+    const normalized = setJenkinsUrl(url as string | null)
+    audit('settings.set-jenkins-url', normalized ?? null)
+    return buildState()
+  })
+
+  ipcMain.handle('settings:set-jenkins-user', (_event, user: unknown) => {
+    if (user !== null && typeof user !== 'string') {
+      throw new Error("Le paramètre 'user' doit être une chaîne ou null.")
+    }
+    setJenkinsUser(user as string | null)
+    audit('settings.set-jenkins-user', (user as string | null) ?? null)
+    return buildState()
+  })
+
+  ipcMain.handle('settings:set-jenkins-token', (_event, token: unknown) => {
+    if (typeof token !== 'string' || token.trim().length === 0) {
+      throw new Error('Token Jenkins vide.')
+    }
+    setJenkinsToken(token)
+    audit('settings.set-jenkins-token')
+    return buildState()
+  })
+
+  ipcMain.handle('settings:clear-jenkins-token', () => {
+    clearJenkinsToken()
+    audit('settings.clear-jenkins-token')
     return buildState()
   })
 }

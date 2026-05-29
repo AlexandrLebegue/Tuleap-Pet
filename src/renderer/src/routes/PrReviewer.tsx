@@ -3,7 +3,13 @@ import { useEffect, useState } from 'react'
 import { Button } from '@renderer/components/ui/button'
 import { Card } from '@renderer/components/ui/card'
 import { Badge } from '@renderer/components/ui/badge'
-import type { GitRepository } from '@shared/types'
+import { useSettings } from '@renderer/stores/settings.store'
+import { api } from '@renderer/lib/api'
+import type {
+  GitRepository,
+  JenkinsBranchStatus,
+  JenkinsFailureAnalysis
+} from '@shared/types'
 
 type PullRequestSummary = {
   id: number
@@ -98,6 +104,7 @@ function complianceVariant(p: number): 'default' | 'secondary' | 'destructive' {
 }
 
 export default function PrReviewer(): React.JSX.Element {
+  const config = useSettings((s) => s.config)
   const [repos, setRepos] = useState<GitRepository[]>([])
   const [selectedRepo, setSelectedRepo] = useState<GitRepository | null>(null)
   const [prs, setPrs] = useState<PullRequestSummary[]>([])
@@ -113,6 +120,13 @@ export default function PrReviewer(): React.JSX.Element {
   const [artifactIdOverride, setArtifactIdOverride] = useState('')
   const [analyzing, setAnalyzing] = useState(false)
   const [result, setResult] = useState<PrReviewResult | null>(null)
+
+  const [jenkinsBranchStatus, setJenkinsBranchStatus] = useState<JenkinsBranchStatus | null>(null)
+  const [jenkinsInvestigation, setJenkinsInvestigation] = useState<JenkinsFailureAnalysis | null>(null)
+  const [jenkinsInvestigating, setJenkinsInvestigating] = useState(false)
+  const [jenkinsInvestError, setJenkinsInvestError] = useState<string | null>(null)
+
+  const jenkinsConfigured = Boolean(config.jenkinsUrl && config.hasJenkinsToken)
 
   useEffect(() => {
     window.api.prReviewer
@@ -140,6 +154,18 @@ export default function PrReviewer(): React.JSX.Element {
       .catch(() => {})
       .finally(() => setLoadingPrs(false))
   }, [selectedRepo])
+
+  useEffect(() => {
+    setJenkinsBranchStatus(null)
+    setJenkinsInvestigation(null)
+    setJenkinsInvestError(null)
+    if (!selectedPr || !selectedRepo || !jenkinsConfigured) return
+    const jobName = selectedRepo.name
+    void api.jenkins
+      .getBranchStatus({ jobName, branchName: selectedPr.branchSrc })
+      .then(setJenkinsBranchStatus)
+      .catch(() => setJenkinsBranchStatus(null))
+  }, [selectedPr, selectedRepo, jenkinsConfigured, config.jenkinsRepoMapping])
 
   function toggle(key: keyof Sections): void {
     setSections((s) => ({ ...s, [key]: !s[key] }))
@@ -441,6 +467,108 @@ export default function PrReviewer(): React.JSX.Element {
           </p>
         )}
       </Card>
+
+      {/* Encart Jenkins */}
+      {jenkinsConfigured && selectedPr && (
+        <Card className="p-4">
+          <div className="mb-2 flex items-center gap-2">
+            <h2 className="text-sm font-semibold">Jenkins — Build de la branche</h2>
+            <span className="text-xs text-muted-foreground">{selectedPr.branchSrc}</span>
+          </div>
+          {!jenkinsBranchStatus && (
+            <p className="text-xs text-muted-foreground">Aucun build Jenkins trouvé pour cette branche.</p>
+          )}
+          {jenkinsBranchStatus && (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                {jenkinsBranchStatus.building ? (
+                  <Badge variant="secondary">En cours</Badge>
+                ) : jenkinsBranchStatus.result === 'SUCCESS' ? (
+                  <Badge className="bg-green-600 text-white">Succès</Badge>
+                ) : jenkinsBranchStatus.result === 'FAILURE' ? (
+                  <Badge variant="destructive">Échec</Badge>
+                ) : jenkinsBranchStatus.result === 'UNSTABLE' ? (
+                  <Badge variant="secondary">Instable</Badge>
+                ) : (
+                  <Badge variant="outline">—</Badge>
+                )}
+                {jenkinsBranchStatus.buildNumber && (
+                  <span className="text-xs text-muted-foreground">
+                    #{jenkinsBranchStatus.buildNumber}
+                  </span>
+                )}
+                {jenkinsBranchStatus.timestamp && (
+                  <span className="text-xs text-muted-foreground">
+                    {new Date(jenkinsBranchStatus.timestamp).toLocaleString('fr-FR', {
+                      day: '2-digit', month: '2-digit', year: 'numeric',
+                      hour: '2-digit', minute: '2-digit'
+                    })}
+                  </span>
+                )}
+                {jenkinsBranchStatus.url && (
+                  <a
+                    href={jenkinsBranchStatus.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs text-muted-foreground underline"
+                  >
+                    Voir →
+                  </a>
+                )}
+              </div>
+              {(jenkinsBranchStatus.result === 'FAILURE' || jenkinsBranchStatus.result === 'UNSTABLE') &&
+                jenkinsBranchStatus.buildNumber && (
+                  <div className="space-y-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={jenkinsInvestigating}
+                      onClick={async () => {
+                        if (!jenkinsBranchStatus.buildNumber) return
+                        const jobName = selectedRepo?.name ?? ''
+                        setJenkinsInvestigating(true)
+                        setJenkinsInvestError(null)
+                        setJenkinsInvestigation(null)
+                        try {
+                          const r = await api.jenkins.investigateFailure({
+                            jobName,
+                            buildNumber: jenkinsBranchStatus.buildNumber
+                          })
+                          if ('ok' in r && r.ok === false) {
+                            setJenkinsInvestError(r.error)
+                          } else {
+                            setJenkinsInvestigation(r as JenkinsFailureAnalysis)
+                          }
+                        } catch (e) {
+                          setJenkinsInvestError(e instanceof Error ? e.message : String(e))
+                        } finally {
+                          setJenkinsInvestigating(false)
+                        }
+                      }}
+                    >
+                      {jenkinsInvestigating ? 'Analyse en cours…' : '🔍 Analyser l\'échec'}
+                    </Button>
+                    {jenkinsInvestError && (
+                      <p className="text-xs text-destructive">{jenkinsInvestError}</p>
+                    )}
+                    {jenkinsInvestigation && (
+                      <div className="rounded-md border p-3 bg-muted/30 space-y-2 text-sm">
+                        <p className="font-medium text-xs text-muted-foreground">Analyse IA</p>
+                        <p>{jenkinsInvestigation.rootCause}</p>
+                        {jenkinsInvestigation.affectedSteps.length > 0 && (
+                          <ul className="text-xs list-disc list-inside text-muted-foreground">
+                            {jenkinsInvestigation.affectedSteps.map((s, i) => <li key={i}>{s}</li>)}
+                          </ul>
+                        )}
+                        <p className="text-xs italic">{jenkinsInvestigation.suggestion}</p>
+                      </div>
+                    )}
+                  </div>
+              )}
+            </div>
+          )}
+        </Card>
+      )}
 
       {/* Commentaire publié */}
       {result && result.ok && (

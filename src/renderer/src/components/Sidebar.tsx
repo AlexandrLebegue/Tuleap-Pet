@@ -15,7 +15,8 @@ import {
   Bug,
   History,
   Rocket,
-  Eye
+  Eye,
+  Cpu
 } from 'lucide-react'
 import { cn } from '@renderer/lib/utils'
 import ConnectionStatusBadge from './ConnectionStatusBadge'
@@ -71,6 +72,12 @@ const groups: NavGroup[] = [
       { to: '/commenter', label: 'Commentateur', icon: FileCode2 },
       { to: '/corrector', label: 'Correcteur', icon: Wrench },
       { to: '/test-generator', label: 'Tests unitaires', icon: FlaskConical }
+    ]
+  },
+  {
+    label: 'CI / CD',
+    items: [
+      { to: '/jenkins', label: 'Jenkins', icon: Cpu }
     ]
   }
 ]

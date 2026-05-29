@@ -72,7 +72,10 @@ const emptyConfig: SettingsState = {
   chatbotDoxygenMode: false,
   chatbotToolsEnabled: true,
   tempClonePath: null,
-  gitCloneSsh: true
+  gitCloneSsh: true,
+  jenkinsUrl: null,
+  jenkinsUser: null,
+  hasJenkinsToken: false
 }
 
 export const useSettings = create<Store>((set, get) => ({

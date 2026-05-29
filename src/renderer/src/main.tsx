@@ -19,6 +19,7 @@ import PrReviewer from './routes/PrReviewer'
 import ReleaseNotes from './routes/ReleaseNotes'
 import BugRepro from './routes/BugRepro'
 import Traceability from './routes/Traceability'
+import Jenkins from './routes/Jenkins'
 
 const router = createHashRouter([
   {
@@ -43,7 +44,8 @@ const router = createHashRouter([
       { path: 'release-notes', element: <ReleaseNotes /> },
       { path: 'sprint-planning', element: <Navigate to="/sprint" replace /> },
       { path: 'bug-repro', element: <BugRepro /> },
-      { path: 'traceability', element: <Traceability /> }
+      { path: 'traceability', element: <Traceability /> },
+      { path: 'jenkins', element: <Jenkins /> }
     ]
   }
 ])
