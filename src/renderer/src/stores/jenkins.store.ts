@@ -7,7 +7,9 @@ import type {
   JenkinsFailureAnalysis,
   JenkinsJob,
   JenkinsNode,
-  JenkinsQueueItem
+  JenkinsQueueItem,
+  JenkinsTtmExportProgress,
+  JenkinsTtmExportResult
 } from '@shared/types'
 
 type ConnectionStatus = 'unknown' | 'testing' | 'ok' | 'error'
@@ -56,6 +58,13 @@ type Store = {
   clearInvestigation: () => void
   loadQueue: () => Promise<void>
   loadNodes: () => Promise<void>
+
+  ttmExporting: boolean
+  ttmProgress: JenkinsTtmExportProgress | null
+  ttmResult: JenkinsTtmExportResult | null
+  ttmError: string | null
+  exportToTtm: (args: { jobName: string; buildNumber: number; branchName: string; buildUrl: string }) => Promise<void>
+  clearTtmExport: () => void
 }
 
 export const useJenkins = create<Store>((set, get) => ({
@@ -89,6 +98,11 @@ export const useJenkins = create<Store>((set, get) => ({
   loadingNodes: false,
   nodesError: null,
   nodesPermission: true,
+
+  ttmExporting: false,
+  ttmProgress: null,
+  ttmResult: null,
+  ttmError: null,
 
   testConnection: async () => {
     set({ connectionStatus: 'testing' })
@@ -219,5 +233,31 @@ export const useJenkins = create<Store>((set, get) => ({
         nodesPermission: !isPermission
       })
     }
+  },
+
+  exportToTtm: async (args) => {
+    set({ ttmExporting: true, ttmProgress: null, ttmResult: null, ttmError: null })
+    const unsub = api.jenkinsTtm.subscribeProgress((event) => {
+      set({ ttmProgress: event })
+    })
+    try {
+      const result = await api.jenkinsTtm.export(args)
+      if (result.ok) {
+        set({ ttmExporting: false, ttmResult: result })
+      } else {
+        set({ ttmExporting: false, ttmError: result.error })
+      }
+    } catch (err) {
+      set({
+        ttmExporting: false,
+        ttmError: err instanceof Error ? err.message : String(err)
+      })
+    } finally {
+      unsub()
+    }
+  },
+
+  clearTtmExport: () => {
+    set({ ttmExporting: false, ttmProgress: null, ttmResult: null, ttmError: null })
   }
 }))

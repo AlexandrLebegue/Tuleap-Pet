@@ -22,6 +22,7 @@ import { registerSprintPlanningHandlers } from './sprint-planning'
 import { registerBugReproHandlers } from './bug-repro'
 import { registerTraceabilityHandlers } from './traceability'
 import { registerJenkinsHandlers } from './jenkins'
+import { registerJenkinsTtmHandlers } from './jenkins-ttm'
 
 export function registerIpcHandlers(): void {
   registerSettingsHandlers()
@@ -48,4 +49,5 @@ export function registerIpcHandlers(): void {
   registerBugReproHandlers()
   registerTraceabilityHandlers()
   registerJenkinsHandlers()
+  registerJenkinsTtmHandlers()
 }

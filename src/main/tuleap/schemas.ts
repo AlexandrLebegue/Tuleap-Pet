@@ -220,6 +220,29 @@ export const gitCommitSchema = z
 
 export type GitCommitRaw = z.infer<typeof gitCommitSchema>
 
+// ---- Tuleap Test Management (TTM) ----
+
+export const ttmCampaignSchema = z
+  .object({
+    id: z.number(),
+    label: z.string().optional().default(''),
+    uri: z.string().optional().default(''),
+    status: z.string().optional().default('open')
+  })
+  .passthrough()
+
+export type TtmCampaignRaw = z.infer<typeof ttmCampaignSchema>
+
+export const ttmTestExecutionSchema = z
+  .object({
+    id: z.number(),
+    status: z.string().optional().default('notrun'),
+    result: z.string().nullable().optional()
+  })
+  .passthrough()
+
+export type TtmTestExecutionRaw = z.infer<typeof ttmTestExecutionSchema>
+
 // ---- Tracker structure (for Kanban field/semantics discovery) ----
 
 export const trackerFieldBindValueSchema = z

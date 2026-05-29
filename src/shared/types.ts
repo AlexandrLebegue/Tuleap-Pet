@@ -39,6 +39,8 @@ export type AppConfig = {
   jenkinsUser: string | null
   /** Map repoId (string) → Jenkins job name for branch status lookup. */
   jenkinsRepoMapping: Record<string, string> | null
+  /** Tuleap TTM test-definition tracker ID (auto-detected if null). */
+  ttmTrackerId: number | null
 }
 
 export type ConnectionTestResult =
@@ -446,6 +448,42 @@ export type JenkinsNode = {
 export type JenkinsConnectionTestResult =
   | { ok: true; version: string; nodeName: string }
   | { ok: false; error: string; kind: 'auth' | 'network' | 'http' | 'schema' | 'unknown'; status?: number }
+
+// ---- Jenkins → Tuleap TTM ----
+
+export type JenkinsTestCase = {
+  fullName: string
+  className: string
+  testName: string
+  status: 'passed' | 'failed' | 'blocked'
+  duration: number
+  errorDetails: string | null
+  errorStackTrace: string | null
+}
+
+export type JenkinsTestReport = {
+  totalCount: number
+  failCount: number
+  skipCount: number
+  passCount: number
+  cases: JenkinsTestCase[]
+}
+
+export type JenkinsTtmExportResult = {
+  campaignId: number
+  campaignUrl: string
+  total: number
+  passed: number
+  failed: number
+  blocked: number
+  newDefinitions: number
+}
+
+export type JenkinsTtmExportProgress =
+  | { type: 'start'; total: number; campaignId: number; campaignLabel: string }
+  | { type: 'progress'; done: number; total: number; currentTest: string }
+  | { type: 'done'; result: JenkinsTtmExportResult }
+  | { type: 'error'; message: string }
 
 export type JenkinsFailureAnalysis = {
   rootCause: string
