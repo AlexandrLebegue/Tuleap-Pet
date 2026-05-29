@@ -11,7 +11,6 @@ describe('buildTuleapTools', () => {
         'get_self',
         'list_artifacts',
         'list_milestones',
-        'list_projects',
         'list_trackers'
       ].sort()
     )
