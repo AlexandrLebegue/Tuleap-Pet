@@ -18,6 +18,7 @@ export { createOpenRouterProvider } from './openrouter'
 export { createLocalProvider } from './local'
 export { buildTuleapTools } from './tools'
 export { buildTuleapWriteTools, applyWrite } from './write-tools'
+export { buildJenkinsTools } from './jenkins-tools'
 export type { PendingWriteAction } from './write-tools'
 export type {
   LlmGenerateRequest,

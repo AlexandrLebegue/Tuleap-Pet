@@ -6,7 +6,6 @@ import {
   mapArtifactDetail,
   mapArtifactSummary,
   mapMilestone,
-  mapProject,
   mapTracker
 } from '../tuleap'
 import { getConfig } from '../store/config'
@@ -39,20 +38,6 @@ export function buildTuleapTools(): Record<string, Tool> {
         const client = await buildTuleapClient()
         const me = await client.getSelf()
         return { id: me.id, username: me.username, real_name: me.real_name, email: me.email }
-      }
-    }),
-
-    list_projects: tool({
-      description: 'Liste les projets Tuleap accessibles à l’utilisateur (max 50).',
-      inputSchema: z.object({
-        query: z.string().optional().describe('Filtre optionnel sur le shortname')
-      }),
-      async execute(input): Promise<unknown> {
-        const args = input as { query?: string }
-        audit('chat.tool', 'list_projects', args)
-        const client = await buildTuleapClient()
-        const page = await client.listProjects({ limit: 50, query: args.query })
-        return page.items.map(mapProject)
       }
     }),
 

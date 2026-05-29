@@ -12,8 +12,10 @@ import {
 } from '../chat/manager'
 import { audit } from '../store/db'
 import { resolveLlmProvider, buildTuleapTools, buildTuleapWriteTools, toLlmError } from '../llm'
+import { buildJenkinsTools } from '../llm/jenkins-tools'
 import type { LlmMessage } from '../llm'
-import { getChatbotDoxygenMode, getChatbotExpertMode, getChatbotToolsEnabled, getLlmModel, getLlmProvider, getLocalModel } from '../store/config'
+import { getChatbotDoxygenMode, getChatbotExpertMode, getChatbotToolsEnabled, getConfig, getLlmModel, getLlmProvider, getLocalModel } from '../store/config'
+import { hasJenkinsToken } from '../store/secrets'
 import { getCombinedPrompt, getExpertSystemPrompt } from '../prompts/expert-prompts'
 import { debugLog, debugError } from '../logger'
 import type { ChatMessage, ChatStreamEvent } from '@shared/types'
@@ -40,46 +42,115 @@ function chatHistoryAsLlmMessages(history: ChatMessage[]): LlmMessage[] {
     )
 }
 
-const SYSTEM_PROMPT = `Tu es un assistant intégré à un client Tuleap (outil de gestion de projet ALM). Tu réponds en français de manière concise et structurée.
+function buildContextBlock(): string {
+  const config = getConfig()
+  const jenkinsOk = Boolean(config.jenkinsUrl && hasJenkinsToken())
 
-## Règles d'utilisation des outils (tools)
+  const lines: string[] = ['## Contexte utilisateur configuré']
 
-Tu disposes des outils suivants pour interroger l'API Tuleap :
-- **get_self** : Récupère l'utilisateur connecté (id, username, real_name, email). Aucun paramètre.
-- **list_projects** : Liste les projets accessibles. Paramètre optionnel : query (filtre shortname).
-- **list_trackers** : Liste les trackers du projet courant ou d'un projet donné. Paramètre optionnel : projectId.
-- **list_artifacts** : Liste les artéfacts d'un tracker. Paramètres : trackerId (obligatoire), limit, offset.
-- **get_artifact** : Récupère le détail d'un artéfact (titre, description, statut, valeurs, liens). Paramètre : id (obligatoire).
-- **list_milestones** : Liste les milestones/sprints du projet. Paramètres optionnels : projectId, status (open|closed|all).
+  if (config.tuleapUrl) {
+    lines.push(`Tuleap : ${config.tuleapUrl}`)
+  }
+  if (config.projectId !== null) {
+    lines.push(`Projet sélectionné : ID ${config.projectId}`)
+  } else {
+    lines.push(`⚠ Aucun projet sélectionné — inviter l'utilisateur à en configurer un dans les Paramètres.`)
+  }
+  if (jenkinsOk) {
+    const userPart = config.jenkinsUser ? `  (utilisateur : ${config.jenkinsUser})` : ''
+    lines.push(`Jenkins : ${config.jenkinsUrl}${userPart}`)
+    if (config.jenkinsRepoMapping && Object.keys(config.jenkinsRepoMapping).length > 0) {
+      lines.push(`Mapping repo → job Jenkins : ${JSON.stringify(config.jenkinsRepoMapping)}`)
+    }
+  }
+  if (config.ttmTrackerId !== null) {
+    lines.push(`Tracker TTM : ID ${config.ttmTrackerId}`)
+  }
 
-## Comportement attendu
-
-1. **TOUJOURS** appeler un outil quand la question porte sur des données Tuleap (artéfacts, trackers, projets, sprints, utilisateur). Ne JAMAIS inventer un id, un titre ou un statut.
-2. Si la question est générale ou conversationnelle (salutations, explications conceptuelles), réponds directement SANS appeler d'outil.
-3. Tu peux enchaîner plusieurs appels d'outils si nécessaire (ex: list_trackers puis list_artifacts).
-4. Si un outil échoue, explique l'erreur simplement et propose une solution (vérifier l'id, sélectionner un projet, etc.).
-5. Cite toujours les ids entre crochets : #1234.
-6. Structure tes réponses avec des listes ou tableaux quand c'est pertinent.
-
-## Exemples de patterns
-
-- "Quels sont mes projets ?" -> appeler list_projects
-- "Montre-moi le sprint en cours" -> appeler list_milestones avec status=open
-- "Détail de l'artéfact 5678" -> appeler get_artifact avec id=5678
-- "Combien d'items dans le tracker Bugs ?" -> appeler list_trackers puis list_artifacts`
+  return lines.join('\n')
+}
 
 function buildSystemPrompt(): string {
+  const config = getConfig()
   const expertMode = getChatbotExpertMode()
   const doxygenMode = getChatbotDoxygenMode()
+  const jenkinsOk = Boolean(config.jenkinsUrl && hasJenkinsToken())
 
-  let prompt = SYSTEM_PROMPT
+  const contextBlock = buildContextBlock()
+
+  const tuleapToolsSection = `## Outils Tuleap — utilisation et exemples
+
+**get_self** — Renvoie l'utilisateur Tuleap connecté (id, username, nom, email). Aucun paramètre.
+→ Exemple : "Qui suis-je ?" → appeler get_self {}
+
+**list_trackers** — Liste les trackers du projet courant. Paramètre optionnel : projectId (si omis, utilise le projet configuré ci-dessus).
+→ Exemple : "Quels trackers existent ?" → appeler list_trackers {}
+
+**list_artifacts** — Liste les artéfacts d'un tracker. trackerId obligatoire. limit et offset optionnels (défaut : 25).
+→ Exemple : "Items du tracker 12 ?" → appeler list_artifacts { trackerId: 12 }
+→ Exemple : "Page 2 du tracker 12 ?" → appeler list_artifacts { trackerId: 12, limit: 25, offset: 25 }
+
+**get_artifact** — Détail complet d'un artéfact : titre, statut, description, champs, liens. id obligatoire.
+→ Exemple : "Détails de l'artéfact 5678 ?" → appeler get_artifact { id: 5678 }
+
+**list_milestones** — Sprints du projet courant. status optionnel : open | closed | all (défaut open).
+→ Exemple : "Sprint en cours ?" → appeler list_milestones {}
+→ Exemple : "Tous les sprints ?" → appeler list_milestones { status: "all" }`
+
+  const jenkinsToolsSection = !jenkinsOk ? '' : `
+## Outils Jenkins — utilisation et exemples
+
+**jenkins_list_jobs** — Liste les jobs Jenkins à la racine ou dans un dossier.
+→ Exemple : "Jobs Jenkins ?" → appeler jenkins_list_jobs {}
+→ Exemple : "Jobs dans le dossier api ?" → appeler jenkins_list_jobs { folder: "api" }
+
+**jenkins_get_build_history** — Derniers builds d'un job. jobName obligatoire. limit optionnel (défaut 10).
+→ Exemple : "Derniers builds de mon-api ?" → appeler jenkins_get_build_history { jobName: "mon-api" }
+
+**jenkins_get_build_detail** — Détails d'un build précis : résultat, durée, paramètres, résumé tests. jobName et buildNumber obligatoires.
+→ Exemple : "Détails du build #42 de mon-api ?" → appeler jenkins_get_build_detail { jobName: "mon-api", buildNumber: 42 }
+
+**jenkins_get_test_report** — Rapport JUnit d'un build : passés / échoués / ignorés + liste des tests échoués. jobName et buildNumber obligatoires.
+→ Exemple : "Tests du build #42 ?" → appeler jenkins_get_test_report { jobName: "mon-api", buildNumber: 42 }
+
+**jenkins_get_queue** — File d'attente Jenkins. Aucun paramètre.
+→ Exemple : "Builds en attente ?" → appeler jenkins_get_queue {}`
+
+  const chainedExample = !jenkinsOk ? `## Exemple chaîné
+Question : "Combien d'items dans le tracker Bugs ?"
+→ Étape 1 : appeler list_trackers {} → trouver l'id du tracker "Bugs" (ex: 7)
+→ Étape 2 : appeler list_artifacts { trackerId: 7 } → lire le champ total
+→ Répondre : "Le tracker Bugs contient X artéfacts."` : `## Exemple chaîné (Tuleap + Jenkins)
+Question : "Résultats des tests du dernier build de mon-api ?"
+→ Étape 1 : appeler jenkins_get_build_history { jobName: "mon-api", limit: 1 } → buildNumber = 87
+→ Étape 2 : appeler jenkins_get_test_report { jobName: "mon-api", buildNumber: 87 }
+→ Répondre : "Build #87 : 102 tests, 99 passés, 3 échoués : [liste des tests échoués]"`
+
+  const basePrompt = `Tu es un assistant intégré à Tuleap${jenkinsOk ? ' et Jenkins' : ''}. Tu réponds en français, de façon concise et structurée.
+
+${contextBlock}
+
+## Règle fondamentale
+Appelle un outil dès que la question porte sur des données réelles (artéfacts, builds, tests, sprints, utilisateur).
+Ne JAMAIS inventer un id, un titre, un résultat ou un statut.
+Si la question est conversationnelle ou conceptuelle, réponds directement sans outil.
+
+${tuleapToolsSection}
+${jenkinsToolsSection}
+
+${chainedExample}
+
+## Règles de formatage
+- Ids Tuleap entre crochets : #1234${config.tuleapUrl ? `  — lien direct : ${config.tuleapUrl}/plugins/tracker/?aid=1234` : ''}
+- Listes ou tableaux quand plus de 3 éléments
+- Si un outil échoue : expliquer brièvement l'erreur et proposer une correction`
 
   if (expertMode) {
     const expertSection = doxygenMode ? getCombinedPrompt(true) : getExpertSystemPrompt()
-    prompt = `${SYSTEM_PROMPT}\n\n---\n\n# Mode Expert C/C++\n\n${expertSection}`
+    return `${basePrompt}\n\n---\n\n# Mode Expert C/C++\n\n${expertSection}`
   }
 
-  return prompt
+  return basePrompt
 }
 
 function ensureSystemMessage(history: ChatMessage[]): LlmMessage[] {
@@ -210,7 +281,7 @@ export function registerChatHandlers(): void {
       debugLog('[chat] provider=%s model=%s thinking=%s tools=%s', provider.name,
         provider.name === 'local' ? getLocalModel() : getLlmModel(), thinking, toolsEnabled)
       const tools = toolsEnabled
-        ? { ...buildTuleapTools(), ...buildTuleapWriteTools() }
+        ? { ...buildTuleapTools(), ...buildTuleapWriteTools(), ...buildJenkinsTools() }
         : undefined
       const result = await provider.stream(
         {
