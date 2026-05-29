@@ -92,7 +92,7 @@ export const jenkinsNodeSchema = z
     offlineCauseReason: z.string().nullable().optional(),
     numExecutors: z.number().optional().default(1),
     idle: z.boolean().optional().default(true),
-    monitorData: z.record(z.unknown()).optional().default({})
+    monitorData: z.record(z.string(), z.unknown()).optional().default({})
   })
   .passthrough()
 
@@ -101,3 +101,39 @@ export const jenkinsComputerSchema = z
     computer: z.array(jenkinsNodeSchema).optional().default([])
   })
   .passthrough()
+
+// ---- JUnit test report ----
+
+export const jenkinsTestCaseSchema = z
+  .object({
+    name: z.string().optional().default(''),
+    className: z.string().optional().default(''),
+    status: z.string().optional().default('PASSED'),
+    duration: z.number().optional().default(0),
+    errorDetails: z.string().nullable().optional(),
+    errorStackTrace: z.string().nullable().optional(),
+    skippedMessage: z.string().nullable().optional()
+  })
+  .passthrough()
+
+export type JenkinsTestCaseRaw = z.infer<typeof jenkinsTestCaseSchema>
+
+export const jenkinsTestSuiteSchema = z
+  .object({
+    name: z.string().optional().default(''),
+    duration: z.number().optional().default(0),
+    cases: z.array(jenkinsTestCaseSchema).optional().default([])
+  })
+  .passthrough()
+
+export const jenkinsTestReportSchema = z
+  .object({
+    duration: z.number().optional().default(0),
+    failCount: z.number().optional().default(0),
+    passCount: z.number().optional().default(0),
+    skipCount: z.number().optional().default(0),
+    suites: z.array(jenkinsTestSuiteSchema).optional().default([])
+  })
+  .passthrough()
+
+export type JenkinsTestReportRaw = z.infer<typeof jenkinsTestReportSchema>

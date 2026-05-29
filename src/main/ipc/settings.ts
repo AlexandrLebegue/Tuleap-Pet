@@ -25,7 +25,8 @@ import {
   getTempClonePath,
   getGitCloneSsh,
   setJenkinsUrl,
-  setJenkinsUser
+  setJenkinsUser,
+  getTtmTrackerId
 } from '../store/config'
 import {
   clearLocalLlmKey,
@@ -78,6 +79,7 @@ export type SettingsState = {
   jenkinsUrl: string | null
   jenkinsUser: string | null
   hasJenkinsToken: boolean
+  ttmTrackerId: number | null
 }
 
 function buildState(): SettingsState {
@@ -110,7 +112,8 @@ function buildState(): SettingsState {
     gitCloneSsh: getGitCloneSsh(),
     jenkinsUrl: config.jenkinsUrl,
     jenkinsUser: config.jenkinsUser,
-    hasJenkinsToken: hasJenkinsToken()
+    hasJenkinsToken: hasJenkinsToken(),
+    ttmTrackerId: getTtmTrackerId()
   }
 }
 

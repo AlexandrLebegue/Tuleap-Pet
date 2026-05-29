@@ -75,7 +75,8 @@ const emptyConfig: SettingsState = {
   gitCloneSsh: true,
   jenkinsUrl: null,
   jenkinsUser: null,
-  hasJenkinsToken: false
+  hasJenkinsToken: false,
+  ttmTrackerId: null
 }
 
 export const useSettings = create<Store>((set, get) => ({

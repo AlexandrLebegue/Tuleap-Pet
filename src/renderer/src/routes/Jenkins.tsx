@@ -11,7 +11,9 @@ import type {
   JenkinsBuildSummary,
   JenkinsJob,
   JenkinsNode,
-  JenkinsQueueItem
+  JenkinsQueueItem,
+  JenkinsTtmExportProgress,
+  JenkinsTtmExportResult
 } from '@shared/types'
 
 // ---- Helpers ----
@@ -61,6 +63,71 @@ function formatTimestamp(iso: string): string {
 
 // ---- Sub-components ----
 
+function TtmProgressPanel({
+  progress,
+  result,
+  error
+}: {
+  progress: JenkinsTtmExportProgress | null
+  result: JenkinsTtmExportResult | null
+  error: string | null
+}): React.JSX.Element | null {
+  if (result) {
+    return (
+      <div className="rounded-md border p-3 text-sm space-y-2 bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-800">
+        <p className="font-medium text-green-700 dark:text-green-400">Campagne TTM créée</p>
+        <div className="flex gap-4 text-green-600 dark:text-green-500">
+          <span>{result.passed} passés</span>
+          <span>{result.failed} échoués</span>
+          <span>{result.blocked} bloqués</span>
+        </div>
+        {result.newDefinitions > 0 && (
+          <p className="text-xs text-muted-foreground">{result.newDefinitions} nouvelle(s) définition(s) créée(s)</p>
+        )}
+        <a
+          href={result.campaignUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-xs underline text-green-700 dark:text-green-400"
+        >
+          Voir la campagne sur Tuleap →
+        </a>
+      </div>
+    )
+  }
+  if (error) {
+    return (
+      <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+        {error}
+      </div>
+    )
+  }
+  if (!progress) return null
+
+  if (progress.type === 'start') {
+    return (
+      <div className="text-sm text-muted-foreground">
+        Campagne créée (ID {progress.campaignId}), résolution des définitions…
+      </div>
+    )
+  }
+  if (progress.type === 'progress') {
+    const pct = Math.round((progress.done / progress.total) * 100)
+    return (
+      <div className="space-y-1 text-sm">
+        <div className="flex justify-between text-muted-foreground">
+          <span className="truncate max-w-[260px]">{progress.currentTest}</span>
+          <span>{progress.done}/{progress.total}</span>
+        </div>
+        <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+          <div className="h-full bg-primary transition-all" style={{ width: `${pct}%` }} />
+        </div>
+      </div>
+    )
+  }
+  return null
+}
+
 function BuildDetailPanel({ detail, jobName }: { detail: JenkinsBuildDetail; jobName: string }): React.JSX.Element {
   const investigation = useJenkins((s) => s.investigation)
   const investigating = useJenkins((s) => s.investigating)
@@ -69,7 +136,15 @@ function BuildDetailPanel({ detail, jobName }: { detail: JenkinsBuildDetail; job
   const closeBuildDetail = useJenkins((s) => s.closeBuildDetail)
   const clearInvestigation = useJenkins((s) => s.clearInvestigation)
 
+  const ttmExporting = useJenkins((s) => s.ttmExporting)
+  const ttmProgress = useJenkins((s) => s.ttmProgress)
+  const ttmResult = useJenkins((s) => s.ttmResult)
+  const ttmError = useJenkins((s) => s.ttmError)
+  const exportToTtm = useJenkins((s) => s.exportToTtm)
+  const clearTtmExport = useJenkins((s) => s.clearTtmExport)
+
   const canInvestigate = detail.result === 'FAILURE' || detail.result === 'UNSTABLE'
+  const hasTtmReport = detail.testReport !== null && detail.testReport.totalCount > 0
 
   return (
     <div className="space-y-4">
@@ -91,13 +166,34 @@ function BuildDetailPanel({ detail, jobName }: { detail: JenkinsBuildDetail; job
       </div>
 
       {detail.testReport && (
-        <div className="rounded-md border p-3 text-sm space-y-1">
+        <div className="rounded-md border p-3 text-sm space-y-2">
           <p className="font-medium">Résultats de tests</p>
           <div className="flex gap-4">
             <span className="text-green-600">{detail.testReport.passCount} ✓</span>
             <span className="text-red-500">{detail.testReport.failCount} ✗</span>
             <span className="text-muted-foreground">{detail.testReport.skipCount} ignorés</span>
           </div>
+          {hasTtmReport && !ttmResult && (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={ttmExporting}
+              onClick={() => {
+                clearTtmExport()
+                void exportToTtm({
+                  jobName,
+                  buildNumber: detail.number,
+                  branchName: jobName,
+                  buildUrl: detail.url
+                })
+              }}
+            >
+              {ttmExporting ? 'Export en cours…' : 'Exporter vers Tuleap TTM'}
+            </Button>
+          )}
+          {(ttmExporting || ttmProgress || ttmResult || ttmError) && (
+            <TtmProgressPanel progress={ttmProgress} result={ttmResult} error={ttmError} />
+          )}
         </div>
       )}
 

@@ -28,7 +28,8 @@ const store = new Store<Schema>({
     cppProjectRoot: null,
     jenkinsUrl: null,
     jenkinsUser: null,
-    jenkinsRepoMapping: null
+    jenkinsRepoMapping: null,
+    ttmTrackerId: null
   },
   clearInvalidConfig: true
 })
@@ -61,7 +62,8 @@ export function getConfig(): AppConfig {
     cppProjectRoot: store.get('cppProjectRoot') ?? null,
     jenkinsUrl: store.get('jenkinsUrl') ?? null,
     jenkinsUser: store.get('jenkinsUser') ?? null,
-    jenkinsRepoMapping: (store.get('jenkinsRepoMapping') as Record<string, string> | null) ?? null
+    jenkinsRepoMapping: (store.get('jenkinsRepoMapping') as Record<string, string> | null) ?? null,
+    ttmTrackerId: (store.get('ttmTrackerId') as number | null) ?? null
   }
 }
 
@@ -220,6 +222,14 @@ export function getJenkinsRepoMapping(): Record<string, string> | null {
 
 export function setJenkinsRepoMapping(mapping: Record<string, string> | null): void {
   store.set('jenkinsRepoMapping', mapping)
+}
+
+export function getTtmTrackerId(): number | null {
+  return (store.get('ttmTrackerId') as number | null) ?? null
+}
+
+export function setTtmTrackerId(id: number | null): void {
+  store.set('ttmTrackerId', id)
 }
 
 export function clearConfig(): void {

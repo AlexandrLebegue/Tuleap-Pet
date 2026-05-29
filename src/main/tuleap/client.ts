@@ -21,6 +21,8 @@ import {
   pullRequestSummarySchema,
   trackerSchema,
   trackerStructureSchema,
+  ttmCampaignSchema,
+  ttmTestExecutionSchema,
   userSelfSchema,
   type ArtifactDetailRaw,
   type ArtifactSummaryRaw,
@@ -33,6 +35,8 @@ import {
   type PullRequestSummaryRaw,
   type TrackerRaw,
   type TrackerStructureRaw,
+  type TtmCampaignRaw,
+  type TtmTestExecutionRaw,
   type UserSelf
 } from './schemas'
 
@@ -92,6 +96,10 @@ export class TuleapClient {
     this.authHeader = opts.authHeader ?? 'X-Auth-AccessKey'
     this.fetchImpl = opts.fetchImpl ?? globalThis.fetch.bind(globalThis)
     this.timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS
+  }
+
+  getBaseUrl(): string {
+    return this.baseUrl
   }
 
   private async mutate(
@@ -643,6 +651,53 @@ export class TuleapClient {
 
   async postPrComment(prId: number, content: string): Promise<void> {
     await this.mutate('POST', `/api/pull_requests/${prId}/comments`, { content })
+  }
+
+  async createTtmCampaign(args: { label: string; projectId: number }): Promise<TtmCampaignRaw> {
+    const response = await this.mutate('POST', '/api/v1/testmanagement_campaigns', {
+      label: args.label,
+      project_id: args.projectId
+    })
+    let raw: unknown
+    try {
+      raw = await response.json()
+    } catch {
+      throw new TuleapSchemaError('Réponse non-JSON pour POST /api/v1/testmanagement_campaigns')
+    }
+    const parsed = ttmCampaignSchema.safeParse(raw)
+    if (!parsed.success) {
+      throw new TuleapSchemaError(`Réponse campagne TTM invalide: ${parsed.error.message.slice(0, 300)}`)
+    }
+    return parsed.data
+  }
+
+  async createTtmTestExecution(args: {
+    campaignId: number
+    testDefinitionId: number
+    status: string
+    result?: string | null
+  }): Promise<TtmTestExecutionRaw> {
+    const body: Record<string, unknown> = {
+      test_definition_id: args.testDefinitionId,
+      status: args.status
+    }
+    if (args.result) body['result'] = args.result
+    const response = await this.mutate(
+      'POST',
+      `/api/v1/testmanagement_campaigns/${args.campaignId}/test_executions`,
+      body
+    )
+    let raw: unknown
+    try {
+      raw = await response.json()
+    } catch {
+      throw new TuleapSchemaError('Réponse non-JSON pour POST test_executions')
+    }
+    const parsed = ttmTestExecutionSchema.safeParse(raw)
+    if (!parsed.success) {
+      throw new TuleapSchemaError(`Réponse exécution TTM invalide: ${parsed.error.message.slice(0, 300)}`)
+    }
+    return parsed.data
   }
 
   /** Fetch every page of a paginated endpoint and return a flat array of all items. */

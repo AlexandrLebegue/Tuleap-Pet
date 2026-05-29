@@ -23,6 +23,8 @@ import type {
   JenkinsJob,
   JenkinsNode,
   JenkinsQueueItem,
+  JenkinsTtmExportProgress,
+  JenkinsTtmExportResult,
   JobStreamEvent,
   JobType,
   LlmProviderKind,
@@ -66,6 +68,7 @@ export type SettingsState = {
   jenkinsUrl: string | null
   jenkinsUser: string | null
   hasJenkinsToken: boolean
+  ttmTrackerId: number | null
 }
 
 const settings = {
@@ -113,7 +116,9 @@ const settings = {
   setJenkinsToken: (token: string): Promise<SettingsState> =>
     ipcRenderer.invoke('settings:set-jenkins-token', token),
   clearJenkinsToken: (): Promise<SettingsState> =>
-    ipcRenderer.invoke('settings:clear-jenkins-token')
+    ipcRenderer.invoke('settings:clear-jenkins-token'),
+  setTtmTrackerId: (id: number | null): Promise<{ ttmTrackerId: number | null }> =>
+    ipcRenderer.invoke('settings:set-ttm-tracker-id', id)
 }
 
 const tuleap = {
@@ -704,11 +709,30 @@ const jenkins = {
     ipcRenderer.invoke('jenkins:get-nodes')
 }
 
+type TtmExportApiResult =
+  | ({ ok: true } & JenkinsTtmExportResult)
+  | { ok: false; error: string; kind: string }
+
+const jenkinsTtm = {
+  export: (args: {
+    jobName: string
+    buildNumber: number
+    branchName: string
+    buildUrl: string
+  }): Promise<TtmExportApiResult> => ipcRenderer.invoke('jenkins-ttm:export', args),
+
+  subscribeProgress: (handler: (event: JenkinsTtmExportProgress) => void): (() => void) => {
+    const wrapped = (_e: unknown, payload: JenkinsTtmExportProgress): void => handler(payload)
+    ipcRenderer.on('jenkins-ttm:progress', wrapped)
+    return () => ipcRenderer.removeListener('jenkins-ttm:progress', wrapped)
+  }
+}
+
 const api = {
   settings, tuleap, generation, marp, chat, auth, coder, admin, debug, commenter, corrector, testgen, commenterPr, gitExplorer,
   projectRoot,
   tuleapWrite, sprintBoard, ticketBranch, prReviewer, rag, releaseNotes, sprintPlanning, bugRepro, traceability,
-  jenkins
+  jenkins, jenkinsTtm
 }
 
 if (process.contextIsolated) {

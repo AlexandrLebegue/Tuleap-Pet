@@ -14,8 +14,10 @@ import {
   jenkinsJobListSchema,
   jenkinsQueueSchema,
   jenkinsRootSchema,
+  jenkinsTestReportSchema,
   type JenkinsBuildRaw,
-  type JenkinsJobRaw
+  type JenkinsJobRaw,
+  type JenkinsTestReportRaw
 } from './schemas'
 import type {
   JenkinsBranchStatus,
@@ -372,6 +374,26 @@ export class JenkinsClient {
       buildable: item.buildable ?? false,
       stuck: item.stuck ?? false
     }))
+  }
+
+  async getTestReport(jobName: string, buildNumber: number): Promise<JenkinsTestReportRaw> {
+    const tree =
+      'duration,failCount,passCount,skipCount,suites[name,duration,cases[name,className,duration,status,errorDetails,errorStackTrace,skippedMessage]]'
+    try {
+      return await this.json(
+        jenkinsTestReportSchema,
+        `/job/${encodeURIComponent(jobName)}/${buildNumber}/testReport/api/json`,
+        { tree }
+      )
+    } catch (err) {
+      if (err instanceof JenkinsNotFoundError) {
+        throw new JenkinsError(
+          'http',
+          `Aucun rapport de test JUnit disponible pour ${jobName}#${buildNumber}.`
+        )
+      }
+      throw err
+    }
   }
 
   async getNodes(): Promise<JenkinsNode[]> {
