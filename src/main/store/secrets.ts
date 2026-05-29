@@ -129,6 +129,26 @@ export function clearLocalLlmKey(): void {
   deleteSecret(LOCAL_LLM_KEY_FILE)
 }
 
+// ---- Jenkins API token ----------------------------------------------
+
+const JENKINS_TOKEN_FILE = 'jenkins-token.bin'
+
+export function setJenkinsToken(plain: string): void {
+  writeSecret(JENKINS_TOKEN_FILE, plain)
+}
+
+export function getJenkinsToken(): string | null {
+  return readSecret(JENKINS_TOKEN_FILE)
+}
+
+export function hasJenkinsToken(): boolean {
+  return existsSync(secretPath(JENKINS_TOKEN_FILE))
+}
+
+export function clearJenkinsToken(): void {
+  deleteSecret(JENKINS_TOKEN_FILE)
+}
+
 // ---- Tuleap OAuth2 tokens -------------------------------------------
 
 export type OAuthTokenBundle = {

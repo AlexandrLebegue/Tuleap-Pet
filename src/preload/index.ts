@@ -15,6 +15,14 @@ import type {
   GitBranch,
   GitCommit,
   GitRepository,
+  JenkinsBranchStatus,
+  JenkinsBuildDetail,
+  JenkinsBuildSummary,
+  JenkinsConnectionTestResult,
+  JenkinsFailureAnalysis,
+  JenkinsJob,
+  JenkinsNode,
+  JenkinsQueueItem,
   JobStreamEvent,
   JobType,
   LlmProviderKind,
@@ -55,6 +63,9 @@ export type SettingsState = {
   chatbotToolsEnabled: boolean
   tempClonePath: string | null
   gitCloneSsh: boolean
+  jenkinsUrl: string | null
+  jenkinsUser: string | null
+  hasJenkinsToken: boolean
 }
 
 const settings = {
@@ -94,7 +105,15 @@ const settings = {
   setGitCloneSsh: (value: boolean): Promise<{ tempClonePath: string | null; gitCloneSsh: boolean }> =>
     ipcRenderer.invoke('settings:set-git-clone-ssh', value),
   chooseTempDir: (): Promise<{ ok: true; path: string } | { ok: false; cancelled: true }> =>
-    ipcRenderer.invoke('settings:choose-temp-dir')
+    ipcRenderer.invoke('settings:choose-temp-dir'),
+  setJenkinsUrl: (url: string | null): Promise<SettingsState> =>
+    ipcRenderer.invoke('settings:set-jenkins-url', url),
+  setJenkinsUser: (user: string | null): Promise<SettingsState> =>
+    ipcRenderer.invoke('settings:set-jenkins-user', user),
+  setJenkinsToken: (token: string): Promise<SettingsState> =>
+    ipcRenderer.invoke('settings:set-jenkins-token', token),
+  clearJenkinsToken: (): Promise<SettingsState> =>
+    ipcRenderer.invoke('settings:clear-jenkins-token')
 }
 
 const tuleap = {
@@ -645,10 +664,51 @@ const traceability = {
     ipcRenderer.invoke('trace:file-history', args)
 }
 
+type JenkinsInvestigateResult =
+  | JenkinsFailureAnalysis
+  | { ok: false; error: string; kind: string }
+
+const jenkins = {
+  testConnection: (): Promise<JenkinsConnectionTestResult> =>
+    ipcRenderer.invoke('jenkins:test-connection'),
+  listJobs: (args?: { folder?: string }): Promise<JenkinsJob[]> =>
+    ipcRenderer.invoke('jenkins:list-jobs', args ?? {}),
+  getBranchStatus: (args: {
+    jobName: string
+    branchName: string
+  }): Promise<JenkinsBranchStatus | null> =>
+    ipcRenderer.invoke('jenkins:get-branch-status', args),
+  getBuildHistory: (args: {
+    jobName: string
+    limit?: number
+  }): Promise<JenkinsBuildSummary[]> =>
+    ipcRenderer.invoke('jenkins:get-build-history', args),
+  getBuildDetail: (args: {
+    jobName: string
+    buildNumber: number
+  }): Promise<JenkinsBuildDetail> =>
+    ipcRenderer.invoke('jenkins:get-build-detail', args),
+  getConsoleText: (args: {
+    jobName: string
+    buildNumber: number
+  }): Promise<string> =>
+    ipcRenderer.invoke('jenkins:get-console-text', args),
+  investigateFailure: (args: {
+    jobName: string
+    buildNumber: number
+  }): Promise<JenkinsInvestigateResult> =>
+    ipcRenderer.invoke('jenkins:investigate-failure', args),
+  getQueue: (): Promise<JenkinsQueueItem[]> =>
+    ipcRenderer.invoke('jenkins:get-queue'),
+  getNodes: (): Promise<JenkinsNode[]> =>
+    ipcRenderer.invoke('jenkins:get-nodes')
+}
+
 const api = {
   settings, tuleap, generation, marp, chat, auth, coder, admin, debug, commenter, corrector, testgen, commenterPr, gitExplorer,
   projectRoot,
-  tuleapWrite, sprintBoard, ticketBranch, prReviewer, rag, releaseNotes, sprintPlanning, bugRepro, traceability
+  tuleapWrite, sprintBoard, ticketBranch, prReviewer, rag, releaseNotes, sprintPlanning, bugRepro, traceability,
+  jenkins
 }
 
 if (process.contextIsolated) {

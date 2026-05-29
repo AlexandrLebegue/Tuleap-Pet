@@ -21,6 +21,7 @@ import { registerReleaseNotesHandlers } from './release-notes'
 import { registerSprintPlanningHandlers } from './sprint-planning'
 import { registerBugReproHandlers } from './bug-repro'
 import { registerTraceabilityHandlers } from './traceability'
+import { registerJenkinsHandlers } from './jenkins'
 
 export function registerIpcHandlers(): void {
   registerSettingsHandlers()
@@ -46,4 +47,5 @@ export function registerIpcHandlers(): void {
   registerSprintPlanningHandlers()
   registerBugReproHandlers()
   registerTraceabilityHandlers()
+  registerJenkinsHandlers()
 }

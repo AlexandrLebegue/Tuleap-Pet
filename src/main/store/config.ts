@@ -25,7 +25,10 @@ const store = new Store<Schema>({
     chatbotToolsEnabled: true,
     tempClonePath: null,
     gitCloneSsh: true,
-    cppProjectRoot: null
+    cppProjectRoot: null,
+    jenkinsUrl: null,
+    jenkinsUser: null,
+    jenkinsRepoMapping: null
   },
   clearInvalidConfig: true
 })
@@ -55,7 +58,10 @@ export function getConfig(): AppConfig {
     chatbotToolsEnabled: store.get('chatbotToolsEnabled') ?? true,
     tempClonePath: store.get('tempClonePath') ?? null,
     gitCloneSsh: store.get('gitCloneSsh') ?? true,
-    cppProjectRoot: store.get('cppProjectRoot') ?? null
+    cppProjectRoot: store.get('cppProjectRoot') ?? null,
+    jenkinsUrl: store.get('jenkinsUrl') ?? null,
+    jenkinsUser: store.get('jenkinsUser') ?? null,
+    jenkinsRepoMapping: (store.get('jenkinsRepoMapping') as Record<string, string> | null) ?? null
   }
 }
 
@@ -188,6 +194,32 @@ export function getChatbotToolsEnabled(): boolean {
 
 export function setChatbotToolsEnabled(value: boolean): void {
   store.set('chatbotToolsEnabled', value)
+}
+
+export function getJenkinsUrl(): string | null {
+  return store.get('jenkinsUrl') ?? null
+}
+
+export function setJenkinsUrl(url: string | null): string | null {
+  const normalized = normalizeUrl(url)
+  store.set('jenkinsUrl', normalized)
+  return normalized
+}
+
+export function getJenkinsUser(): string | null {
+  return store.get('jenkinsUser') ?? null
+}
+
+export function setJenkinsUser(user: string | null): void {
+  store.set('jenkinsUser', user && user.trim().length > 0 ? user.trim() : null)
+}
+
+export function getJenkinsRepoMapping(): Record<string, string> | null {
+  return (store.get('jenkinsRepoMapping') as Record<string, string> | null) ?? null
+}
+
+export function setJenkinsRepoMapping(mapping: Record<string, string> | null): void {
+  store.set('jenkinsRepoMapping', mapping)
 }
 
 export function clearConfig(): void {

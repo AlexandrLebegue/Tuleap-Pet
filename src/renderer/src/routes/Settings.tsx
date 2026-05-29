@@ -846,6 +846,15 @@ function Settings(): React.JSX.Element {
         <TempClonePathCard />
       </section>
 
+      {/* ── Section : Jenkins ─────────────────────────────────────────── */}
+      <section className="space-y-4">
+        <div className="flex items-center gap-3">
+          <h3 className="text-base font-semibold">Jenkins</h3>
+          <div className="flex-1 h-px bg-border" />
+        </div>
+        <JenkinsConfigCard />
+      </section>
+
       {/* ── Section : Chatbot ──────────────────────────────────────────── */}
       <section className="space-y-4">
         <div className="flex items-center gap-3">
@@ -1024,6 +1033,140 @@ function ChatbotConfigCard(): React.JSX.Element {
             {' '}— le prompt système inclut les règles de codage
             {config.chatbotDoxygenMode ? ' et de documentation.' : '.'}
           </div>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+function JenkinsConfigCard(): React.JSX.Element {
+  const config = useSettings((s) => s.config)
+  const refresh = useSettings((s) => s.refresh)
+
+  const [urlDraft, setUrlDraft] = useState(config.jenkinsUrl ?? '')
+  const [userDraft, setUserDraft] = useState(config.jenkinsUser ?? '')
+  const [tokenDraft, setTokenDraft] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [saveMsg, setSaveMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  const [testing, setTesting] = useState(false)
+  const [testResult, setTestResult] = useState<{ ok: boolean; text: string } | null>(null)
+
+  useEffect(() => {
+    setUrlDraft(config.jenkinsUrl ?? '')
+    setUserDraft(config.jenkinsUser ?? '')
+  }, [config.jenkinsUrl, config.jenkinsUser])
+
+  const onSave = async (): Promise<void> => {
+    setSaving(true)
+    setSaveMsg(null)
+    try {
+      await api.settings.setJenkinsUrl(urlDraft.trim() || null)
+      await api.settings.setJenkinsUser(userDraft.trim() || null)
+      if (tokenDraft.trim()) {
+        await api.settings.setJenkinsToken(tokenDraft.trim())
+        setTokenDraft('')
+      }
+      await refresh()
+      setSaveMsg({ ok: true, text: 'Configuration Jenkins enregistrée.' })
+    } catch (err) {
+      setSaveMsg({ ok: false, text: err instanceof Error ? err.message : String(err) })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const onTestConnection = async (): Promise<void> => {
+    setTesting(true)
+    setTestResult(null)
+    try {
+      const result = await api.jenkins.testConnection()
+      if (result.ok) {
+        setTestResult({ ok: true, text: `Connecté — ${result.nodeName} (Jenkins ${result.version})` })
+      } else {
+        setTestResult({ ok: false, text: result.error })
+      }
+    } catch (err) {
+      setTestResult({ ok: false, text: err instanceof Error ? err.message : String(err) })
+    } finally {
+      setTesting(false)
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Configuration Jenkins</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="space-y-1">
+          <Label htmlFor="jenkins-url">URL Jenkins</Label>
+          <Input
+            id="jenkins-url"
+            placeholder="https://jenkins.example.com"
+            value={urlDraft}
+            onChange={(e) => setUrlDraft(e.target.value)}
+            spellCheck={false}
+            autoComplete="off"
+          />
+        </div>
+        <div className="space-y-1">
+          <Label htmlFor="jenkins-user">Nom d'utilisateur</Label>
+          <Input
+            id="jenkins-user"
+            placeholder="mon.utilisateur"
+            value={userDraft}
+            onChange={(e) => setUserDraft(e.target.value)}
+            spellCheck={false}
+            autoComplete="off"
+          />
+        </div>
+        <div className="space-y-1">
+          <Label htmlFor="jenkins-token">API Token</Label>
+          <Input
+            id="jenkins-token"
+            type="password"
+            placeholder={config.hasJenkinsToken ? '•••••••••• (déjà enregistré)' : 'Votre token API Jenkins'}
+            value={tokenDraft}
+            onChange={(e) => setTokenDraft(e.target.value)}
+            autoComplete="off"
+          />
+          {config.hasJenkinsToken && (
+            <div className="flex items-center gap-2 pt-1 text-xs text-muted-foreground">
+              <Badge variant="secondary">Token présent</Badge>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={async () => {
+                  await api.settings.clearJenkinsToken()
+                  await refresh()
+                }}
+              >
+                Supprimer
+              </Button>
+            </div>
+          )}
+        </div>
+        <div className="flex gap-2">
+          <Button onClick={onSave} disabled={saving}>
+            {saving ? 'Enregistrement…' : 'Enregistrer'}
+          </Button>
+          <Button
+            variant="outline"
+            onClick={onTestConnection}
+            disabled={testing || !config.jenkinsUrl || !config.hasJenkinsToken}
+          >
+            {testing ? 'Test…' : 'Tester la connexion'}
+          </Button>
+        </div>
+        {saveMsg && (
+          <p className={`text-sm ${saveMsg.ok ? 'text-green-600' : 'text-destructive'}`}>
+            {saveMsg.text}
+          </p>
+        )}
+        {testResult && (
+          <p className={`text-sm ${testResult.ok ? 'text-green-600' : 'text-destructive'}`}>
+            {testResult.text}
+          </p>
         )}
       </CardContent>
     </Card>
