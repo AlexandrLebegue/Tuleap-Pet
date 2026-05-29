@@ -205,20 +205,24 @@ async function processFile(
       reason: evaluation.reason
     })
 
-    if (evaluation.sufficient) {
+    if (evaluation.sufficient && !opts.inlineComments) {
       plans.push({ fn, evaluation, existing })
       continue
     }
 
-    emit({ type: 'generate', functionName: fn.name })
-    const ctxText = renderContext(context)
-    const indent = detectFunctionIndent(originalContent, fn.startLine)
-    const { system, user } = buildGeneratePrompt({ fn, ctxText, indent })
-    const raw = await callLlm(system, user)
-    const newComment = extractCommentBlock(raw)
+    let newComment: string | undefined
+    if (!evaluation.sufficient) {
+      emit({ type: 'generate', functionName: fn.name })
+      const ctxText = renderContext(context)
+      const indent = detectFunctionIndent(originalContent, fn.startLine)
+      const { system, user } = buildGeneratePrompt({ fn, ctxText, indent })
+      const raw = await callLlm(system, user)
+      newComment = extractCommentBlock(raw)
+    }
 
     let inlineCommentedBody: string | undefined
     if (opts.inlineComments) {
+      if (evaluation.sufficient) emit({ type: 'generate', functionName: fn.name })
       try {
         const fnLines = originalContent.split('\n')
         const fnText = fnLines.slice(fn.startLine - 1, fn.endLine).join('\n')
@@ -226,7 +230,11 @@ async function processFile(
         const inlRaw = await callLlm(inlSys, inlUser)
         inlineCommentedBody = extractCommentBlock(inlRaw)
       } catch (inlErr) {
-        debugError('[context-commenter] inline comments failed for %s: %s', fn.name, inlErr instanceof Error ? inlErr.message : String(inlErr))
+        debugError(
+          '[context-commenter] inline comments failed for %s: %s',
+          fn.name,
+          inlErr instanceof Error ? inlErr.message : String(inlErr)
+        )
       }
     }
 
@@ -238,10 +246,10 @@ async function processFile(
   // function signature.
   const ops: Op[] = []
   for (const p of plans) {
-    if (!p.newComment) continue
+    if (!p.newComment && !p.inlineCommentedBody) continue
     const fnStartIdx = p.fn.startLine - 1
 
-    if (p.inlineCommentedBody) {
+    if (p.newComment && p.inlineCommentedBody) {
       // Replace existing comment (if any) + entire function with new header + commented body
       const opStart = p.existing ? p.existing.startLine - 1 : fnStartIdx
       ops.push({
@@ -249,26 +257,33 @@ async function processFile(
         endLineExclusive: p.fn.endLine,
         replacement: p.newComment + '\n' + p.inlineCommentedBody
       })
-    } else if (p.existing) {
-      // Replace only the existing comment block
-      ops.push({
-        startLine: p.existing.startLine - 1,
-        endLineExclusive: p.existing.endLine,
-        replacement: p.newComment
-      })
-    } else {
-      // Insert header above function signature (no removal)
+    } else if (p.newComment) {
+      if (p.existing) {
+        ops.push({
+          startLine: p.existing.startLine - 1,
+          endLineExclusive: p.existing.endLine,
+          replacement: p.newComment
+        })
+      } else {
+        ops.push({
+          startLine: fnStartIdx,
+          endLineExclusive: fnStartIdx,
+          replacement: p.newComment
+        })
+      }
+    } else if (p.inlineCommentedBody) {
+      // Existing header kept as-is; only the function body is rewritten with inline comments.
       ops.push({
         startLine: fnStartIdx,
-        endLineExclusive: fnStartIdx,
-        replacement: p.newComment
+        endLineExclusive: p.fn.endLine,
+        replacement: p.inlineCommentedBody
       })
     }
   }
   const newContent = applyOps(originalContent, ops)
 
-  const skipped = plans.filter((p) => p.evaluation.sufficient).length
-  const commented = plans.filter((p) => p.newComment).length
+  const skipped = plans.filter((p) => !p.newComment && !p.inlineCommentedBody).length
+  const commented = plans.filter((p) => p.newComment || p.inlineCommentedBody).length
   emit({ type: 'file-done', filePath, skipped, commented })
 
   return { filePath, originalContent, newContent, plans, skipped, commented }
