@@ -8,6 +8,8 @@ import {
   getChatbotExpertMode,
   getChatbotToolsEnabled,
   setChatbotToolsEnabled,
+  getChatbotJenkinsToolsEnabled,
+  setChatbotJenkinsToolsEnabled,
   getLocalBaseUrl,
   getLocalDirectConnection,
   getLocalModel,
@@ -75,6 +77,7 @@ export type SettingsState = {
   chatbotExpertMode: boolean
   chatbotDoxygenMode: boolean
   chatbotToolsEnabled: boolean
+  chatbotJenkinsToolsEnabled: boolean
   tempClonePath: string | null
   gitCloneSsh: boolean
   jenkinsUrl: string | null
@@ -110,6 +113,7 @@ function buildState(): SettingsState {
     chatbotExpertMode: getChatbotExpertMode(),
     chatbotDoxygenMode: getChatbotDoxygenMode(),
     chatbotToolsEnabled: getChatbotToolsEnabled(),
+    chatbotJenkinsToolsEnabled: getChatbotJenkinsToolsEnabled(),
     tempClonePath: getTempClonePath(),
     gitCloneSsh: getGitCloneSsh(),
     jenkinsUrl: config.jenkinsUrl,
@@ -249,6 +253,13 @@ export function registerSettingsHandlers(): void {
     if (typeof value !== 'boolean') throw new Error("Le paramètre 'value' doit être un booléen.")
     setChatbotToolsEnabled(value)
     audit('settings.set-chatbot-tools-enabled', String(value))
+    return buildState()
+  })
+
+  ipcMain.handle('settings:set-chatbot-jenkins-tools-enabled', (_event, value: unknown) => {
+    if (typeof value !== 'boolean') throw new Error("Le paramètre 'value' doit être un booléen.")
+    setChatbotJenkinsToolsEnabled(value)
+    audit('settings.set-chatbot-jenkins-tools-enabled', String(value))
     return buildState()
   })
 

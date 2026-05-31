@@ -965,6 +965,7 @@ function ChatbotConfigCard(): React.JSX.Element {
   const setChatbotExpertMode = useSettings((s) => s.setChatbotExpertMode)
   const setChatbotDoxygenMode = useSettings((s) => s.setChatbotDoxygenMode)
   const setChatbotToolsEnabled = useSettings((s) => s.setChatbotToolsEnabled)
+  const setChatbotJenkinsToolsEnabled = useSettings((s) => s.setChatbotJenkinsToolsEnabled)
 
   return (
     <Card>
@@ -1020,6 +1021,22 @@ function ChatbotConfigCard(): React.JSX.Element {
             <p className="text-xs text-muted-foreground">
               Permet au chatbot d&apos;interroger l&apos;API Tuleap (projets, artéfacts, sprints).
               Désactiver si le modèle ne supporte pas le tool calling.
+            </p>
+          </div>
+        </label>
+
+        <label className="flex items-start gap-3 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={config.chatbotJenkinsToolsEnabled}
+            onChange={(e) => setChatbotJenkinsToolsEnabled(e.target.checked)}
+            className="mt-0.5 h-4 w-4 accent-primary"
+          />
+          <div>
+            <p className="text-sm font-medium">Activer les outils Jenkins</p>
+            <p className="text-xs text-muted-foreground">
+              Permet au chatbot d&apos;interroger Jenkins (jobs, historique de builds, rapports de tests).
+              Sans effet si les outils Tuleap sont désactivés.
             </p>
           </div>
         </label>

@@ -66,6 +66,7 @@ export type SettingsState = {
   chatbotExpertMode: boolean
   chatbotDoxygenMode: boolean
   chatbotToolsEnabled: boolean
+  chatbotJenkinsToolsEnabled: boolean
   tempClonePath: string | null
   gitCloneSsh: boolean
   jenkinsUrl: string | null
@@ -106,6 +107,8 @@ const settings = {
     ipcRenderer.invoke('settings:set-chatbot-doxygen-mode', value),
   setChatbotToolsEnabled: (value: boolean): Promise<SettingsState> =>
     ipcRenderer.invoke('settings:set-chatbot-tools-enabled', value),
+  setChatbotJenkinsToolsEnabled: (value: boolean): Promise<SettingsState> =>
+    ipcRenderer.invoke('settings:set-chatbot-jenkins-tools-enabled', value),
   reset: (): Promise<SettingsState> => ipcRenderer.invoke('settings:reset'),
   setTempClonePath: (path: string | null): Promise<{ tempClonePath: string | null; gitCloneSsh: boolean }> =>
     ipcRenderer.invoke('settings:set-temp-clone-path', path),

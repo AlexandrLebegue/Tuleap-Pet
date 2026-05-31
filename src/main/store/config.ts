@@ -23,6 +23,7 @@ const store = new Store<Schema>({
     chatbotExpertMode: false,
     chatbotDoxygenMode: false,
     chatbotToolsEnabled: true,
+    chatbotJenkinsToolsEnabled: true,
     tempClonePath: null,
     gitCloneSsh: true,
     cppProjectRoot: null,
@@ -57,6 +58,7 @@ export function getConfig(): AppConfig {
     chatbotExpertMode: store.get('chatbotExpertMode') ?? false,
     chatbotDoxygenMode: store.get('chatbotDoxygenMode') ?? false,
     chatbotToolsEnabled: store.get('chatbotToolsEnabled') ?? true,
+    chatbotJenkinsToolsEnabled: store.get('chatbotJenkinsToolsEnabled') ?? true,
     tempClonePath: store.get('tempClonePath') ?? null,
     gitCloneSsh: store.get('gitCloneSsh') ?? true,
     cppProjectRoot: store.get('cppProjectRoot') ?? null,
@@ -196,6 +198,14 @@ export function getChatbotToolsEnabled(): boolean {
 
 export function setChatbotToolsEnabled(value: boolean): void {
   store.set('chatbotToolsEnabled', value)
+}
+
+export function getChatbotJenkinsToolsEnabled(): boolean {
+  return store.get('chatbotJenkinsToolsEnabled') ?? true
+}
+
+export function setChatbotJenkinsToolsEnabled(value: boolean): void {
+  store.set('chatbotJenkinsToolsEnabled', value)
 }
 
 export function getJenkinsUrl(): string | null {

@@ -45,6 +45,7 @@ type Store = {
   setChatbotExpertMode: (value: boolean) => Promise<void>
   setChatbotDoxygenMode: (value: boolean) => Promise<void>
   setChatbotToolsEnabled: (value: boolean) => Promise<void>
+  setChatbotJenkinsToolsEnabled: (value: boolean) => Promise<void>
 }
 
 const emptyConfig: SettingsState = {
@@ -71,6 +72,7 @@ const emptyConfig: SettingsState = {
   chatbotExpertMode: false,
   chatbotDoxygenMode: false,
   chatbotToolsEnabled: true,
+  chatbotJenkinsToolsEnabled: true,
   tempClonePath: null,
   gitCloneSsh: true,
   jenkinsUrl: null,
@@ -263,6 +265,11 @@ export const useSettings = create<Store>((set, get) => ({
 
   setChatbotToolsEnabled: async (value: boolean) => {
     const config = await api.settings.setChatbotToolsEnabled(value)
+    set({ config })
+  },
+
+  setChatbotJenkinsToolsEnabled: async (value: boolean) => {
+    const config = await api.settings.setChatbotJenkinsToolsEnabled(value)
     set({ config })
   }
 }))

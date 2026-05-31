@@ -27,6 +27,8 @@ export type AppConfig = {
   chatbotDoxygenMode: boolean
   /** Chatbot: enable Tuleap tool calling (get_self, list_artifacts, etc.). */
   chatbotToolsEnabled: boolean
+  /** Chatbot: enable Jenkins tool calling (list_jobs, get_build_detail, etc.). */
+  chatbotJenkinsToolsEnabled: boolean
   /** Path to temp folder used for auto-cloning repos during background jobs. */
   tempClonePath: string | null
   /** Use SSH for git clone in background jobs (no token injection needed). */

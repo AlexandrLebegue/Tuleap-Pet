@@ -14,7 +14,7 @@ import { audit } from '../store/db'
 import { resolveLlmProvider, buildTuleapTools, buildTuleapWriteTools, toLlmError } from '../llm'
 import { buildJenkinsTools } from '../llm/jenkins-tools'
 import type { LlmMessage } from '../llm'
-import { getChatbotDoxygenMode, getChatbotExpertMode, getChatbotToolsEnabled, getConfig, getLlmModel, getLlmProvider, getLocalModel } from '../store/config'
+import { getChatbotDoxygenMode, getChatbotExpertMode, getChatbotToolsEnabled, getChatbotJenkinsToolsEnabled, getConfig, getLlmModel, getLlmProvider, getLocalModel } from '../store/config'
 import { hasJenkinsToken } from '../store/secrets'
 import { getCombinedPrompt, getExpertSystemPrompt } from '../prompts/expert-prompts'
 import { debugLog, debugError } from '../logger'
@@ -278,10 +278,11 @@ export function registerChatHandlers(): void {
       const provider = resolveLlmProvider()
       const thinking = opts.thinking ?? false
       const toolsEnabled = getChatbotToolsEnabled()
-      debugLog('[chat] provider=%s model=%s thinking=%s tools=%s', provider.name,
-        provider.name === 'local' ? getLocalModel() : getLlmModel(), thinking, toolsEnabled)
+      const jenkinsToolsEnabled = getChatbotJenkinsToolsEnabled()
+      debugLog('[chat] provider=%s model=%s thinking=%s tools=%s jenkins=%s', provider.name,
+        provider.name === 'local' ? getLocalModel() : getLlmModel(), thinking, toolsEnabled, jenkinsToolsEnabled)
       const tools = toolsEnabled
-        ? { ...buildTuleapTools(), ...buildTuleapWriteTools(), ...buildJenkinsTools() }
+        ? { ...buildTuleapTools(), ...buildTuleapWriteTools(), ...(jenkinsToolsEnabled ? buildJenkinsTools() : {}) }
         : undefined
       const result = await provider.stream(
         {
