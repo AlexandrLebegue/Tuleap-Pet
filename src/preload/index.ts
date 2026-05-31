@@ -16,15 +16,18 @@ import type {
   GitCommit,
   GitRepository,
   JenkinsBranchStatus,
+  JenkinsBranchTestReport,
   JenkinsBuildDetail,
   JenkinsBuildSummary,
   JenkinsConnectionTestResult,
+  JenkinsCoverageReport,
   JenkinsFailureAnalysis,
   JenkinsJob,
   JenkinsNode,
   JenkinsQueueItem,
   JenkinsTtmExportProgress,
   JenkinsTtmExportResult,
+  JenkinsWarningsReport,
   JobStreamEvent,
   JobType,
   LlmProviderKind,
@@ -69,6 +72,7 @@ export type SettingsState = {
   jenkinsUser: string | null
   hasJenkinsToken: boolean
   ttmTrackerId: number | null
+  jenkinsRepoMapping: Record<string, string> | null
 }
 
 const settings = {
@@ -706,7 +710,13 @@ const jenkins = {
   getQueue: (): Promise<JenkinsQueueItem[]> =>
     ipcRenderer.invoke('jenkins:get-queue'),
   getNodes: (): Promise<JenkinsNode[]> =>
-    ipcRenderer.invoke('jenkins:get-nodes')
+    ipcRenderer.invoke('jenkins:get-nodes'),
+  getBranchTestReport: (args: { jobName: string; branchName: string }): Promise<JenkinsBranchTestReport> =>
+    ipcRenderer.invoke('jenkins:get-branch-test-report', args),
+  getBranchWarnings: (args: { jobName: string; branchName: string }): Promise<JenkinsWarningsReport> =>
+    ipcRenderer.invoke('jenkins:get-branch-warnings', args),
+  getBranchCoverage: (args: { jobName: string; branchName: string }): Promise<JenkinsCoverageReport> =>
+    ipcRenderer.invoke('jenkins:get-branch-coverage', args)
 }
 
 type TtmExportApiResult =

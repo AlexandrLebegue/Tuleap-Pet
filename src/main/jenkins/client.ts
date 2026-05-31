@@ -179,6 +179,44 @@ function mapBuildSummary(raw: JenkinsBuildRaw): JenkinsBuildSummary {
   }
 }
 
+function parseCoverageData(data: Record<string, unknown>): { lineCoverage: number | null; branchCoverage: number | null } {
+  let lineCoverage: number | null = null
+  let branchCoverage: number | null = null
+
+  // JaCoCo: { lineCoverage: 78.3, branchCoverage: 61.0 }
+  if (typeof data['lineCoverage'] === 'number') lineCoverage = data['lineCoverage']
+  if (typeof data['branchCoverage'] === 'number') branchCoverage = data['branchCoverage']
+
+  const results = data['results']
+
+  // Coverage plugin: { results: [{value: "78.3", name: "Line"}, ...] }
+  if (Array.isArray(results)) {
+    for (const r of results as Array<Record<string, unknown>>) {
+      const name = String(r['name'] ?? '').toLowerCase()
+      const value = parseFloat(String(r['value'] ?? ''))
+      if (!isNaN(value)) {
+        if (name === 'line' || name === 'lines') lineCoverage = value
+        if (name === 'branch' || name === 'branches') branchCoverage = value
+      }
+    }
+  } else if (results !== null && typeof results === 'object') {
+    // Cobertura: { results: { elements: [{name: "Lines", ratio: 78.3}, ...] } }
+    const elements = (results as Record<string, unknown>)['elements']
+    if (Array.isArray(elements)) {
+      for (const e of elements as Array<Record<string, unknown>>) {
+        const name = String(e['name'] ?? '').toLowerCase()
+        const ratio = typeof e['ratio'] === 'number' ? e['ratio'] : null
+        if (ratio !== null) {
+          if (name === 'lines') lineCoverage = ratio
+          if (name === 'branches') branchCoverage = ratio
+        }
+      }
+    }
+  }
+
+  return { lineCoverage, branchCoverage }
+}
+
 export class JenkinsClient {
   private readonly baseUrl: string
   private readonly authHeader: string
@@ -394,6 +432,58 @@ export class JenkinsClient {
       }
       throw err
     }
+  }
+
+  async getWarningsReport(
+    jobName: string,
+    buildNumber: number
+  ): Promise<{ totalCount: number; tools: Array<{ name: string; count: number }> } | null> {
+    try {
+      const response = await this.request(
+        `/job/${encodeURIComponent(jobName)}/${buildNumber}/warnings-ng/api/json`,
+        { tree: 'totalSize,groups[name,size]' }
+      )
+      const data = (await response.json()) as Record<string, unknown>
+      const total = typeof data['totalSize'] === 'number' ? data['totalSize'] : 0
+      const groups = Array.isArray(data['groups'])
+        ? (data['groups'] as Array<Record<string, unknown>>)
+        : []
+      return {
+        totalCount: total,
+        tools: groups
+          .map((g) => ({ name: String(g['name'] ?? ''), count: typeof g['size'] === 'number' ? g['size'] : 0 }))
+          .filter((t) => t.count > 0)
+      }
+    } catch (err) {
+      if (err instanceof JenkinsNotFoundError) return null
+      throw err
+    }
+  }
+
+  async getCoverageReport(
+    jobName: string,
+    buildNumber: number
+  ): Promise<{ lineCoverage: number | null; branchCoverage: number | null } | null> {
+    const endpoints = [
+      { path: 'coverage', tree: 'results[value,name]' },
+      { path: 'jacoco', tree: 'lineCoverage,branchCoverage' },
+      { path: 'cobertura', tree: 'results[elements[name,ratio]]' }
+    ]
+    for (const { path, tree } of endpoints) {
+      try {
+        const response = await this.request(
+          `/job/${encodeURIComponent(jobName)}/${buildNumber}/${path}/api/json`,
+          { tree }
+        )
+        const data = (await response.json()) as Record<string, unknown>
+        const result = parseCoverageData(data)
+        if (result.lineCoverage !== null || result.branchCoverage !== null) return result
+      } catch (err) {
+        if (err instanceof JenkinsNotFoundError) continue
+        throw err
+      }
+    }
+    return null
   }
 
   async getNodes(): Promise<JenkinsNode[]> {

@@ -1,5 +1,6 @@
 import { ipcMain } from 'electron'
 import { buildJenkinsClient, JenkinsError } from '../jenkins'
+import { parseTestReport } from '../jenkins/junit-parser'
 import { resolveLlmProvider, toLlmError } from '../llm'
 import { audit } from '../store/db'
 import type {
@@ -170,5 +171,34 @@ ${consoleText}`
       }
       throw err
     }
+  })
+
+  ipcMain.handle('jenkins:get-branch-test-report', async (_event, args: unknown) => {
+    const { jobName, branchName } = args as { jobName: string; branchName: string }
+    const client = buildJenkinsClient()
+    const status = await client.getBranchStatus(jobName, branchName)
+    if (!status?.buildNumber) return null
+    try {
+      const raw = await client.getTestReport(jobName, status.buildNumber)
+      return { branchName, buildNumber: status.buildNumber, report: parseTestReport(raw) }
+    } catch {
+      return null
+    }
+  })
+
+  ipcMain.handle('jenkins:get-branch-warnings', async (_event, args: unknown) => {
+    const { jobName, branchName } = args as { jobName: string; branchName: string }
+    const client = buildJenkinsClient()
+    const status = await client.getBranchStatus(jobName, branchName)
+    if (!status?.buildNumber) return null
+    return client.getWarningsReport(jobName, status.buildNumber)
+  })
+
+  ipcMain.handle('jenkins:get-branch-coverage', async (_event, args: unknown) => {
+    const { jobName, branchName } = args as { jobName: string; branchName: string }
+    const client = buildJenkinsClient()
+    const status = await client.getBranchStatus(jobName, branchName)
+    if (!status?.buildNumber) return null
+    return client.getCoverageReport(jobName, status.buildNumber)
   })
 }

@@ -491,3 +491,19 @@ export type JenkinsFailureAnalysis = {
   suggestion: string
   severity: 'error' | 'warning' | 'info'
 }
+
+export type JenkinsBranchTestReport = {
+  branchName: string
+  buildNumber: number
+  report: JenkinsTestReport
+} | null
+
+export type JenkinsWarningsReport = {
+  totalCount: number
+  tools: Array<{ name: string; count: number }>
+} | null
+
+export type JenkinsCoverageReport = {
+  lineCoverage: number | null
+  branchCoverage: number | null
+} | null

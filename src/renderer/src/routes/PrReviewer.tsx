@@ -8,7 +8,11 @@ import { api } from '@renderer/lib/api'
 import type {
   GitRepository,
   JenkinsBranchStatus,
-  JenkinsFailureAnalysis
+  JenkinsBranchTestReport,
+  JenkinsCoverageReport,
+  JenkinsFailureAnalysis,
+  JenkinsTestReport,
+  JenkinsWarningsReport
 } from '@shared/types'
 
 type PullRequestSummary = {
@@ -90,6 +94,14 @@ type Sections = {
   acceptanceCriteria: boolean
 }
 
+type BuildComparison = {
+  src: JenkinsBranchTestReport
+  target: JenkinsBranchTestReport
+  warnings: JenkinsWarningsReport
+  coverage: JenkinsCoverageReport
+  loading: boolean
+}
+
 function coverageVariant(c: string): 'default' | 'secondary' | 'destructive' | 'outline' {
   if (c === 'covered') return 'default'
   if (c === 'partial') return 'secondary'
@@ -101,6 +113,27 @@ function complianceVariant(p: number): 'default' | 'secondary' | 'destructive' {
   if (p >= 75) return 'default'
   if (p >= 50) return 'secondary'
   return 'destructive'
+}
+
+function computeTestDiff(
+  src: JenkinsTestReport,
+  target: JenkinsTestReport
+): {
+  regressions: JenkinsTestReport['cases']
+  fixes: JenkinsTestReport['cases']
+  newTests: JenkinsTestReport['cases']
+} {
+  const targetByName = new Map(target.cases.map((c) => [c.fullName, c]))
+  const srcByName = new Map(src.cases.map((c) => [c.fullName, c]))
+  return {
+    regressions: src.cases.filter(
+      (c) => c.status === 'failed' && targetByName.get(c.fullName)?.status === 'passed'
+    ),
+    fixes: src.cases.filter(
+      (c) => c.status === 'passed' && targetByName.get(c.fullName)?.status === 'failed'
+    ),
+    newTests: src.cases.filter((c) => !targetByName.has(c.fullName) && !srcByName.has(c.fullName) || !targetByName.has(c.fullName))
+  }
 }
 
 export default function PrReviewer(): React.JSX.Element {
@@ -125,6 +158,14 @@ export default function PrReviewer(): React.JSX.Element {
   const [jenkinsInvestigation, setJenkinsInvestigation] = useState<JenkinsFailureAnalysis | null>(null)
   const [jenkinsInvestigating, setJenkinsInvestigating] = useState(false)
   const [jenkinsInvestError, setJenkinsInvestError] = useState<string | null>(null)
+
+  const [buildComp, setBuildComp] = useState<BuildComparison>({
+    src: null,
+    target: null,
+    warnings: null,
+    coverage: null,
+    loading: false
+  })
 
   const jenkinsConfigured = Boolean(config.jenkinsUrl && config.hasJenkinsToken)
 
@@ -160,11 +201,28 @@ export default function PrReviewer(): React.JSX.Element {
     setJenkinsInvestigation(null)
     setJenkinsInvestError(null)
     if (!selectedPr || !selectedRepo || !jenkinsConfigured) return
-    const jobName = selectedRepo.name
+    const jobName = config.jenkinsRepoMapping?.[String(selectedRepo.id)] ?? selectedRepo.name
     void api.jenkins
       .getBranchStatus({ jobName, branchName: selectedPr.branchSrc })
       .then(setJenkinsBranchStatus)
       .catch(() => setJenkinsBranchStatus(null))
+  }, [selectedPr, selectedRepo, jenkinsConfigured, config.jenkinsRepoMapping])
+
+  useEffect(() => {
+    setBuildComp({ src: null, target: null, warnings: null, coverage: null, loading: false })
+    if (!selectedPr || !selectedRepo || !jenkinsConfigured) return
+    const jobName = config.jenkinsRepoMapping?.[String(selectedRepo.id)] ?? selectedRepo.name
+    setBuildComp((c) => ({ ...c, loading: true }))
+    Promise.all([
+      api.jenkins.getBranchTestReport({ jobName, branchName: selectedPr.branchSrc }),
+      api.jenkins.getBranchTestReport({ jobName, branchName: selectedPr.branchDest }),
+      api.jenkins.getBranchWarnings({ jobName, branchName: selectedPr.branchSrc }),
+      api.jenkins.getBranchCoverage({ jobName, branchName: selectedPr.branchSrc })
+    ])
+      .then(([src, target, warnings, coverage]) => {
+        setBuildComp({ src, target, warnings, coverage, loading: false })
+      })
+      .catch(() => setBuildComp((c) => ({ ...c, loading: false })))
   }, [selectedPr, selectedRepo, jenkinsConfigured, config.jenkinsRepoMapping])
 
   function toggle(key: keyof Sections): void {
@@ -468,7 +526,7 @@ export default function PrReviewer(): React.JSX.Element {
         )}
       </Card>
 
-      {/* Encart Jenkins */}
+      {/* Encart Jenkins — Build de la branche */}
       {jenkinsConfigured && selectedPr && (
         <Card className="p-4">
           <div className="mb-2 flex items-center gap-2">
@@ -525,7 +583,8 @@ export default function PrReviewer(): React.JSX.Element {
                       disabled={jenkinsInvestigating}
                       onClick={async () => {
                         if (!jenkinsBranchStatus.buildNumber) return
-                        const jobName = selectedRepo?.name ?? ''
+                        const jobName =
+                          config.jenkinsRepoMapping?.[String(selectedRepo?.id)] ?? selectedRepo?.name ?? ''
                         setJenkinsInvestigating(true)
                         setJenkinsInvestError(null)
                         setJenkinsInvestigation(null)
@@ -564,6 +623,195 @@ export default function PrReviewer(): React.JSX.Element {
                       </div>
                     )}
                   </div>
+              )}
+            </div>
+          )}
+        </Card>
+      )}
+
+      {/* Encart Comparaison de builds Jenkins */}
+      {jenkinsConfigured && selectedPr && (
+        <Card className="p-4">
+          <div className="mb-3 flex items-center gap-2">
+            <h2 className="text-sm font-semibold">Comparaison de builds Jenkins</h2>
+            <span className="text-xs text-muted-foreground">
+              {selectedPr.branchDest} ← {selectedPr.branchSrc}
+            </span>
+          </div>
+
+          {buildComp.loading && (
+            <p className="text-xs text-muted-foreground">Chargement des rapports Jenkins…</p>
+          )}
+
+          {!buildComp.loading && !buildComp.src && (
+            <p className="text-xs text-muted-foreground">
+              Aucun rapport de tests JUnit disponible pour{' '}
+              <span className="font-mono">{selectedPr.branchSrc}</span>.
+            </p>
+          )}
+
+          {!buildComp.loading && buildComp.src && (
+            <div className="space-y-3 text-sm">
+              {/* Résumé tests de la branche source */}
+              <div>
+                <p className="mb-1.5 text-xs font-medium text-muted-foreground">
+                  Build #{buildComp.src.buildNumber} —{' '}
+                  <span className="font-mono">{selectedPr.branchSrc}</span>
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <Badge className="bg-green-600 text-white">
+                    {buildComp.src.report.passCount} passé(s)
+                  </Badge>
+                  {buildComp.src.report.failCount > 0 && (
+                    <Badge variant="destructive">
+                      {buildComp.src.report.failCount} échoué(s)
+                    </Badge>
+                  )}
+                  {buildComp.src.report.skipCount > 0 && (
+                    <Badge variant="secondary">
+                      {buildComp.src.report.skipCount} ignoré(s)
+                    </Badge>
+                  )}
+                  <Badge variant="outline">
+                    {buildComp.src.report.totalCount} total
+                  </Badge>
+                </div>
+              </div>
+
+              {/* Diff avec la branche cible */}
+              {buildComp.target ? (
+                (() => {
+                  const { regressions, fixes, newTests } = computeTestDiff(
+                    buildComp.src.report,
+                    buildComp.target.report
+                  )
+                  return (
+                    <div className="space-y-2 border-t pt-2">
+                      <p className="text-xs font-medium text-muted-foreground">
+                        Comparaison avec{' '}
+                        <span className="font-mono">{selectedPr.branchDest}</span>{' '}
+                        (build #{buildComp.target.buildNumber})
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {regressions.length > 0 ? (
+                          <Badge variant="destructive">{regressions.length} régression(s)</Badge>
+                        ) : (
+                          <Badge className="bg-green-600 text-white">Aucune régression</Badge>
+                        )}
+                        {fixes.length > 0 && (
+                          <Badge className="bg-green-600 text-white">
+                            {fixes.length} correction(s)
+                          </Badge>
+                        )}
+                        {newTests.length > 0 && (
+                          <Badge variant="outline">{newTests.length} nouveau(x) test(s)</Badge>
+                        )}
+                      </div>
+
+                      {regressions.length > 0 && (
+                        <details open className="rounded border p-2">
+                          <summary className="cursor-pointer text-xs font-medium text-destructive">
+                            Régressions — tests qui passaient sur {selectedPr.branchDest} ({regressions.length})
+                          </summary>
+                          <ul className="mt-2 space-y-1">
+                            {regressions.slice(0, 15).map((c, i) => (
+                              <li key={i} className="text-xs">
+                                <span className="font-mono">{c.fullName}</span>
+                                {c.errorDetails && (
+                                  <span className="ml-2 text-muted-foreground">
+                                    — {c.errorDetails.slice(0, 100)}
+                                  </span>
+                                )}
+                              </li>
+                            ))}
+                            {regressions.length > 15 && (
+                              <li className="text-xs text-muted-foreground">
+                                …et {regressions.length - 15} de plus
+                              </li>
+                            )}
+                          </ul>
+                        </details>
+                      )}
+
+                      {fixes.length > 0 && (
+                        <details className="rounded border p-2">
+                          <summary className="cursor-pointer text-xs font-medium text-green-600">
+                            Corrections — tests qui échouaient sur {selectedPr.branchDest} ({fixes.length})
+                          </summary>
+                          <ul className="mt-2 space-y-1">
+                            {fixes.map((c, i) => (
+                              <li key={i} className="text-xs font-mono">{c.fullName}</li>
+                            ))}
+                          </ul>
+                        </details>
+                      )}
+
+                      {newTests.length > 0 && (
+                        <details className="rounded border p-2">
+                          <summary className="cursor-pointer text-xs font-medium">
+                            Nouveaux tests ({newTests.length})
+                          </summary>
+                          <ul className="mt-2 space-y-1">
+                            {newTests.slice(0, 15).map((c, i) => (
+                              <li key={i} className="text-xs font-mono">{c.fullName}</li>
+                            ))}
+                            {newTests.length > 15 && (
+                              <li className="text-xs text-muted-foreground">
+                                …et {newTests.length - 15} de plus
+                              </li>
+                            )}
+                          </ul>
+                        </details>
+                      )}
+                    </div>
+                  )
+                })()
+              ) : (
+                <p className="border-t pt-2 text-xs text-muted-foreground">
+                  Rapport de tests de{' '}
+                  <span className="font-mono">{selectedPr.branchDest}</span> non disponible —
+                  comparaison impossible.
+                </p>
+              )}
+
+              {/* Warnings C++ */}
+              {buildComp.warnings !== null && (
+                <div className="border-t pt-2 text-xs">
+                  <span className="font-medium">Warnings C++ : </span>
+                  <span
+                    className={
+                      buildComp.warnings.totalCount > 0 ? 'text-amber-600' : 'text-green-600'
+                    }
+                  >
+                    {buildComp.warnings.totalCount}
+                  </span>
+                  {buildComp.warnings.tools.length > 0 && (
+                    <ul className="mt-1 space-y-0.5 text-muted-foreground">
+                      {buildComp.warnings.tools.map((t, i) => (
+                        <li key={i}>
+                          {t.name} : {t.count}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
+
+              {/* Couverture de code */}
+              {buildComp.coverage !== null && (
+                <div className="border-t pt-2 text-xs">
+                  <span className="font-medium">Couverture : </span>
+                  {buildComp.coverage.lineCoverage !== null && (
+                    <span>{buildComp.coverage.lineCoverage.toFixed(1)}% lignes</span>
+                  )}
+                  {buildComp.coverage.lineCoverage !== null &&
+                    buildComp.coverage.branchCoverage !== null && (
+                      <span className="mx-1 text-muted-foreground">/</span>
+                    )}
+                  {buildComp.coverage.branchCoverage !== null && (
+                    <span>{buildComp.coverage.branchCoverage.toFixed(1)}% branches</span>
+                  )}
+                </div>
               )}
             </div>
           )}
