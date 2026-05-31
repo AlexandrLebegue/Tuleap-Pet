@@ -76,7 +76,8 @@ const emptyConfig: SettingsState = {
   jenkinsUrl: null,
   jenkinsUser: null,
   hasJenkinsToken: false,
-  ttmTrackerId: null
+  ttmTrackerId: null,
+  jenkinsRepoMapping: null
 }
 
 export const useSettings = create<Store>((set, get) => ({
