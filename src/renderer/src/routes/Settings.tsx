@@ -6,8 +6,9 @@ import { Label } from '@renderer/components/ui/label'
 import { Button } from '@renderer/components/ui/button'
 import { Badge } from '@renderer/components/ui/badge'
 import { useSettings } from '@renderer/stores/settings.store'
+import { useJenkins } from '@renderer/stores/jenkins.store'
 import { api } from '@renderer/lib/api'
-import type { ConnectionTestResult, ProjectSummary } from '@shared/types'
+import type { ConnectionTestResult, JenkinsDiscoveredJob, ProjectSummary } from '@shared/types'
 
 function describeError(result: ConnectionTestResult & { ok: false }): string {
   switch (result.kind) {
@@ -1088,32 +1089,119 @@ function ChatbotConfigCard(): React.JSX.Element {
   )
 }
 
+function JobDropdown({
+  discovered,
+  discovering,
+  selectedJobs,
+  onAdd
+}: {
+  discovered: JenkinsDiscoveredJob[]
+  discovering: boolean
+  selectedJobs: string[]
+  onAdd: (fullPath: string) => void
+}): React.JSX.Element {
+  const [query, setQuery] = useState('')
+  const [open, setOpen] = useState(false)
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    function handler(e: MouseEvent): void {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  const available = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    return discovered
+      .filter((j) => !selectedJobs.includes(j.fullPath))
+      .filter((j) => !q || j.fullPath.toLowerCase().includes(q) || j.displayName.toLowerCase().includes(q))
+  }, [discovered, selectedJobs, query])
+
+  return (
+    <div ref={containerRef} className="relative">
+      <Input
+        placeholder={discovering ? 'Découverte…' : discovered.length === 0 ? 'Aucun job découvert' : 'Rechercher un job…'}
+        disabled={discovering || discovered.length === 0}
+        value={query}
+        onChange={(e) => { setQuery(e.target.value); setOpen(true) }}
+        onFocus={() => setOpen(true)}
+        className="h-7 text-xs"
+        spellCheck={false}
+        autoComplete="off"
+      />
+      {open && available.length > 0 && (
+        <div className="absolute z-50 mt-1 w-full rounded border bg-popover shadow-md max-h-48 overflow-y-auto">
+          {available.map((job) => (
+            <button
+              key={job.fullPath}
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-accent"
+              onMouseDown={(e) => { e.preventDefault(); onAdd(job.fullPath); setQuery(''); setOpen(false) }}
+            >
+              <Badge variant="outline" className="shrink-0 px-1 py-0 text-[10px]">
+                {job.kind === 'multibranch' ? 'MB' : 'job'}
+              </Badge>
+              <span className="truncate">{job.fullPath}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function JenkinsMappingCard(): React.JSX.Element {
   const config = useSettings((s) => s.config)
   const refresh = useSettings((s) => s.refresh)
+  const discovered = useJenkins((s) => s.discovered)
+  const discovering = useJenkins((s) => s.discovering)
+  const discoverError = useJenkins((s) => s.discoverError)
+  const discoverAll = useJenkins((s) => s.discoverAll)
+
   const [repos, setRepos] = useState<Array<{ id: number; name: string }>>([])
-  const [drafts, setDrafts] = useState<Record<string, string>>({})
+  const [drafts, setDrafts] = useState<Record<string, string[]>>({})
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
+
+  const jenkinsConfigured = !!(config.jenkinsUrl && config.hasJenkinsToken)
+
+  useEffect(() => {
+    if (jenkinsConfigured && discovered.length === 0 && !discovering) {
+      void discoverAll()
+    }
+  }, [jenkinsConfigured])
 
   useEffect(() => {
     api.prReviewer.listRepos().then((list) => {
       setRepos(list)
-      const initial: Record<string, string> = {}
+      const initial: Record<string, string[]> = {}
       for (const r of list) {
-        initial[String(r.id)] = config.jenkinsRepoMapping?.[String(r.id)] ?? ''
+        initial[String(r.id)] = config.jenkinsRepoMapping?.[String(r.id)] ?? []
       }
       setDrafts(initial)
     }).catch(() => {})
   }, [config.jenkinsRepoMapping])
 
+  const addJob = (repoId: string, fullPath: string): void => {
+    setDrafts((d) => {
+      const current = d[repoId] ?? []
+      if (current.includes(fullPath)) return d
+      return { ...d, [repoId]: [...current, fullPath] }
+    })
+  }
+
+  const removeJob = (repoId: string, fullPath: string): void => {
+    setDrafts((d) => ({ ...d, [repoId]: (d[repoId] ?? []).filter((j) => j !== fullPath) }))
+  }
+
   const onSave = async (): Promise<void> => {
     setSaving(true)
     setMsg(null)
     try {
-      const mapping: Record<string, string> = {}
-      for (const [id, path] of Object.entries(drafts)) {
-        if (path.trim()) mapping[id] = path.trim()
+      const mapping: Record<string, string[]> = {}
+      for (const [id, jobs] of Object.entries(drafts)) {
+        if (jobs.length > 0) mapping[id] = jobs
       }
       await api.settings.setJenkinsRepoMapping(Object.keys(mapping).length > 0 ? mapping : null)
       await refresh()
@@ -1128,38 +1216,80 @@ function JenkinsMappingCard(): React.JSX.Element {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Mapping dépôts → jobs Jenkins</CardTitle>
-        <CardDescription>
-          Associez chaque dépôt Tuleap à son chemin de job Jenkins. Utilisez{' '}
-          <code className="rounded bg-muted px-1 py-0.5 text-xs">/</code> pour les dossiers
-          imbriqués.{' '}
-          <span className="text-xs">
-            Ex : <code className="rounded bg-muted px-1 py-0.5 text-xs">Diurne-Log/Build-JenkinsFile/DIURNE</code>
-          </span>
-        </CardDescription>
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <CardTitle>Mapping dépôts → jobs Jenkins</CardTitle>
+            <CardDescription className="mt-1">
+              Associez chaque dépôt Tuleap à un ou plusieurs jobs Jenkins. Les jobs sont découverts
+              automatiquement depuis votre instance.
+            </CardDescription>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            {discovering && <span className="text-xs text-muted-foreground">Découverte…</span>}
+            {!discovering && discovered.length > 0 && (
+              <span className="text-xs text-muted-foreground">{discovered.length} jobs</span>
+            )}
+            {jenkinsConfigured && (
+              <Button variant="outline" size="sm" onClick={() => void discoverAll()} disabled={discovering}>
+                {discovering ? '…' : '↺ Re-découvrir'}
+              </Button>
+            )}
+          </div>
+        </div>
       </CardHeader>
       <CardContent className="space-y-4">
+        {!jenkinsConfigured && (
+          <p className="text-xs text-muted-foreground">
+            Configurez d&apos;abord la connexion Jenkins ci-dessus pour activer la découverte.
+          </p>
+        )}
+        {discoverError && (
+          <p className="text-xs text-destructive">Découverte échouée : {discoverError}</p>
+        )}
         {repos.length === 0 && (
           <p className="text-xs text-muted-foreground">
             Aucun dépôt trouvé — configurez d&apos;abord la connexion Tuleap.
           </p>
         )}
-        {repos.map((repo) => (
-          <div key={repo.id} className="grid grid-cols-[1fr_2fr] items-center gap-3">
-            <Label className="truncate text-sm" title={repo.name}>
-              {repo.name}
-            </Label>
-            <Input
-              placeholder="Dossier/Sous-Dossier/Job"
-              value={drafts[String(repo.id)] ?? ''}
-              onChange={(e) => setDrafts((d) => ({ ...d, [String(repo.id)]: e.target.value }))}
-              spellCheck={false}
-              autoComplete="off"
-            />
-          </div>
-        ))}
+        {repos.map((repo) => {
+          const key = String(repo.id)
+          const jobs = drafts[key] ?? []
+          return (
+            <div key={repo.id} className="space-y-1.5">
+              <Label className="truncate text-sm" title={repo.name}>
+                {repo.name}
+              </Label>
+              <div className="flex flex-wrap gap-1">
+                {jobs.map((j) => (
+                  <span
+                    key={j}
+                    className="inline-flex items-center gap-1 rounded-full border bg-muted px-2 py-0.5 text-xs"
+                  >
+                    <span className="max-w-[220px] truncate" title={j}>{j}</span>
+                    <button
+                      onClick={() => removeJob(key, j)}
+                      className="ml-0.5 text-muted-foreground hover:text-destructive"
+                      aria-label="Supprimer"
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+                {jobs.length === 0 && (
+                  <span className="text-xs text-muted-foreground italic">Aucun job associé</span>
+                )}
+              </div>
+              <JobDropdown
+                discovered={discovered}
+                discovering={discovering}
+                selectedJobs={jobs}
+                onAdd={(path) => addJob(key, path)}
+              />
+            </div>
+          )
+        })}
         {repos.length > 0 && (
-          <Button onClick={onSave} disabled={saving}>
+          <Button onClick={onSave} disabled={saving} className="mt-2">
             {saving ? 'Enregistrement…' : 'Enregistrer le mapping'}
           </Button>
         )}

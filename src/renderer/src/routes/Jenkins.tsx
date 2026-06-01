@@ -1,14 +1,16 @@
 import * as React from 'react'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@renderer/components/ui/card'
 import { Badge } from '@renderer/components/ui/badge'
 import { Button } from '@renderer/components/ui/button'
+import { Input } from '@renderer/components/ui/input'
 import { useSettings } from '@renderer/stores/settings.store'
 import { useJenkins } from '@renderer/stores/jenkins.store'
 import type {
   JenkinsBuildDetail,
   JenkinsBuildResult,
   JenkinsBuildSummary,
+  JenkinsDiscoveredJob,
   JenkinsJob,
   JenkinsNode,
   JenkinsQueueItem,
@@ -319,6 +321,83 @@ function BuildHistoryPanel({ jobName }: { jobName: string }): React.JSX.Element 
   )
 }
 
+function DiscoverAllView(): React.JSX.Element {
+  const discovered = useJenkins((s) => s.discovered)
+  const discovering = useJenkins((s) => s.discovering)
+  const discoverError = useJenkins((s) => s.discoverError)
+  const discoverAll = useJenkins((s) => s.discoverAll)
+  const clearDiscovered = useJenkins((s) => s.clearDiscovered)
+  const selectJob = useJenkins((s) => s.selectJob)
+  const [query, setQuery] = useState('')
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    if (!q) return discovered
+    return discovered.filter(
+      (j) => j.fullPath.toLowerCase().includes(q) || j.displayName.toLowerCase().includes(q)
+    )
+  }, [discovered, query])
+
+  return (
+    <div className="space-y-3 p-4">
+      <div className="flex items-center gap-2">
+        <Button variant="ghost" size="sm" onClick={clearDiscovered}>← Retour</Button>
+        <span className="text-sm font-medium">Découverte exhaustive</span>
+        {!discovering && (
+          <Button variant="outline" size="sm" onClick={() => void discoverAll()} disabled={discovering}>
+            ↺ Re-découvrir
+          </Button>
+        )}
+        {discovered.length > 0 && (
+          <span className="text-xs text-muted-foreground">{discovered.length} jobs</span>
+        )}
+      </div>
+      {discovering && <p className="text-sm text-muted-foreground">Découverte en cours…</p>}
+      {discoverError && <p className="text-sm text-destructive">{discoverError}</p>}
+      {!discovering && discovered.length === 0 && !discoverError && (
+        <p className="text-sm text-muted-foreground">Aucun job découvert.</p>
+      )}
+      {discovered.length > 0 && (
+        <>
+          <Input
+            placeholder="Filtrer les jobs…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="h-7 text-xs"
+            spellCheck={false}
+          />
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b text-muted-foreground text-xs">
+                <th className="py-2 text-left font-medium">Chemin</th>
+                <th className="py-2 text-left font-medium">Type</th>
+                <th className="py-2 text-left font-medium">Statut</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((job: JenkinsDiscoveredJob) => (
+                <tr
+                  key={job.fullPath}
+                  className="border-b hover:bg-accent/30 cursor-pointer"
+                  onClick={() => void selectJob(job.fullPath)}
+                >
+                  <td className="py-2 pr-3 font-mono text-xs">{job.fullPath}</td>
+                  <td className="py-2 pr-3">
+                    <Badge variant="outline" className="text-[10px]">
+                      {job.kind === 'multibranch' ? 'multibranch' : 'job'}
+                    </Badge>
+                  </td>
+                  <td className="py-2">{colorBadge(job.color)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
+    </div>
+  )
+}
+
 function JobsTab(): React.JSX.Element {
   const jobs = useJenkins((s) => s.jobs)
   const loadingJobs = useJenkins((s) => s.loadingJobs)
@@ -330,6 +409,10 @@ function JobsTab(): React.JSX.Element {
   const exitFolder = useJenkins((s) => s.exitFolder)
   const selectJob = useJenkins((s) => s.selectJob)
   const loadJobs = useJenkins((s) => s.loadJobs)
+  const discovered = useJenkins((s) => s.discovered)
+  const discovering = useJenkins((s) => s.discovering)
+  const discoverAll = useJenkins((s) => s.discoverAll)
+  const [showDiscover, setShowDiscover] = useState(false)
 
   if (selectedJobName) {
     return (
@@ -343,29 +426,47 @@ function JobsTab(): React.JSX.Element {
     )
   }
 
+  if (showDiscover) {
+    return <DiscoverAllView />
+  }
+
   return (
     <div className="space-y-3 p-4">
-      {folderStack.length > 0 && (
-        <div className="flex items-center gap-1 text-sm text-muted-foreground">
-          <button className="hover:underline" onClick={() => void loadJobs()}>Racine</button>
-          {folderStack.map((f, i) => (
-            <React.Fragment key={i}>
-              <span>/</span>
-              <button
-                className="hover:underline"
-                onClick={() => {
-                  const partial = folderStack.slice(0, i + 1)
-                  const target = partial[partial.length - 1]!
-                  void loadJobs(target)
-                }}
-              >
-                {f}
-              </button>
-            </React.Fragment>
-          ))}
-          <Button variant="ghost" size="sm" onClick={() => void exitFolder()}>← Retour</Button>
-        </div>
-      )}
+      <div className="flex items-center justify-between">
+        {folderStack.length > 0 ? (
+          <div className="flex items-center gap-1 text-sm text-muted-foreground">
+            <button className="hover:underline" onClick={() => void loadJobs()}>Racine</button>
+            {folderStack.map((f, i) => (
+              <React.Fragment key={i}>
+                <span>/</span>
+                <button
+                  className="hover:underline"
+                  onClick={() => {
+                    const partial = folderStack.slice(0, i + 1)
+                    const target = partial[partial.length - 1]!
+                    void loadJobs(target)
+                  }}
+                >
+                  {f}
+                </button>
+              </React.Fragment>
+            ))}
+            <Button variant="ghost" size="sm" onClick={() => void exitFolder()}>← Retour</Button>
+          </div>
+        ) : (
+          <span />
+        )}
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            setShowDiscover(true)
+            if (discovered.length === 0 && !discovering) void discoverAll()
+          }}
+        >
+          Découvrir tout
+        </Button>
+      </div>
 
       {loadingJobs && <p className="text-sm text-muted-foreground">Chargement…</p>}
       {jobsError && <p className="text-sm text-destructive">{jobsError}</p>}

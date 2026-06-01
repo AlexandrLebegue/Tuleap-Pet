@@ -42,6 +42,24 @@ function normalizeUrl(raw: string | null): string | null {
   return trimmed
 }
 
+/**
+ * Read the repo→jobs mapping, tolerating the legacy `Record<string,string>`
+ * format (a single job path per repo) by wrapping each value into an array.
+ */
+function normalizeRepoMapping(raw: unknown): Record<string, string[]> | null {
+  if (!raw || typeof raw !== 'object') return null
+  const out: Record<string, string[]> = {}
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (Array.isArray(value)) {
+      const jobs = value.filter((v): v is string => typeof v === 'string' && v.trim().length > 0)
+      if (jobs.length > 0) out[key] = jobs
+    } else if (typeof value === 'string' && value.trim().length > 0) {
+      out[key] = [value.trim()]
+    }
+  }
+  return Object.keys(out).length > 0 ? out : null
+}
+
 export function getConfig(): AppConfig {
   return {
     tuleapUrl: store.get('tuleapUrl') ?? null,
@@ -64,7 +82,7 @@ export function getConfig(): AppConfig {
     cppProjectRoot: store.get('cppProjectRoot') ?? null,
     jenkinsUrl: store.get('jenkinsUrl') ?? null,
     jenkinsUser: store.get('jenkinsUser') ?? null,
-    jenkinsRepoMapping: (store.get('jenkinsRepoMapping') as Record<string, string> | null) ?? null,
+    jenkinsRepoMapping: normalizeRepoMapping(store.get('jenkinsRepoMapping')),
     ttmTrackerId: (store.get('ttmTrackerId') as number | null) ?? null
   }
 }
@@ -226,11 +244,11 @@ export function setJenkinsUser(user: string | null): void {
   store.set('jenkinsUser', user && user.trim().length > 0 ? user.trim() : null)
 }
 
-export function getJenkinsRepoMapping(): Record<string, string> | null {
-  return (store.get('jenkinsRepoMapping') as Record<string, string> | null) ?? null
+export function getJenkinsRepoMapping(): Record<string, string[]> | null {
+  return normalizeRepoMapping(store.get('jenkinsRepoMapping'))
 }
 
-export function setJenkinsRepoMapping(mapping: Record<string, string> | null): void {
+export function setJenkinsRepoMapping(mapping: Record<string, string[]> | null): void {
   store.set('jenkinsRepoMapping', mapping)
 }
 

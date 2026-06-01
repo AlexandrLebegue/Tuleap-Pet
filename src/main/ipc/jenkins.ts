@@ -3,15 +3,18 @@ import { buildJenkinsClient, JenkinsError } from '../jenkins'
 import { parseTestReport } from '../jenkins/junit-parser'
 import { resolveLlmProvider, toLlmError } from '../llm'
 import { audit } from '../store/db'
+import { debugLog, debugError } from '../logger'
 import type {
   JenkinsBranchStatus,
   JenkinsBuildDetail,
   JenkinsBuildSummary,
   JenkinsConnectionTestResult,
+  JenkinsDiscoverResult,
   JenkinsFailureAnalysis,
   JenkinsJob,
   JenkinsNode,
-  JenkinsQueueItem
+  JenkinsQueueItem,
+  JenkinsValidateResult
 } from '@shared/types'
 
 function toConnectionResult(err: unknown): JenkinsConnectionTestResult {
@@ -20,6 +23,13 @@ function toConnectionResult(err: unknown): JenkinsConnectionTestResult {
   }
   const message = err instanceof Error ? err.message : String(err)
   return { ok: false, error: message, kind: 'unknown' }
+}
+
+/** Normalize any error into the {error, kind, status} shape (toConnectionResult is always ok:false). */
+function toErrorShape(err: unknown): { error: string; kind: string; status?: number } {
+  const r = toConnectionResult(err)
+  // r is always { ok:false, ... } here
+  return r.ok ? { error: 'Erreur inconnue', kind: 'unknown' } : { error: r.error, kind: r.kind, status: r.status }
 }
 
 const MAX_CONSOLE_CHARS = 32_000
@@ -43,6 +53,47 @@ export function registerJenkinsHandlers(): void {
       audit('jenkins.list-jobs', folder ?? null)
       const client = buildJenkinsClient()
       return client.listJobs(folder)
+    }
+  )
+
+  ipcMain.handle(
+    'jenkins:discover-jobs',
+    async (_event, args: unknown): Promise<JenkinsDiscoverResult> => {
+      const { folder } = (args ?? {}) as { folder?: string }
+      audit('jenkins.discover-jobs', folder ?? null)
+      try {
+        const client = buildJenkinsClient()
+        debugLog('[jenkins] discover-jobs: démarrage folder=%s', folder ?? '<root>')
+        const jobs = await client.discoverJobs(folder ?? '')
+        return { ok: true, jobs }
+      } catch (err) {
+        debugError(
+          '[jenkins] discover-jobs: échec — %s',
+          err instanceof Error ? err.message : String(err)
+        )
+        return { ok: false, ...toErrorShape(err) }
+      }
+    }
+  )
+
+  ipcMain.handle(
+    'jenkins:validate-job',
+    async (_event, args: unknown): Promise<JenkinsValidateResult> => {
+      const { jobPath } = (args ?? {}) as { jobPath: string }
+      audit('jenkins.validate-job', jobPath ?? null)
+      try {
+        const client = buildJenkinsClient()
+        const res = await client.jobExists(jobPath)
+        debugLog('[jenkins] validate-job %s → exists=%s kind=%s', jobPath, res.exists, res.kind ?? '—')
+        return { ok: true, ...res }
+      } catch (err) {
+        debugError(
+          '[jenkins] validate-job %s: échec — %s',
+          jobPath,
+          err instanceof Error ? err.message : String(err)
+        )
+        return { ok: false, ...toErrorShape(err) }
+      }
     }
   )
 

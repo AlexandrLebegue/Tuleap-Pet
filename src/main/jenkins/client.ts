@@ -24,10 +24,12 @@ import type {
   JenkinsBuildDetail,
   JenkinsBuildResult,
   JenkinsBuildSummary,
+  JenkinsDiscoveredJob,
   JenkinsJob,
   JenkinsNode,
   JenkinsQueueItem
 } from '@shared/types'
+import { debugLog, debugWarn } from '../logger'
 
 type FetchLike = typeof globalThis.fetch
 
@@ -83,6 +85,19 @@ function isFolder(jobClass: string): boolean {
 function jobSegments(jobName: string): string {
   // "Folder/Sub/Job" → "job/Folder/job/Sub/job/Job" (handles arbitrary depth)
   return jobName.split('/').map(s => `job/${encodeURIComponent(s.trim())}`).join('/')
+}
+
+/**
+ * Classify a Jenkins job by its _class string so the crawler knows whether to
+ * descend into it (folder / organization folder) or collect it as selectable
+ * (multibranch project or leaf job). Substring match keeps it resilient to
+ * plugin-specific class names (incl. the Tuleap organization folder plugin).
+ */
+function classifyJob(jobClass: string): 'folder' | 'multibranch' | 'job' {
+  const c = (jobClass ?? '').toLowerCase()
+  if (c.includes('multibranch')) return 'multibranch'
+  if (c.includes('folder')) return 'folder'
+  return 'job'
 }
 
 function mapJob(raw: JenkinsJobRaw): JenkinsJob {
@@ -352,6 +367,72 @@ export class JenkinsClient {
       depth: '1'
     })
     return (data.jobs ?? []).map(mapJob)
+  }
+
+  /**
+   * Recursively crawl the whole Jenkins instance (or a sub-folder) and return a
+   * flat, exhaustive list of selectable jobs (multibranch projects + leaf jobs).
+   * Descends into plain folders and organization folders; does NOT descend into
+   * multibranch projects (their children are branches, not selectable targets).
+   * Robust: a 404/403 on a sub-folder is logged and skipped, never fatal.
+   */
+  async discoverJobs(rootFolder = '', maxDepth = 8): Promise<JenkinsDiscoveredJob[]> {
+    const out: JenkinsDiscoveredJob[] = []
+    const visit = async (folder: string, depth: number): Promise<void> => {
+      if (depth > maxDepth) {
+        debugWarn('[jenkins] discover: profondeur max atteinte à %s', folder || '<root>')
+        return
+      }
+      debugLog('[jenkins] discover: liste %s (profondeur %d)', folder || '<root>', depth)
+      let jobs: JenkinsJob[]
+      try {
+        jobs = await this.listJobs(folder || undefined)
+      } catch (err) {
+        debugWarn(
+          '[jenkins] discover: ignore %s — %s',
+          folder || '<root>',
+          err instanceof Error ? err.message : String(err)
+        )
+        return
+      }
+      debugLog('[jenkins] discover: %d entrée(s) dans %s', jobs.length, folder || '<root>')
+      for (const j of jobs) {
+        const fullPath = folder ? `${folder}/${j.name}` : j.name
+        const kind = classifyJob(j.jobClass)
+        if (kind === 'folder') {
+          await visit(fullPath, depth + 1)
+        } else {
+          out.push({
+            fullPath,
+            name: j.name,
+            displayName: j.displayName,
+            url: j.url,
+            kind,
+            color: j.color
+          })
+        }
+      }
+    }
+    await visit(rootFolder, 0)
+    debugLog('[jenkins] discover: %d job(s) sélectionnable(s) au total', out.length)
+    return out
+  }
+
+  /** Lightweight existence/validation check for a (possibly nested) job path. */
+  async jobExists(
+    jobPath: string
+  ): Promise<{ exists: boolean; kind: string | null; url: string | null }> {
+    try {
+      const data = await this.json(
+        z.object({ _class: z.string().optional(), url: z.string().optional() }).passthrough(),
+        `/${jobSegments(jobPath)}/api/json`,
+        { tree: '_class,url' }
+      )
+      return { exists: true, kind: data._class ?? null, url: data.url ?? null }
+    } catch (err) {
+      if (err instanceof JenkinsNotFoundError) return { exists: false, kind: null, url: null }
+      throw err
+    }
   }
 
   async getBranchStatus(jobName: string, branchName: string): Promise<JenkinsBranchStatus | null> {

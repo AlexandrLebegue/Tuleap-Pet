@@ -39,8 +39,8 @@ export type AppConfig = {
   jenkinsUrl: string | null
   /** Jenkins username for HTTP Basic auth. */
   jenkinsUser: string | null
-  /** Map repoId (string) → Jenkins job name for branch status lookup. */
-  jenkinsRepoMapping: Record<string, string> | null
+  /** Map repoId (string) → list of Jenkins job paths for branch status lookup. */
+  jenkinsRepoMapping: Record<string, string[]> | null
   /** Tuleap TTM test-definition tracker ID (auto-detected if null). */
   ttmTrackerId: number | null
 }
@@ -386,6 +386,25 @@ export type JenkinsJob = {
   isFolder: boolean
   jobClass: string
 }
+
+/** A selectable job found by the recursive discovery crawler (folders excluded). */
+export type JenkinsDiscoveredJob = {
+  /** Full slash-separated path, e.g. "Diurne-Log/Build-JenkinsFile/DIURNE". */
+  fullPath: string
+  name: string
+  displayName: string
+  url: string
+  kind: 'multibranch' | 'job'
+  color: string
+}
+
+export type JenkinsDiscoverResult =
+  | { ok: true; jobs: JenkinsDiscoveredJob[] }
+  | { ok: false; error: string; kind: string; status?: number }
+
+export type JenkinsValidateResult =
+  | { ok: true; exists: boolean; kind: string | null; url: string | null }
+  | { ok: false; error: string; kind: string; status?: number }
 
 export type JenkinsBuildSummary = {
   number: number

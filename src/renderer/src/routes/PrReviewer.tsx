@@ -102,6 +102,15 @@ type BuildComparison = {
   loading: boolean
 }
 
+/** First Jenkins job mapped to a repo, falling back to the repo name. */
+function primaryJobName(
+  mapping: Record<string, string[]> | null | undefined,
+  repoId: number,
+  fallback: string
+): string {
+  return mapping?.[String(repoId)]?.[0] ?? fallback
+}
+
 function coverageVariant(c: string): 'default' | 'secondary' | 'destructive' | 'outline' {
   if (c === 'covered') return 'default'
   if (c === 'partial') return 'secondary'
@@ -201,7 +210,7 @@ export default function PrReviewer(): React.JSX.Element {
     setJenkinsInvestigation(null)
     setJenkinsInvestError(null)
     if (!selectedPr || !selectedRepo || !jenkinsConfigured) return
-    const jobName = config.jenkinsRepoMapping?.[String(selectedRepo.id)] ?? selectedRepo.name
+    const jobName = primaryJobName(config.jenkinsRepoMapping, selectedRepo.id, selectedRepo.name)
     void api.jenkins
       .getBranchStatus({ jobName, branchName: selectedPr.branchSrc })
       .then(setJenkinsBranchStatus)
@@ -211,7 +220,7 @@ export default function PrReviewer(): React.JSX.Element {
   useEffect(() => {
     setBuildComp({ src: null, target: null, warnings: null, coverage: null, loading: false })
     if (!selectedPr || !selectedRepo || !jenkinsConfigured) return
-    const jobName = config.jenkinsRepoMapping?.[String(selectedRepo.id)] ?? selectedRepo.name
+    const jobName = primaryJobName(config.jenkinsRepoMapping, selectedRepo.id, selectedRepo.name)
     setBuildComp((c) => ({ ...c, loading: true }))
     Promise.all([
       api.jenkins.getBranchTestReport({ jobName, branchName: selectedPr.branchSrc }),
@@ -583,8 +592,9 @@ export default function PrReviewer(): React.JSX.Element {
                       disabled={jenkinsInvestigating}
                       onClick={async () => {
                         if (!jenkinsBranchStatus.buildNumber) return
-                        const jobName =
-                          config.jenkinsRepoMapping?.[String(selectedRepo?.id)] ?? selectedRepo?.name ?? ''
+                        const jobName = selectedRepo
+                          ? primaryJobName(config.jenkinsRepoMapping, selectedRepo.id, selectedRepo.name)
+                          : ''
                         setJenkinsInvestigating(true)
                         setJenkinsInvestError(null)
                         setJenkinsInvestigation(null)

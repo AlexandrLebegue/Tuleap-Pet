@@ -85,7 +85,7 @@ export type SettingsState = {
   jenkinsUser: string | null
   hasJenkinsToken: boolean
   ttmTrackerId: number | null
-  jenkinsRepoMapping: Record<string, string> | null
+  jenkinsRepoMapping: Record<string, string[]> | null
 }
 
 function buildState(): SettingsState {
@@ -312,7 +312,7 @@ export function registerSettingsHandlers(): void {
     if (mapping !== null && (typeof mapping !== 'object' || Array.isArray(mapping))) {
       throw new Error("Le mapping doit être un objet ou null.")
     }
-    setJenkinsRepoMapping(mapping as Record<string, string> | null)
+    setJenkinsRepoMapping(mapping as Record<string, string[]> | null)
     audit('settings.set-jenkins-repo-mapping')
     return buildState()
   })

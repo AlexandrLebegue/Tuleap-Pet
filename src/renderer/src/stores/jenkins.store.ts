@@ -4,6 +4,7 @@ import type {
   JenkinsBuildDetail,
   JenkinsBuildSummary,
   JenkinsConnectionTestResult,
+  JenkinsDiscoveredJob,
   JenkinsFailureAnalysis,
   JenkinsJob,
   JenkinsNode,
@@ -65,6 +66,12 @@ type Store = {
   ttmError: string | null
   exportToTtm: (args: { jobName: string; buildNumber: number; branchName: string; buildUrl: string }) => Promise<void>
   clearTtmExport: () => void
+
+  discovered: JenkinsDiscoveredJob[]
+  discovering: boolean
+  discoverError: string | null
+  discoverAll: (folder?: string) => Promise<void>
+  clearDiscovered: () => void
 }
 
 export const useJenkins = create<Store>((set, get) => ({
@@ -103,6 +110,10 @@ export const useJenkins = create<Store>((set, get) => ({
   ttmProgress: null,
   ttmResult: null,
   ttmError: null,
+
+  discovered: [],
+  discovering: false,
+  discoverError: null,
 
   testConnection: async () => {
     set({ connectionStatus: 'testing' })
@@ -259,5 +270,26 @@ export const useJenkins = create<Store>((set, get) => ({
 
   clearTtmExport: () => {
     set({ ttmExporting: false, ttmProgress: null, ttmResult: null, ttmError: null })
+  },
+
+  discoverAll: async (folder?: string) => {
+    set({ discovering: true, discoverError: null, discovered: [] })
+    try {
+      const result = await api.jenkins.discoverJobs(folder ? { folder } : undefined)
+      if (result.ok) {
+        set({ discovering: false, discovered: result.jobs })
+      } else {
+        set({ discovering: false, discoverError: result.error })
+      }
+    } catch (err) {
+      set({
+        discovering: false,
+        discoverError: err instanceof Error ? err.message : String(err)
+      })
+    }
+  },
+
+  clearDiscovered: () => {
+    set({ discovered: [], discoverError: null })
   }
 }))

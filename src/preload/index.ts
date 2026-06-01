@@ -21,12 +21,14 @@ import type {
   JenkinsBuildSummary,
   JenkinsConnectionTestResult,
   JenkinsCoverageReport,
+  JenkinsDiscoverResult,
   JenkinsFailureAnalysis,
   JenkinsJob,
   JenkinsNode,
   JenkinsQueueItem,
   JenkinsTtmExportProgress,
   JenkinsTtmExportResult,
+  JenkinsValidateResult,
   JenkinsWarningsReport,
   JobStreamEvent,
   JobType,
@@ -73,7 +75,7 @@ export type SettingsState = {
   jenkinsUser: string | null
   hasJenkinsToken: boolean
   ttmTrackerId: number | null
-  jenkinsRepoMapping: Record<string, string> | null
+  jenkinsRepoMapping: Record<string, string[]> | null
 }
 
 const settings = {
@@ -124,7 +126,7 @@ const settings = {
     ipcRenderer.invoke('settings:set-jenkins-token', token),
   clearJenkinsToken: (): Promise<SettingsState> =>
     ipcRenderer.invoke('settings:clear-jenkins-token'),
-  setJenkinsRepoMapping: (mapping: Record<string, string> | null): Promise<SettingsState> =>
+  setJenkinsRepoMapping: (mapping: Record<string, string[]> | null): Promise<SettingsState> =>
     ipcRenderer.invoke('settings:set-jenkins-repo-mapping', mapping),
   setTtmTrackerId: (id: number | null): Promise<{ ttmTrackerId: number | null }> =>
     ipcRenderer.invoke('settings:set-ttm-tracker-id', id)
@@ -687,6 +689,10 @@ const jenkins = {
     ipcRenderer.invoke('jenkins:test-connection'),
   listJobs: (args?: { folder?: string }): Promise<JenkinsJob[]> =>
     ipcRenderer.invoke('jenkins:list-jobs', args ?? {}),
+  discoverJobs: (args?: { folder?: string }): Promise<JenkinsDiscoverResult> =>
+    ipcRenderer.invoke('jenkins:discover-jobs', args ?? {}),
+  validateJob: (args: { jobPath: string }): Promise<JenkinsValidateResult> =>
+    ipcRenderer.invoke('jenkins:validate-job', args),
   getBranchStatus: (args: {
     jobName: string
     branchName: string
