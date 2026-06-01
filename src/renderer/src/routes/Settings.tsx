@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@renderer/components/ui/card'
 import { Input } from '@renderer/components/ui/input'
 import { Label } from '@renderer/components/ui/label'
@@ -142,56 +142,25 @@ function AuthModeSwitcher(): React.JSX.Element {
 }
 
 function ProjectSearch({
-  selectedLabel,
-  hasSelection,
+  projects,
+  selectedProject,
   disabled,
+  loading,
   onSelect,
-  onClear
+  onClear,
+  onReload
 }: {
-  selectedLabel: string
-  hasSelection: boolean
+  projects: ProjectSummary[]
+  selectedProject: ProjectSummary | null
   disabled: boolean
+  loading: boolean
   onSelect: (project: ProjectSummary) => Promise<void>
   onClear: () => Promise<void>
+  onReload: () => Promise<void>
 }): React.JSX.Element {
-  const [query, setQuery] = useState(selectedLabel)
-  const [results, setResults] = useState<ProjectSummary[]>([])
+  const [query, setQuery] = useState('')
   const [open, setOpen] = useState(false)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    setQuery(selectedLabel)
-  }, [selectedLabel])
-
-  useEffect(() => {
-    if (timerRef.current) clearTimeout(timerRef.current)
-    const q = query.trim()
-    if (!q || q === selectedLabel) {
-      setResults([])
-      setError(null)
-      return
-    }
-    timerRef.current = setTimeout(async () => {
-      setLoading(true)
-      setError(null)
-      try {
-        const hits = await api.tuleap.listProjects(q)
-        setResults(hits)
-        setOpen(true)
-      } catch (err) {
-        setError(err instanceof Error ? err.message : String(err))
-        setResults([])
-      } finally {
-        setLoading(false)
-      }
-    }, 300)
-    return () => {
-      if (timerRef.current) clearTimeout(timerRef.current)
-    }
-  }, [query, selectedLabel])
 
   useEffect(() => {
     function handler(e: MouseEvent): void {
@@ -201,65 +170,119 @@ function ProjectSearch({
     return () => document.removeEventListener('mousedown', handler)
   }, [])
 
-  async function pick(p: ProjectSummary): Promise<void> {
-    setOpen(false)
-    setResults([])
-    await onSelect(p)
-  }
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    if (!q) return projects
+    return projects.filter(
+      (p) =>
+        p.label.toLowerCase().includes(q) ||
+        p.shortname.toLowerCase().includes(q)
+    )
+  }, [projects, query])
 
-  async function clear(): Promise<void> {
-    setQuery('')
+  async function pick(p: ProjectSummary): Promise<void> {
+    await onSelect(p)
     setOpen(false)
-    setResults([])
-    await onClear()
+    setQuery('')
   }
 
   return (
-    <div ref={containerRef} className="relative">
-      <Input
-        value={query}
-        disabled={disabled}
-        onChange={(e) => setQuery(e.target.value)}
-        onFocus={() => results.length > 0 && setOpen(true)}
-        placeholder={disabled ? 'Validez d’abord la connexion à Tuleap…' : 'Tapez le nom du projet Tuleap…'}
-      />
-      {hasSelection && !disabled && (
-        <button
-          type="button"
-          onClick={clear}
-          aria-label="Effacer le projet sélectionné"
-          className="absolute right-2 top-1/2 -translate-y-1/2 rounded px-1 text-xs text-muted-foreground hover:text-foreground"
-        >
-          ✕
-        </button>
-      )}
-      {loading && (
-        <span className="absolute right-8 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
-          …
-        </span>
-      )}
-      {open && results.length > 0 && (
-        <div className="absolute z-50 mt-1 max-h-60 w-full overflow-y-auto rounded-md border bg-popover shadow-md">
-          {results.map((p) => (
-            <button
-              key={p.id}
-              type="button"
-              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-accent"
-              onClick={() => pick(p)}
-            >
-              <span className="truncate font-medium">{p.label}</span>
-              <code className="ml-auto shrink-0 text-xs text-muted-foreground">{p.shortname}</code>
-            </button>
-          ))}
+    <div ref={containerRef} className="space-y-2">
+      <div className="relative">
+        <div className="flex gap-2">
+          <Input
+            value={query}
+            disabled={disabled}
+            onChange={(e) => {
+              setQuery(e.target.value)
+              setOpen(true)
+            }}
+            onFocus={() => setOpen(true)}
+            placeholder={
+              disabled
+                ? 'Validez d’abord la connexion à Tuleap…'
+                : 'Filtrer par nom ou shortname…'
+            }
+          />
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={disabled}
+            onClick={() => setOpen((o) => !o)}
+            aria-label="Ouvrir la liste des projets"
+            className="shrink-0"
+          >
+            {open ? '▴' : '▾'}
+          </Button>
+        </div>
+        {open && !disabled && (
+          <div className="absolute z-50 mt-1 max-h-72 w-full overflow-y-auto rounded-md border bg-popover shadow-md">
+            {loading && projects.length === 0 ? (
+              <p className="px-3 py-2 text-xs text-muted-foreground">Chargement de la liste des projets…</p>
+            ) : projects.length === 0 ? (
+              <div className="px-3 py-2 text-xs text-muted-foreground">
+                Liste vide.{' '}
+                <button
+                  type="button"
+                  onClick={onReload}
+                  className="underline hover:text-foreground"
+                >
+                  Recharger
+                </button>
+              </div>
+            ) : filtered.length === 0 ? (
+              <p className="px-3 py-2 text-xs text-muted-foreground">
+                Aucun projet ne correspond à « {query.trim()} ».
+              </p>
+            ) : (
+              filtered.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  className={`flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-accent ${
+                    selectedProject?.id === p.id ? 'bg-accent/40 font-medium' : ''
+                  }`}
+                  onClick={() => pick(p)}
+                >
+                  <span className="truncate">{p.label}</span>
+                  <code className="ml-auto shrink-0 text-xs text-muted-foreground">{p.shortname}</code>
+                </button>
+              ))
+            )}
+          </div>
+        )}
+      </div>
+
+      {selectedProject && (
+        <div className="flex items-center gap-2 text-xs">
+          <span className="text-muted-foreground">Sélectionné :</span>
+          <Badge variant="secondary">
+            {selectedProject.label} ({selectedProject.shortname})
+          </Badge>
+          <button
+            type="button"
+            onClick={onClear}
+            disabled={disabled}
+            className="text-muted-foreground hover:text-destructive disabled:opacity-50"
+          >
+            retirer
+          </button>
         </div>
       )}
-      {open && !loading && !error && results.length === 0 && query.trim() && query.trim() !== selectedLabel && (
-        <div className="absolute z-50 mt-1 w-full rounded-md border bg-popover p-3 text-xs text-muted-foreground shadow-md">
-          Aucun projet trouvé pour « {query.trim()} ».
-        </div>
-      )}
-      {error && (
-        <p className="mt-1 text-xs text-destructive">{error}</p>
+
+      {!loading && projects.length > 0 && (
+        <p className="text-[11px] text-muted-foreground">
+          {projects.length} projet{projects.length > 1 ? 's' : ''} chargé{projects.length > 1 ? 's' : ''}.{' '}
+          <button
+            type="button"
+            onClick={onReload}
+            disabled={disabled || loading}
+            className="underline hover:text-foreground disabled:opacity-50"
+          >
+            Recharger
+          </button>
+        </p>
       )}
     </div>
   )
@@ -270,6 +293,7 @@ function Settings(): React.JSX.Element {
   const lastResult = useSettings((s) => s.lastResult)
   const status = useSettings((s) => s.status)
   const projects = useSettings((s) => s.projects)
+  const loadingProjects = useSettings((s) => s.loadingProjects)
   const setUrl = useSettings((s) => s.setUrl)
   const setToken = useSettings((s) => s.setToken)
   const clearToken = useSettings((s) => s.clearToken)
@@ -340,17 +364,25 @@ function Settings(): React.JSX.Element {
     await testConnection()
   }
 
-  // When a projectId is already saved but the store has no matching entry
-  // (fresh session), silently fetch the project list once so the search box
-  // shows the current label without forcing the user to re-search.
+  // Auto-load the full project list whenever the Tuleap connection is valid
+  // and the list is empty, so the user can immediately filter or browse.
   useEffect(() => {
     const canLoad = Boolean(config.tuleapUrl) && config.hasToken && status === 'ok'
-    if (config.projectId !== null && canLoad && !projects.some((p) => p.id === config.projectId)) {
+    if (canLoad && projects.length === 0 && !loadingProjects) {
       loadProjects().catch(() => {
         /* silent — connection errors are surfaced by the test-connection card */
       })
     }
-  }, [config.projectId, config.tuleapUrl, config.hasToken, status, projects, loadProjects])
+  }, [config.tuleapUrl, config.hasToken, status, projects.length, loadingProjects, loadProjects])
+
+  const onReloadProjects = async (): Promise<void> => {
+    setProjectError(null)
+    try {
+      await loadProjects()
+    } catch (err) {
+      setProjectError(err instanceof Error ? err.message : String(err))
+    }
+  }
 
   const onProjectSelect = async (project: ProjectSummary): Promise<void> => {
     setProjectError(null)
@@ -416,9 +448,6 @@ function Settings(): React.JSX.Element {
   const canTest = Boolean(config.tuleapUrl) && config.hasToken
   const canLoadProjects = canTest && status === 'ok'
   const selectedProject = projects.find((p) => p.id === config.projectId) ?? null
-  const selectedProjectLabel = selectedProject
-    ? `${selectedProject.label} (${selectedProject.shortname})`
-    : ''
   const canTestLlm =
     config.llmProvider === 'local'
       ? Boolean(config.localBaseUrl) && Boolean(config.localModel)
@@ -550,11 +579,13 @@ function Settings(): React.JSX.Element {
         <CardContent className="space-y-3">
           <Label>Projet sélectionné</Label>
           <ProjectSearch
-            selectedLabel={selectedProjectLabel}
-            hasSelection={config.projectId !== null}
+            projects={projects}
+            selectedProject={selectedProject}
             disabled={!canLoadProjects}
+            loading={loadingProjects}
             onSelect={onProjectSelect}
             onClear={onProjectClear}
+            onReload={onReloadProjects}
           />
 
           {projectError && (
