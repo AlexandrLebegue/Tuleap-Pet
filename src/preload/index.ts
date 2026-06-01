@@ -124,6 +124,8 @@ const settings = {
     ipcRenderer.invoke('settings:set-jenkins-token', token),
   clearJenkinsToken: (): Promise<SettingsState> =>
     ipcRenderer.invoke('settings:clear-jenkins-token'),
+  setJenkinsRepoMapping: (mapping: Record<string, string> | null): Promise<SettingsState> =>
+    ipcRenderer.invoke('settings:set-jenkins-repo-mapping', mapping),
   setTtmTrackerId: (id: number | null): Promise<{ ttmTrackerId: number | null }> =>
     ipcRenderer.invoke('settings:set-ttm-tracker-id', id)
 }

@@ -853,6 +853,7 @@ function Settings(): React.JSX.Element {
           <div className="flex-1 h-px bg-border" />
         </div>
         <JenkinsConfigCard />
+        <JenkinsMappingCard />
       </section>
 
       {/* ── Section : Chatbot ──────────────────────────────────────────── */}
@@ -1050,6 +1051,89 @@ function ChatbotConfigCard(): React.JSX.Element {
             {' '}— le prompt système inclut les règles de codage
             {config.chatbotDoxygenMode ? ' et de documentation.' : '.'}
           </div>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+function JenkinsMappingCard(): React.JSX.Element {
+  const config = useSettings((s) => s.config)
+  const refresh = useSettings((s) => s.refresh)
+  const [repos, setRepos] = useState<Array<{ id: number; name: string }>>([])
+  const [drafts, setDrafts] = useState<Record<string, string>>({})
+  const [saving, setSaving] = useState(false)
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
+
+  useEffect(() => {
+    api.prReviewer.listRepos().then((list) => {
+      setRepos(list)
+      const initial: Record<string, string> = {}
+      for (const r of list) {
+        initial[String(r.id)] = config.jenkinsRepoMapping?.[String(r.id)] ?? ''
+      }
+      setDrafts(initial)
+    }).catch(() => {})
+  }, [config.jenkinsRepoMapping])
+
+  const onSave = async (): Promise<void> => {
+    setSaving(true)
+    setMsg(null)
+    try {
+      const mapping: Record<string, string> = {}
+      for (const [id, path] of Object.entries(drafts)) {
+        if (path.trim()) mapping[id] = path.trim()
+      }
+      await api.settings.setJenkinsRepoMapping(Object.keys(mapping).length > 0 ? mapping : null)
+      await refresh()
+      setMsg({ ok: true, text: 'Mapping enregistré.' })
+    } catch (err) {
+      setMsg({ ok: false, text: err instanceof Error ? err.message : String(err) })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Mapping dépôts → jobs Jenkins</CardTitle>
+        <CardDescription>
+          Associez chaque dépôt Tuleap à son chemin de job Jenkins. Utilisez{' '}
+          <code className="rounded bg-muted px-1 py-0.5 text-xs">/</code> pour les dossiers
+          imbriqués.{' '}
+          <span className="text-xs">
+            Ex : <code className="rounded bg-muted px-1 py-0.5 text-xs">Diurne-Log/Build-JenkinsFile/DIURNE</code>
+          </span>
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {repos.length === 0 && (
+          <p className="text-xs text-muted-foreground">
+            Aucun dépôt trouvé — configurez d&apos;abord la connexion Tuleap.
+          </p>
+        )}
+        {repos.map((repo) => (
+          <div key={repo.id} className="grid grid-cols-[1fr_2fr] items-center gap-3">
+            <Label className="truncate text-sm" title={repo.name}>
+              {repo.name}
+            </Label>
+            <Input
+              placeholder="Dossier/Sous-Dossier/Job"
+              value={drafts[String(repo.id)] ?? ''}
+              onChange={(e) => setDrafts((d) => ({ ...d, [String(repo.id)]: e.target.value }))}
+              spellCheck={false}
+              autoComplete="off"
+            />
+          </div>
+        ))}
+        {repos.length > 0 && (
+          <Button onClick={onSave} disabled={saving}>
+            {saving ? 'Enregistrement…' : 'Enregistrer le mapping'}
+          </Button>
+        )}
+        {msg && (
+          <p className={`text-sm ${msg.ok ? 'text-green-600' : 'text-destructive'}`}>{msg.text}</p>
         )}
       </CardContent>
     </Card>

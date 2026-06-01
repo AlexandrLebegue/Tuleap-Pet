@@ -29,7 +29,8 @@ import {
   setJenkinsUrl,
   setJenkinsUser,
   getTtmTrackerId,
-  getJenkinsRepoMapping
+  getJenkinsRepoMapping,
+  setJenkinsRepoMapping
 } from '../store/config'
 import {
   clearLocalLlmKey,
@@ -304,6 +305,15 @@ export function registerSettingsHandlers(): void {
   ipcMain.handle('settings:clear-jenkins-token', () => {
     clearJenkinsToken()
     audit('settings.clear-jenkins-token')
+    return buildState()
+  })
+
+  ipcMain.handle('settings:set-jenkins-repo-mapping', (_event, mapping: unknown) => {
+    if (mapping !== null && (typeof mapping !== 'object' || Array.isArray(mapping))) {
+      throw new Error("Le mapping doit être un objet ou null.")
+    }
+    setJenkinsRepoMapping(mapping as Record<string, string> | null)
+    audit('settings.set-jenkins-repo-mapping')
     return buildState()
   })
 }

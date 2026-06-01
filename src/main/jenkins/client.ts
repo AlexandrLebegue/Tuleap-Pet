@@ -80,6 +80,11 @@ function isFolder(jobClass: string): boolean {
   return FOLDER_CLASSES.some((fc) => jobClass.includes(fc))
 }
 
+function jobSegments(jobName: string): string {
+  // "Folder/Sub/Job" → "job/Folder/job/Sub/job/Job" (handles arbitrary depth)
+  return jobName.split('/').map(s => `job/${encodeURIComponent(s.trim())}`).join('/')
+}
+
 function mapJob(raw: JenkinsJobRaw): JenkinsJob {
   const lb = raw.lastBuild ?? null
   return {
@@ -341,7 +346,7 @@ export class JenkinsClient {
   }
 
   async listJobs(folder?: string): Promise<JenkinsJob[]> {
-    const basePath = folder ? `/job/${encodeURIComponent(folder)}/api/json` : '/api/json'
+    const basePath = folder ? `/${jobSegments(folder)}/api/json` : '/api/json'
     const data = await this.json(jenkinsJobListSchema, basePath, {
       tree: 'jobs[name,displayName,url,color,_class,lastBuild[number,result,timestamp]]',
       depth: '1'
@@ -351,7 +356,7 @@ export class JenkinsClient {
 
   async getBranchStatus(jobName: string, branchName: string): Promise<JenkinsBranchStatus | null> {
     const encodedBranch = branchName.split('/').map(encodeURIComponent).join('%2F')
-    const path = `/job/${encodeURIComponent(jobName)}/job/${encodedBranch}/lastBuild/api/json`
+    const path = `/${jobSegments(jobName)}/job/${encodedBranch}/lastBuild/api/json`
     try {
       const data = await this.json(jenkinsBranchBuildSchema, path, {
         tree: 'number,result,timestamp,building,url'
@@ -374,7 +379,7 @@ export class JenkinsClient {
     const tree = `builds[number,url,result,duration,timestamp,displayName,building]{0,${limit}}`
     const data = await this.json(
       z.object({ builds: z.array(jenkinsBuildSchema).optional().default([]) }).passthrough(),
-      `/job/${encodeURIComponent(jobName)}/api/json`,
+      `/${jobSegments(jobName)}/api/json`,
       { tree }
     )
     return (data.builds ?? []).map(mapBuildSummary)
@@ -388,14 +393,14 @@ export class JenkinsClient {
     ].join(',')
     const raw = await this.json(
       jenkinsBuildSchema,
-      `/job/${encodeURIComponent(jobName)}/${buildNumber}/api/json`,
+      `/${jobSegments(jobName)}/${buildNumber}/api/json`,
       { tree }
     )
     return mapBuildDetail(raw, jobName)
   }
 
   async getConsoleText(jobName: string, buildNumber: number): Promise<string> {
-    return this.requestText(`/job/${encodeURIComponent(jobName)}/${buildNumber}/consoleText`)
+    return this.requestText(`/${jobSegments(jobName)}/${buildNumber}/consoleText`)
   }
 
   async getQueue(): Promise<JenkinsQueueItem[]> {
@@ -420,7 +425,7 @@ export class JenkinsClient {
     try {
       return await this.json(
         jenkinsTestReportSchema,
-        `/job/${encodeURIComponent(jobName)}/${buildNumber}/testReport/api/json`,
+        `/${jobSegments(jobName)}/${buildNumber}/testReport/api/json`,
         { tree }
       )
     } catch (err) {
@@ -440,7 +445,7 @@ export class JenkinsClient {
   ): Promise<{ totalCount: number; tools: Array<{ name: string; count: number }> } | null> {
     try {
       const response = await this.request(
-        `/job/${encodeURIComponent(jobName)}/${buildNumber}/warnings-ng/api/json`,
+        `/${jobSegments(jobName)}/${buildNumber}/warnings-ng/api/json`,
         { tree: 'totalSize,groups[name,size]' }
       )
       const data = (await response.json()) as Record<string, unknown>
@@ -472,7 +477,7 @@ export class JenkinsClient {
     for (const { path, tree } of endpoints) {
       try {
         const response = await this.request(
-          `/job/${encodeURIComponent(jobName)}/${buildNumber}/${path}/api/json`,
+          `/${jobSegments(jobName)}/${buildNumber}/${path}/api/json`,
           { tree }
         )
         const data = (await response.json()) as Record<string, unknown>
