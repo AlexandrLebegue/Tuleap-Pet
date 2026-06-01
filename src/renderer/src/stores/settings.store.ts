@@ -77,6 +77,7 @@ const emptyConfig: SettingsState = {
   gitCloneSsh: true,
   jenkinsUrl: null,
   jenkinsUser: null,
+  jenkinsDiscoveryFolder: null,
   hasJenkinsToken: false,
   ttmTrackerId: null,
   jenkinsRepoMapping: null

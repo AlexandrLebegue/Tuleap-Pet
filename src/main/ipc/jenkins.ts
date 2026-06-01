@@ -4,6 +4,7 @@ import { parseTestReport } from '../jenkins/junit-parser'
 import { resolveLlmProvider, toLlmError } from '../llm'
 import { audit } from '../store/db'
 import { debugLog, debugError } from '../logger'
+import { getJenkinsDiscoveryFolder } from '../store/config'
 import type {
   JenkinsBranchStatus,
   JenkinsBuildDetail,
@@ -60,11 +61,12 @@ export function registerJenkinsHandlers(): void {
     'jenkins:discover-jobs',
     async (_event, args: unknown): Promise<JenkinsDiscoverResult> => {
       const { folder } = (args ?? {}) as { folder?: string }
-      audit('jenkins.discover-jobs', folder ?? null)
+      const effectiveFolder = folder ?? getJenkinsDiscoveryFolder() ?? ''
+      audit('jenkins.discover-jobs', effectiveFolder || null)
       try {
         const client = buildJenkinsClient()
-        debugLog('[jenkins] discover-jobs: démarrage folder=%s', folder ?? '<root>')
-        const jobs = await client.discoverJobs(folder ?? '')
+        debugLog('[jenkins] discover-jobs: démarrage folder=%s url=%s', effectiveFolder || '<root>', client.baseUrl)
+        const jobs = await client.discoverJobs(effectiveFolder)
         return { ok: true, jobs }
       } catch (err) {
         debugError(

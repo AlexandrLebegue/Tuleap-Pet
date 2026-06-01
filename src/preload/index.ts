@@ -73,6 +73,7 @@ export type SettingsState = {
   gitCloneSsh: boolean
   jenkinsUrl: string | null
   jenkinsUser: string | null
+  jenkinsDiscoveryFolder: string | null
   hasJenkinsToken: boolean
   ttmTrackerId: number | null
   jenkinsRepoMapping: Record<string, string[]> | null
@@ -126,6 +127,8 @@ const settings = {
     ipcRenderer.invoke('settings:set-jenkins-token', token),
   clearJenkinsToken: (): Promise<SettingsState> =>
     ipcRenderer.invoke('settings:clear-jenkins-token'),
+  setJenkinsDiscoveryFolder: (folder: string | null): Promise<SettingsState> =>
+    ipcRenderer.invoke('settings:set-jenkins-discovery-folder', folder),
   setJenkinsRepoMapping: (mapping: Record<string, string[]> | null): Promise<SettingsState> =>
     ipcRenderer.invoke('settings:set-jenkins-repo-mapping', mapping),
   setTtmTrackerId: (id: number | null): Promise<{ ttmTrackerId: number | null }> =>

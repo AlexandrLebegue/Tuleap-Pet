@@ -238,7 +238,7 @@ function parseCoverageData(data: Record<string, unknown>): { lineCoverage: numbe
 }
 
 export class JenkinsClient {
-  private readonly baseUrl: string
+  readonly baseUrl: string
   private readonly authHeader: string
   private readonly fetchImpl: FetchLike
   private readonly timeoutMs: number
@@ -399,6 +399,7 @@ export class JenkinsClient {
       for (const j of jobs) {
         const fullPath = folder ? `${folder}/${j.name}` : j.name
         const kind = classifyJob(j.jobClass)
+        debugLog('[jenkins] discover:  → %s  _class=%s  kind=%s', fullPath, j.jobClass, kind)
         if (kind === 'folder') {
           await visit(fullPath, depth + 1)
         } else {

@@ -1304,9 +1304,14 @@ function JenkinsMappingCard(): React.JSX.Element {
 function JenkinsConfigCard(): React.JSX.Element {
   const config = useSettings((s) => s.config)
   const refresh = useSettings((s) => s.refresh)
+  const discoverAll = useJenkins((s) => s.discoverAll)
+  const discovering = useJenkins((s) => s.discovering)
+  const discovered = useJenkins((s) => s.discovered)
+  const discoverError = useJenkins((s) => s.discoverError)
 
   const [urlDraft, setUrlDraft] = useState(config.jenkinsUrl ?? '')
   const [userDraft, setUserDraft] = useState(config.jenkinsUser ?? '')
+  const [folderDraft, setFolderDraft] = useState(config.jenkinsDiscoveryFolder ?? '')
   const [tokenDraft, setTokenDraft] = useState('')
   const [saving, setSaving] = useState(false)
   const [saveMsg, setSaveMsg] = useState<{ ok: boolean; text: string } | null>(null)
@@ -1316,7 +1321,10 @@ function JenkinsConfigCard(): React.JSX.Element {
   useEffect(() => {
     setUrlDraft(config.jenkinsUrl ?? '')
     setUserDraft(config.jenkinsUser ?? '')
-  }, [config.jenkinsUrl, config.jenkinsUser])
+    setFolderDraft(config.jenkinsDiscoveryFolder ?? '')
+  }, [config.jenkinsUrl, config.jenkinsUser, config.jenkinsDiscoveryFolder])
+
+  const urlHasJobPath = urlDraft.trim().toLowerCase().includes('/job/')
 
   const onSave = async (): Promise<void> => {
     setSaving(true)
@@ -1324,6 +1332,7 @@ function JenkinsConfigCard(): React.JSX.Element {
     try {
       await api.settings.setJenkinsUrl(urlDraft.trim() || null)
       await api.settings.setJenkinsUser(userDraft.trim() || null)
+      await api.settings.setJenkinsDiscoveryFolder(folderDraft.trim() || null)
       if (tokenDraft.trim()) {
         await api.settings.setJenkinsToken(tokenDraft.trim())
         setTokenDraft('')
@@ -1370,6 +1379,12 @@ function JenkinsConfigCard(): React.JSX.Element {
             spellCheck={false}
             autoComplete="off"
           />
+          {urlHasJobPath && (
+            <p className="text-xs text-amber-600">
+              L'URL semble contenir un chemin de job (<code>/job/…</code>). Entrez uniquement la
+              racine Jenkins, ex. <code>https://jenkins.example.com</code>.
+            </p>
+          )}
         </div>
         <div className="space-y-1">
           <Label htmlFor="jenkins-user">Nom d'utilisateur</Label>
@@ -1408,7 +1423,22 @@ function JenkinsConfigCard(): React.JSX.Element {
             </div>
           )}
         </div>
-        <div className="flex gap-2">
+        <div className="space-y-1">
+          <Label htmlFor="jenkins-discovery-folder">Dossier racine de découverte</Label>
+          <Input
+            id="jenkins-discovery-folder"
+            placeholder="Laisser vide pour démarrer depuis la racine"
+            value={folderDraft}
+            onChange={(e) => setFolderDraft(e.target.value)}
+            spellCheck={false}
+            autoComplete="off"
+          />
+          <p className="text-xs text-muted-foreground">
+            Si vos jobs sont dans un sous-dossier (ex.&nbsp;<code>DIURNE-LOG</code>), indiquez-le ici
+            pour accélérer et cibler la découverte. Sous-chemins acceptés : <code>FOLDER/SUB</code>.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
           <Button onClick={onSave} disabled={saving}>
             {saving ? 'Enregistrement…' : 'Enregistrer'}
           </Button>
@@ -1419,6 +1449,13 @@ function JenkinsConfigCard(): React.JSX.Element {
           >
             {testing ? 'Test…' : 'Tester la connexion'}
           </Button>
+          <Button
+            variant="outline"
+            onClick={() => void discoverAll()}
+            disabled={discovering || !config.jenkinsUrl || !config.hasJenkinsToken}
+          >
+            {discovering ? 'Découverte…' : 'Tester la découverte'}
+          </Button>
         </div>
         {saveMsg && (
           <p className={`text-sm ${saveMsg.ok ? 'text-green-600' : 'text-destructive'}`}>
@@ -1428,6 +1465,16 @@ function JenkinsConfigCard(): React.JSX.Element {
         {testResult && (
           <p className={`text-sm ${testResult.ok ? 'text-green-600' : 'text-destructive'}`}>
             {testResult.text}
+          </p>
+        )}
+        {!discovering && discovered.length > 0 && (
+          <p className="text-sm text-green-600">
+            Découverte OK — {discovered.length} job(s) trouvé(s). Vérifiez la console de debug pour le détail.
+          </p>
+        )}
+        {!discovering && discoverError && (
+          <p className="text-sm text-destructive">
+            Erreur de découverte : {discoverError}
           </p>
         )}
       </CardContent>

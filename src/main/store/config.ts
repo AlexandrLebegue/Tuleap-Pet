@@ -29,6 +29,7 @@ const store = new Store<Schema>({
     cppProjectRoot: null,
     jenkinsUrl: null,
     jenkinsUser: null,
+    jenkinsDiscoveryFolder: null,
     jenkinsRepoMapping: null,
     ttmTrackerId: null
   },
@@ -82,6 +83,7 @@ export function getConfig(): AppConfig {
     cppProjectRoot: store.get('cppProjectRoot') ?? null,
     jenkinsUrl: store.get('jenkinsUrl') ?? null,
     jenkinsUser: store.get('jenkinsUser') ?? null,
+    jenkinsDiscoveryFolder: store.get('jenkinsDiscoveryFolder') ?? null,
     jenkinsRepoMapping: normalizeRepoMapping(store.get('jenkinsRepoMapping')),
     ttmTrackerId: (store.get('ttmTrackerId') as number | null) ?? null
   }
@@ -242,6 +244,15 @@ export function getJenkinsUser(): string | null {
 
 export function setJenkinsUser(user: string | null): void {
   store.set('jenkinsUser', user && user.trim().length > 0 ? user.trim() : null)
+}
+
+export function getJenkinsDiscoveryFolder(): string | null {
+  return store.get('jenkinsDiscoveryFolder') ?? null
+}
+
+export function setJenkinsDiscoveryFolder(folder: string | null): void {
+  const trimmed = folder?.trim().replace(/^\/+|\/+$/g, '') || null
+  store.set('jenkinsDiscoveryFolder', trimmed)
 }
 
 export function getJenkinsRepoMapping(): Record<string, string[]> | null {

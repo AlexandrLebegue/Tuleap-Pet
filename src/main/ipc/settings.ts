@@ -28,6 +28,8 @@ import {
   getGitCloneSsh,
   setJenkinsUrl,
   setJenkinsUser,
+  getJenkinsDiscoveryFolder,
+  setJenkinsDiscoveryFolder,
   getTtmTrackerId,
   getJenkinsRepoMapping,
   setJenkinsRepoMapping
@@ -83,6 +85,7 @@ export type SettingsState = {
   gitCloneSsh: boolean
   jenkinsUrl: string | null
   jenkinsUser: string | null
+  jenkinsDiscoveryFolder: string | null
   hasJenkinsToken: boolean
   ttmTrackerId: number | null
   jenkinsRepoMapping: Record<string, string[]> | null
@@ -119,6 +122,7 @@ function buildState(): SettingsState {
     gitCloneSsh: getGitCloneSsh(),
     jenkinsUrl: config.jenkinsUrl,
     jenkinsUser: config.jenkinsUser,
+    jenkinsDiscoveryFolder: getJenkinsDiscoveryFolder(),
     hasJenkinsToken: hasJenkinsToken(),
     ttmTrackerId: getTtmTrackerId(),
     jenkinsRepoMapping: getJenkinsRepoMapping()
@@ -290,6 +294,15 @@ export function registerSettingsHandlers(): void {
     }
     setJenkinsUser(user as string | null)
     audit('settings.set-jenkins-user', (user as string | null) ?? null)
+    return buildState()
+  })
+
+  ipcMain.handle('settings:set-jenkins-discovery-folder', (_event, folder: unknown) => {
+    if (folder !== null && typeof folder !== 'string') {
+      throw new Error("Le paramètre 'folder' doit être une chaîne ou null.")
+    }
+    setJenkinsDiscoveryFolder(folder as string | null)
+    audit('settings.set-jenkins-discovery-folder', (folder as string | null) ?? null)
     return buildState()
   })
 

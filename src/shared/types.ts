@@ -39,6 +39,8 @@ export type AppConfig = {
   jenkinsUrl: string | null
   /** Jenkins username for HTTP Basic auth. */
   jenkinsUser: string | null
+  /** Folder to start job discovery from (e.g. "DIURNE-LOG"). Empty/null = root. */
+  jenkinsDiscoveryFolder: string | null
   /** Map repoId (string) → list of Jenkins job paths for branch status lookup. */
   jenkinsRepoMapping: Record<string, string[]> | null
   /** Tuleap TTM test-definition tracker ID (auto-detected if null). */
