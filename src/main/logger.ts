@@ -13,10 +13,17 @@ const DEBUG_CHANNEL = 'debug:log'
 let seq = 0
 
 function broadcast(entry: LogEntry): void {
-  for (const win of BrowserWindow.getAllWindows()) {
-    if (!win.isDestroyed()) {
-      win.webContents.send(DEBUG_CHANNEL, entry)
+  // Guard against being called outside a running Electron app (e.g. unit tests),
+  // where BrowserWindow is undefined or no windows exist. Logging must never throw.
+  try {
+    if (!BrowserWindow?.getAllWindows) return
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) {
+        win.webContents.send(DEBUG_CHANNEL, entry)
+      }
     }
+  } catch {
+    // ignore — console output above is enough in non-UI contexts
   }
 }
 

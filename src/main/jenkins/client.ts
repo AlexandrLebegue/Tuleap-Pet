@@ -42,6 +42,10 @@ export type JenkinsClientOptions = {
 }
 
 const DEFAULT_TIMEOUT_MS = 20_000
+// Some corporate reverse proxies / WAFs return 404 (or block) requests that do
+// not carry a browser-like User-Agent. Send a realistic one to avoid that.
+const JENKINS_USER_AGENT =
+  'Mozilla/5.0 (Tuleap-Companion) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36'
 const FOLDER_CLASSES = [
   'WorkflowMultiBranchProject',
   'OrganizationFolder',
@@ -263,8 +267,10 @@ export class JenkinsClient {
         method: 'GET',
         headers: {
           Accept: 'application/json',
-          Authorization: this.authHeader
+          Authorization: this.authHeader,
+          'User-Agent': JENKINS_USER_AGENT
         },
+        redirect: 'manual',
         signal: controller.signal
       })
     } catch (err) {
@@ -274,13 +280,29 @@ export class JenkinsClient {
     } finally {
       clearTimeout(timer)
     }
+    debugLog('[jenkins] GET %s → HTTP %d', url, response.status)
     if (response.status === 401 || response.status === 403) {
       throw new JenkinsAuthError(
-        `Authentification refusée par Jenkins (HTTP ${response.status}).`,
+        `Authentification refusée par Jenkins (HTTP ${response.status}). Vérifiez l'utilisateur et le token API.`,
+        response.status
+      )
+    }
+    // A 3xx redirect on an API endpoint almost always means the request was not
+    // authenticated and Jenkins (or an SSO proxy) is bouncing to a login page.
+    if (response.status >= 300 && response.status < 400) {
+      const location = response.headers.get('location') ?? '?'
+      throw new JenkinsAuthError(
+        `Jenkins a redirigé ${url} vers ${location} (HTTP ${response.status}). ` +
+          `L'authentification par token n'a probablement pas été acceptée (SSO/proxy ?).`,
         response.status
       )
     }
     if (response.status === 404) {
+      debugWarn(
+        '[jenkins] 404 sur %s — la ressource existe peut-être mais le token ' +
+          "n'a pas le droit Discover/Read (Jenkins masque l'existence en 404).",
+        url
+      )
       throw new JenkinsNotFoundError(`Ressource Jenkins introuvable: ${path}`, 404)
     }
     if (!response.ok) {
@@ -301,7 +323,8 @@ export class JenkinsClient {
     try {
       response = await this.fetchImpl(url, {
         method: 'GET',
-        headers: { Authorization: this.authHeader },
+        headers: { Authorization: this.authHeader, 'User-Agent': JENKINS_USER_AGENT },
+        redirect: 'manual',
         signal: controller.signal
       })
     } catch (err) {
