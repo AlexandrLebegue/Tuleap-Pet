@@ -34,22 +34,27 @@ describe('JenkinsClient auth header', () => {
     const fetchImpl = vi.fn(async (_input, init) => {
       const headers = init?.headers as Record<string, string>
       expect(headers['Authorization']).toBe(expected)
-      return jsonResponse({ nodeName: 'master', version: '2.400' })
+      return jsonResponse({ nodeName: 'master', version: '2.400', name: 'frsp660', authenticated: true, anonymous: false, authorities: ['authenticated'] })
     })
     const client = makeClient(fetchImpl as unknown as typeof fetch)
     await client.testConnection()
-    expect(fetchImpl).toHaveBeenCalledOnce()
+    // testConnection makes 2 requests: /api/json + /whoAmI/api/json
+    expect(fetchImpl).toHaveBeenCalledTimes(2)
   })
 })
 
 describe('JenkinsClient.testConnection', () => {
-  it('returns version and nodeName', async () => {
-    const fetchImpl = vi.fn(async () =>
-      jsonResponse({ nodeName: 'built-in', version: '2.400.1', _class: 'hudson.model.Hudson' })
-    )
+  it('returns version, nodeName, whoAmI info', async () => {
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      if (url.includes('whoAmI')) {
+        return jsonResponse({ name: 'frsp660', authenticated: true, anonymous: false, authorities: ['authenticated', 'grp-jenkins'] })
+      }
+      return jsonResponse({ nodeName: 'built-in', version: '2.400.1', _class: 'hudson.model.Hudson' })
+    })
     const client = makeClient(fetchImpl as unknown as typeof fetch)
     const result = await client.testConnection()
-    expect(result).toMatchObject({ nodeName: 'built-in', version: '2.400.1' })
+    expect(result).toMatchObject({ nodeName: 'built-in', version: '2.400.1', whoAmIName: 'frsp660', missingGroups: false })
   })
 
   it('throws JenkinsAuthError on 401', async () => {

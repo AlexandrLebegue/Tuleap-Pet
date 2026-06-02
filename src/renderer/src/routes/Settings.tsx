@@ -8,7 +8,7 @@ import { Badge } from '@renderer/components/ui/badge'
 import { useSettings } from '@renderer/stores/settings.store'
 import { useJenkins } from '@renderer/stores/jenkins.store'
 import { api } from '@renderer/lib/api'
-import type { ConnectionTestResult, JenkinsDiscoveredJob, ProjectSummary } from '@shared/types'
+import type { ConnectionTestResult, JenkinsConnectionTestResult, JenkinsDiscoveredJob, ProjectSummary } from '@shared/types'
 
 function describeError(result: ConnectionTestResult & { ok: false }): string {
   switch (result.kind) {
@@ -1316,7 +1316,7 @@ function JenkinsConfigCard(): React.JSX.Element {
   const [saving, setSaving] = useState(false)
   const [saveMsg, setSaveMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [testing, setTesting] = useState(false)
-  const [testResult, setTestResult] = useState<{ ok: boolean; text: string } | null>(null)
+  const [testResult, setTestResult] = useState<JenkinsConnectionTestResult | null>(null)
 
   useEffect(() => {
     setUrlDraft(config.jenkinsUrl ?? '')
@@ -1351,13 +1351,13 @@ function JenkinsConfigCard(): React.JSX.Element {
     setTestResult(null)
     try {
       const result = await api.jenkins.testConnection()
-      if (result.ok) {
-        setTestResult({ ok: true, text: `Connecté — ${result.nodeName} (Jenkins ${result.version})` })
-      } else {
-        setTestResult({ ok: false, text: result.error })
-      }
+      setTestResult(result)
     } catch (err) {
-      setTestResult({ ok: false, text: err instanceof Error ? err.message : String(err) })
+      setTestResult({
+        ok: false,
+        error: err instanceof Error ? err.message : String(err),
+        kind: 'unknown'
+      })
     } finally {
       setTesting(false)
     }
@@ -1462,10 +1462,45 @@ function JenkinsConfigCard(): React.JSX.Element {
             {saveMsg.text}
           </p>
         )}
-        {testResult && (
-          <p className={`text-sm ${testResult.ok ? 'text-green-600' : 'text-destructive'}`}>
-            {testResult.text}
-          </p>
+        {testResult && !testResult.ok && (
+          <p className="text-sm text-destructive">{testResult.error}</p>
+        )}
+        {testResult?.ok && (
+          <div className="space-y-2 rounded-md border p-3 text-sm">
+            <p className="text-green-600">
+              ✓ Connecté — {testResult.nodeName} (Jenkins {testResult.version})
+            </p>
+            <p className="text-muted-foreground">
+              Utilisateur : <span className="font-mono">{testResult.whoAmIName}</span>
+              {' · '}Groupes : <span className="font-mono">{testResult.authorities.join(', ') || '(aucun)'}</span>
+            </p>
+            {testResult.missingGroups && (
+              <div className="rounded border border-amber-300 bg-amber-50 p-3 text-amber-800 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-300">
+                <p className="font-semibold">⚠ Groupes AD/LDAP non résolus</p>
+                <p className="mt-1">
+                  Le token API ne porte que l'autorité <code>authenticated</code> — vos groupes AD/LDAP ne
+                  sont pas transmis. Jenkins renvoie <strong>404</strong> sur les dossiers protégés par un
+                  groupe (ex. DIURNE-LOG), même si votre navigateur y accède via SSO.
+                </p>
+                <p className="mt-2 font-semibold">Solutions (demander à l'admin Jenkins) :</p>
+                <ol className="mt-1 list-decimal pl-4 space-y-1">
+                  <li>
+                    Accorder la permission <strong>Job/Read + Job/Discover</strong> directement à votre
+                    compte <code>{testResult.whoAmIName}</code> sur le dossier DIURNE-LOG (via{' '}
+                    <em>Configure → Manage Permissions</em> du dossier).
+                  </li>
+                  <li>
+                    Activer la résolution de groupes LDAP pour les tokens API dans{' '}
+                    <em>Manage Jenkins → Security → LDAP → Group Membership</em>.
+                  </li>
+                  <li>
+                    Créer un <strong>compte de service</strong> avec des permissions directes sur les
+                    dossiers Jenkins (indépendant du SSO).
+                  </li>
+                </ol>
+              </div>
+            )}
+          </div>
         )}
         {!discovering && discovered.length > 0 && (
           <p className="text-sm text-green-600">

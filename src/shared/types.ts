@@ -469,7 +469,17 @@ export type JenkinsNode = {
 }
 
 export type JenkinsConnectionTestResult =
-  | { ok: true; version: string; nodeName: string }
+  | {
+      ok: true
+      version: string
+      nodeName: string
+      /** Jenkins whoAmI name (resolved username). */
+      whoAmIName: string
+      /** Granted authorities, e.g. ["authenticated"]. If groups are missing it signals SSO group resolution is broken for API tokens. */
+      authorities: string[]
+      /** True when the only authority is "authenticated" — no AD/LDAP groups resolved, API access to protected folders will fail with 404. */
+      missingGroups: boolean
+    }
   | { ok: false; error: string; kind: 'auth' | 'network' | 'http' | 'schema' | 'unknown'; status?: number }
 
 // ---- Jenkins → Tuleap TTM ----

@@ -15,6 +15,7 @@ import {
   jenkinsQueueSchema,
   jenkinsRootSchema,
   jenkinsTestReportSchema,
+  jenkinsWhoAmISchema,
   type JenkinsBuildRaw,
   type JenkinsJobRaw,
   type JenkinsTestReportRaw
@@ -374,13 +375,46 @@ export class JenkinsClient {
     return parsed.data
   }
 
-  async testConnection(): Promise<{ version: string; nodeName: string }> {
-    const data = await this.json(
-      jenkinsRootSchema,
-      '/api/json',
-      { tree: 'nodeName,version' }
-    )
-    return { version: data.version, nodeName: data.nodeName }
+  async testConnection(): Promise<{
+    version: string
+    nodeName: string
+    whoAmIName: string
+    authorities: string[]
+    missingGroups: boolean
+  }> {
+    const [root, whoAmI] = await Promise.all([
+      this.json(jenkinsRootSchema, '/api/json', { tree: 'nodeName,version' }),
+      this.json(jenkinsWhoAmISchema, '/whoAmI/api/json', {
+        tree: 'name,authenticated,anonymous,authorities'
+      }).catch(() => ({ name: '', authenticated: false, anonymous: true, authorities: [] }))
+    ])
+    const authorities: string[] = whoAmI.authorities ?? []
+    const missingGroups =
+      authorities.length === 0 ||
+      (authorities.length === 1 && (authorities[0] ?? '').toLowerCase() === 'authenticated')
+    if (missingGroups) {
+      debugWarn(
+        '[jenkins] testConnection: authorities=%s — pas de groupes AD/LDAP résolus. ' +
+          "L'accès aux dossiers protégés échouera en 404. " +
+          'Solution : demander à l\'admin Jenkins d\'activer la résolution de groupes pour les tokens API, ' +
+          'ou accorder des permissions directes à l\'utilisateur %s sur les dossiers concernés.',
+        JSON.stringify(authorities),
+        whoAmI.name
+      )
+    } else {
+      debugLog(
+        '[jenkins] testConnection: utilisateur=%s authorities=%s',
+        whoAmI.name,
+        JSON.stringify(authorities)
+      )
+    }
+    return {
+      version: root.version,
+      nodeName: root.nodeName,
+      whoAmIName: whoAmI.name,
+      authorities,
+      missingGroups
+    }
   }
 
   async listJobs(folder?: string): Promise<JenkinsJob[]> {

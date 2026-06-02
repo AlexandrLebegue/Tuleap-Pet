@@ -40,8 +40,8 @@ export function registerJenkinsHandlers(): void {
     audit('jenkins.test-connection')
     try {
       const client = buildJenkinsClient()
-      const { version, nodeName } = await client.testConnection()
-      return { ok: true, version, nodeName }
+      const { version, nodeName, whoAmIName, authorities, missingGroups } = await client.testConnection()
+      return { ok: true, version, nodeName, whoAmIName, authorities, missingGroups }
     } catch (err) {
       return toConnectionResult(err)
     }

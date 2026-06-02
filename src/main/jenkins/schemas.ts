@@ -9,6 +9,17 @@ export const jenkinsRootSchema = z
 
 export type JenkinsRootRaw = z.infer<typeof jenkinsRootSchema>
 
+export const jenkinsWhoAmISchema = z
+  .object({
+    name: z.string().optional().default(''),
+    authenticated: z.boolean().optional().default(false),
+    anonymous: z.boolean().optional().default(true),
+    authorities: z.array(z.string()).optional().default([])
+  })
+  .passthrough()
+
+export type JenkinsWhoAmIRaw = z.infer<typeof jenkinsWhoAmISchema>
+
 export const jenkinsBuildSchema = z
   .object({
     number: z.number(),
