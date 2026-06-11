@@ -28,6 +28,34 @@ function makeClient(fetchImpl: typeof globalThis.fetch): JenkinsClient {
   return new JenkinsClient({ baseUrl: BASE_URL, username: USERNAME, apiToken: API_TOKEN, fetchImpl })
 }
 
+describe('JenkinsClient token classification', () => {
+  const noFetch = (async () => textResponse('')) as unknown as typeof fetch
+
+  it('detects a Jenkins API token (11 + 32 hex)', () => {
+    const client = new JenkinsClient({
+      baseUrl: BASE_URL,
+      username: USERNAME,
+      apiToken: '11201c7e9f6953d11e7114d0cf119459b2',
+      fetchImpl: noFetch
+    })
+    expect(client.tokenKind).toBe('jenkins-api-token')
+  })
+
+  it('detects a Tuleap access key (tlp.k1.…)', () => {
+    const client = new JenkinsClient({
+      baseUrl: BASE_URL,
+      username: USERNAME,
+      apiToken: 'tlp.k1.13.aabbccddeeff00112233445566778899',
+      fetchImpl: noFetch
+    })
+    expect(client.tokenKind).toBe('tuleap-access-key')
+  })
+
+  it('classifies anything else as unknown', () => {
+    expect(makeClient(noFetch).tokenKind).toBe('unknown')
+  })
+})
+
 describe('JenkinsClient auth header', () => {
   it('sends Basic Authorization header', async () => {
     const expected = `Basic ${Buffer.from(`${USERNAME}:${API_TOKEN}`).toString('base64')}`

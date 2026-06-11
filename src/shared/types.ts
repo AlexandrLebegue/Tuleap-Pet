@@ -479,6 +479,8 @@ export type JenkinsConnectionTestResult =
       authorities: string[]
       /** True when the only authority is "authenticated" — no AD/LDAP groups resolved, API access to protected folders will fail with 404. */
       missingGroups: boolean
+      /** Format of the configured secret: Jenkins API token (11+32 hex), Tuleap access key (tlp.k1.…) or unknown. */
+      tokenKind: 'jenkins-api-token' | 'tuleap-access-key' | 'unknown'
     }
   | { ok: false; error: string; kind: 'auth' | 'network' | 'http' | 'schema' | 'unknown'; status?: number }
 

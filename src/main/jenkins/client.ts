@@ -93,6 +93,18 @@ function jobSegments(jobName: string): string {
 }
 
 /**
+ * Detect what kind of secret was configured. Matters when Jenkins delegates
+ * auth to Tuleap (tuleap-oauth plugin): a plain Jenkins API token authenticates
+ * but carries no Tuleap project groups (→ 404 on protected folders), whereas a
+ * Tuleap access key (tlp.k1.…) is validated against Tuleap and resolves groups.
+ */
+function classifyToken(token: string): 'jenkins-api-token' | 'tuleap-access-key' | 'unknown' {
+  if (/^tlp\.k\d+\./i.test(token.trim())) return 'tuleap-access-key'
+  if (/^11[0-9a-f]{32}$/i.test(token.trim())) return 'jenkins-api-token'
+  return 'unknown'
+}
+
+/**
  * Classify a Jenkins job by its _class string so the crawler knows whether to
  * descend into it (folder / organization folder) or collect it as selectable
  * (multibranch project or leaf job). Substring match keeps it resilient to
@@ -244,6 +256,8 @@ function parseCoverageData(data: Record<string, unknown>): { lineCoverage: numbe
 
 export class JenkinsClient {
   readonly baseUrl: string
+  /** What the configured secret looks like — drives SSO diagnostics in the UI. */
+  readonly tokenKind: 'jenkins-api-token' | 'tuleap-access-key' | 'unknown'
   private readonly authHeader: string
   private readonly fetchImpl: FetchLike
   private readonly timeoutMs: number
@@ -253,6 +267,7 @@ export class JenkinsClient {
     if (!opts.username) throw new Error('username manquant')
     if (!opts.apiToken) throw new Error('apiToken manquant')
     this.baseUrl = opts.baseUrl.replace(/\/+$/, '')
+    this.tokenKind = classifyToken(opts.apiToken)
     this.authHeader = `Basic ${Buffer.from(`${opts.username}:${opts.apiToken}`).toString('base64')}`
     this.fetchImpl = opts.fetchImpl ?? globalThis.fetch.bind(globalThis)
     this.timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS
@@ -381,6 +396,7 @@ export class JenkinsClient {
     whoAmIName: string
     authorities: string[]
     missingGroups: boolean
+    tokenKind: 'jenkins-api-token' | 'tuleap-access-key' | 'unknown'
   }> {
     const [root, whoAmI] = await Promise.all([
       this.json(jenkinsRootSchema, '/api/json', { tree: 'nodeName,version' }),
@@ -393,19 +409,29 @@ export class JenkinsClient {
       authorities.length === 0 ||
       (authorities.length === 1 && (authorities[0] ?? '').toLowerCase() === 'authenticated')
     if (missingGroups) {
-      debugWarn(
-        '[jenkins] testConnection: authorities=%s — pas de groupes AD/LDAP résolus. ' +
-          "L'accès aux dossiers protégés échouera en 404. " +
-          'Solution : demander à l\'admin Jenkins d\'activer la résolution de groupes pour les tokens API, ' +
-          'ou accorder des permissions directes à l\'utilisateur %s sur les dossiers concernés.',
-        JSON.stringify(authorities),
-        whoAmI.name
-      )
+      if (this.tokenKind === 'jenkins-api-token') {
+        debugWarn(
+          '[jenkins] testConnection: authorities=%s avec un token API Jenkins — ' +
+            'si Jenkins délègue son authentification à Tuleap (plugin tuleap-oauth), ' +
+            'les groupes de projet Tuleap ne sont pas résolus et les dossiers protégés renvoient 404. ' +
+            "Solution : utiliser une clé d'accès Tuleap (tlp.k1.…, scope OpenID Connect) à la place du token Jenkins.",
+          JSON.stringify(authorities)
+        )
+      } else {
+        debugWarn(
+          '[jenkins] testConnection: authorities=%s — pas de groupes résolus pour %s (tokenKind=%s). ' +
+            "L'accès aux dossiers protégés échouera en 404.",
+          JSON.stringify(authorities),
+          whoAmI.name,
+          this.tokenKind
+        )
+      }
     } else {
       debugLog(
-        '[jenkins] testConnection: utilisateur=%s authorities=%s',
+        '[jenkins] testConnection: utilisateur=%s authorities=%s tokenKind=%s',
         whoAmI.name,
-        JSON.stringify(authorities)
+        JSON.stringify(authorities),
+        this.tokenKind
       )
     }
     return {
@@ -413,7 +439,8 @@ export class JenkinsClient {
       nodeName: root.nodeName,
       whoAmIName: whoAmI.name,
       authorities,
-      missingGroups
+      missingGroups,
+      tokenKind: this.tokenKind
     }
   }
 

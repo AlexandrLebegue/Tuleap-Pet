@@ -1402,11 +1402,20 @@ function JenkinsConfigCard(): React.JSX.Element {
           <Input
             id="jenkins-token"
             type="password"
-            placeholder={config.hasJenkinsToken ? '•••••••••• (déjà enregistré)' : 'Votre token API Jenkins'}
+            placeholder={
+              config.hasJenkinsToken
+                ? '•••••••••• (déjà enregistré)'
+                : "Token API Jenkins ou clé d'accès Tuleap (tlp.k1.…)"
+            }
             value={tokenDraft}
             onChange={(e) => setTokenDraft(e.target.value)}
             autoComplete="off"
           />
+          <p className="text-xs text-muted-foreground">
+            Si Jenkins vous redirige vers Tuleap pour vous connecter (SSO Tuleap), utilisez une{' '}
+            <strong>clé d'accès Tuleap</strong> avec le scope OpenID Connect plutôt qu'un token Jenkins
+            — sinon vos groupes de projet ne sont pas résolus et les dossiers renvoient 404.
+          </p>
           {config.hasJenkinsToken && (
             <div className="flex items-center gap-2 pt-1 text-xs text-muted-foreground">
               <Badge variant="secondary">Token présent</Badge>
@@ -1474,24 +1483,54 @@ function JenkinsConfigCard(): React.JSX.Element {
               Utilisateur : <span className="font-mono">{testResult.whoAmIName}</span>
               {' · '}Groupes : <span className="font-mono">{testResult.authorities.join(', ') || '(aucun)'}</span>
             </p>
-            {testResult.missingGroups && (
+            {testResult.missingGroups && testResult.tokenKind === 'jenkins-api-token' && (
               <div className="rounded border border-amber-300 bg-amber-50 p-3 text-amber-800 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-300">
-                <p className="font-semibold">⚠ Groupes AD/LDAP non résolus</p>
+                <p className="font-semibold">⚠ Token API Jenkins détecté — groupes Tuleap non résolus</p>
                 <p className="mt-1">
-                  Le token API ne porte que l'autorité <code>authenticated</code> — vos groupes AD/LDAP ne
-                  sont pas transmis. Jenkins renvoie <strong>404</strong> sur les dossiers protégés par un
-                  groupe (ex. DIURNE-LOG), même si votre navigateur y accède via SSO.
+                  Votre Jenkins délègue son authentification à <strong>Tuleap</strong> (plugin Tuleap
+                  Authentication — c'est la redirection vers Tuleap au login). Un token API Jenkins
+                  authentifie votre compte mais ne porte <strong>aucun groupe de projet Tuleap</strong> :
+                  les dossiers liés à un projet Tuleap (ex. DIURNE-LOG) sont masqués et renvoient{' '}
+                  <strong>404</strong>, alors que votre navigateur y accède via SSO.
                 </p>
-                <p className="mt-2 font-semibold">Solutions (demander à l'admin Jenkins) :</p>
+                <p className="mt-2 font-semibold">✅ Solution (self-service, sans admin) :</p>
                 <ol className="mt-1 list-decimal pl-4 space-y-1">
                   <li>
-                    Accorder la permission <strong>Job/Read + Job/Discover</strong> directement à votre
-                    compte <code>{testResult.whoAmIName}</code> sur le dossier DIURNE-LOG (via{' '}
-                    <em>Configure → Manage Permissions</em> du dossier).
+                    Dans <strong>Tuleap</strong> → <em>Mon compte → Clés d'accès</em>, créez une clé
+                    d'accès avec le scope <strong>OpenID Connect</strong> (cochez aussi{' '}
+                    <em>REST API</em> si proposé).
                   </li>
                   <li>
-                    Activer la résolution de groupes LDAP pour les tokens API dans{' '}
-                    <em>Manage Jenkins → Security → LDAP → Group Membership</em>.
+                    Collez cette clé (format <code>tlp.k1.…</code>) dans le champ{' '}
+                    <strong>API Token</strong> ci-dessus, à la place du token Jenkins.
+                  </li>
+                  <li>
+                    Le plugin Tuleap validera la clé auprès de Tuleap et résoudra vos groupes de
+                    projet → accès aux dossiers protégés.
+                  </li>
+                </ol>
+              </div>
+            )}
+            {testResult.missingGroups && testResult.tokenKind !== 'jenkins-api-token' && (
+              <div className="rounded border border-amber-300 bg-amber-50 p-3 text-amber-800 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-300">
+                <p className="font-semibold">⚠ Groupes non résolus</p>
+                <p className="mt-1">
+                  Le secret configuré
+                  {testResult.tokenKind === 'tuleap-access-key' ? " (clé d'accès Tuleap)" : ''} ne porte
+                  que l'autorité <code>authenticated</code> — vos groupes ne sont pas transmis. Jenkins
+                  renvoie <strong>404</strong> sur les dossiers protégés (ex. DIURNE-LOG).
+                </p>
+                <p className="mt-2 font-semibold">Pistes :</p>
+                <ol className="mt-1 list-decimal pl-4 space-y-1">
+                  {testResult.tokenKind === 'tuleap-access-key' && (
+                    <li>
+                      Vérifiez que la clé Tuleap a bien le scope <strong>OpenID Connect</strong>{' '}
+                      (recréez-la si besoin) et qu'elle n'est pas expirée.
+                    </li>
+                  )}
+                  <li>
+                    Demander à l'admin Jenkins d'accorder <strong>Job/Read + Job/Discover</strong>{' '}
+                    directement à <code>{testResult.whoAmIName}</code> sur les dossiers concernés.
                   </li>
                   <li>
                     Créer un <strong>compte de service</strong> avec des permissions directes sur les
