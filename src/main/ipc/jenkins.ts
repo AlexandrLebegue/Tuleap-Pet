@@ -38,13 +38,15 @@ const MAX_CONSOLE_CHARS = 32_000
 export function registerJenkinsHandlers(): void {
   ipcMain.handle('jenkins:test-connection', async (): Promise<JenkinsConnectionTestResult> => {
     audit('jenkins.test-connection')
+    let tokenKind: 'jenkins-api-token' | 'tuleap-access-key' | 'unknown' = 'unknown'
     try {
       const client = buildJenkinsClient()
-      const { version, nodeName, whoAmIName, authorities, missingGroups, tokenKind } =
+      tokenKind = client.tokenKind
+      const { version, nodeName, whoAmIName, authorities, missingGroups } =
         await client.testConnection()
       return { ok: true, version, nodeName, whoAmIName, authorities, missingGroups, tokenKind }
     } catch (err) {
-      return toConnectionResult(err)
+      return { ...toConnectionResult(err), tokenKind }
     }
   })
 

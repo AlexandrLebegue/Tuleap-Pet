@@ -1472,7 +1472,70 @@ function JenkinsConfigCard(): React.JSX.Element {
           </p>
         )}
         {testResult && !testResult.ok && (
-          <p className="text-sm text-destructive">{testResult.error}</p>
+          <div className="space-y-2 rounded-md border border-destructive/30 p-3 text-sm">
+            <p className="text-destructive font-medium">
+              {testResult.kind === 'auth' ? '✗ Authentification refusée' : '✗ Erreur de connexion'}
+            </p>
+            <p className="text-destructive/90 font-mono text-xs break-all">{testResult.error}</p>
+            {testResult.kind === 'auth' && testResult.status === 401 && testResult.tokenKind === 'tuleap-access-key' && (
+              <div className="rounded border border-amber-300 bg-amber-50 p-3 text-amber-800 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-300">
+                <p className="font-semibold">Clé d'accès Tuleap rejetée (HTTP 401)</p>
+                <p className="mt-1">
+                  Jenkins a reçu votre clé Tuleap (<code>tlp.k1.…</code>) mais la refuse. Causes
+                  fréquentes :
+                </p>
+                <ol className="mt-1 list-decimal pl-4 space-y-1">
+                  <li>
+                    <strong>Scope manquant</strong> — la clé doit avoir le scope{' '}
+                    <strong>OpenID Connect</strong>. Allez dans Tuleap → Mon compte → Clés
+                    d'accès, supprimez la clé actuelle et recréez-en une en cochant{' '}
+                    <em>OpenID Connect</em>.
+                  </li>
+                  <li>
+                    <strong>Clé expirée</strong> — si vous avez défini une date d'expiration dans
+                    Tuleap, la clé peut avoir expiré. Recréez-en une sans date d'expiration.
+                  </li>
+                  <li>
+                    <strong>Nom d'utilisateur incorrect</strong> — le champ "Nom d'utilisateur"
+                    doit être votre <em>login Tuleap exact</em> (pas le nom d'affichage, pas
+                    l'email). Vérifiez dans Tuleap → Mon compte.
+                  </li>
+                  <li>
+                    <strong>Instance Tuleap</strong> — la clé doit être créée sur l'instance
+                    Tuleap à laquelle Jenkins est connecté (
+                    <code>tuleap.sodern.net</code> dans votre cas).
+                  </li>
+                </ol>
+              </div>
+            )}
+            {testResult.kind === 'auth' && testResult.status === 401 && testResult.tokenKind === 'jenkins-api-token' && (
+              <div className="rounded border border-amber-300 bg-amber-50 p-3 text-amber-800 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-300">
+                <p className="font-semibold">Token API Jenkins rejeté (HTTP 401)</p>
+                <p className="mt-1">
+                  Votre token API Jenkins est refusé. Vérifiez :
+                </p>
+                <ol className="mt-1 list-decimal pl-4 space-y-1">
+                  <li>
+                    Le token est valide (non révoqué) — dans Jenkins → Mon compte → Tokens d'API.
+                  </li>
+                  <li>
+                    Le nom d'utilisateur correspond bien au compte Jenkins.
+                  </li>
+                  <li>
+                    Si Jenkins délègue à Tuleap pour l'authentification, un token Jenkins ne
+                    fonctionnera pas via l'API — utilisez une{' '}
+                    <strong>clé d'accès Tuleap</strong> (<code>tlp.k1.…</code>, scope OpenID
+                    Connect) à la place.
+                  </li>
+                </ol>
+              </div>
+            )}
+            {testResult.kind === 'network' && (
+              <p className="text-xs text-muted-foreground">
+                Vérifiez que l'URL Jenkins est correcte et accessible depuis cette machine.
+              </p>
+            )}
+          </div>
         )}
         {testResult?.ok && (
           <div className="space-y-2 rounded-md border p-3 text-sm">

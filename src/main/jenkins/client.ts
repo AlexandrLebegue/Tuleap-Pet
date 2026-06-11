@@ -298,10 +298,14 @@ export class JenkinsClient {
     }
     debugLog('[jenkins] GET %s → HTTP %d', url, response.status)
     if (response.status === 401 || response.status === 403) {
-      throw new JenkinsAuthError(
-        `Authentification refusée par Jenkins (HTTP ${response.status}). Vérifiez l'utilisateur et le token API.`,
-        response.status
-      )
+      const hint =
+        this.tokenKind === 'tuleap-access-key'
+          ? "Clé d'accès Tuleap rejetée (401) — vérifiez : scope OpenID Connect activé, clé non expirée, nom d'utilisateur = login Tuleap exact."
+          : this.tokenKind === 'jenkins-api-token'
+            ? 'Token API Jenkins rejeté (401) — vérifiez que le token est valide et non révoqué.'
+            : `Identifiants refusés (HTTP ${response.status}) — vérifiez le nom d'utilisateur et le token.`
+      debugWarn('[jenkins] AUTH %d %s — tokenKind=%s hint: %s', response.status, url, this.tokenKind, hint)
+      throw new JenkinsAuthError(hint, response.status)
     }
     // A 3xx redirect on an API endpoint almost always means the request was not
     // authenticated and Jenkins (or an SSO proxy) is bouncing to a login page.

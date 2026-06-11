@@ -482,7 +482,14 @@ export type JenkinsConnectionTestResult =
       /** Format of the configured secret: Jenkins API token (11+32 hex), Tuleap access key (tlp.k1.…) or unknown. */
       tokenKind: 'jenkins-api-token' | 'tuleap-access-key' | 'unknown'
     }
-  | { ok: false; error: string; kind: 'auth' | 'network' | 'http' | 'schema' | 'unknown'; status?: number }
+  | {
+      ok: false
+      error: string
+      kind: 'auth' | 'network' | 'http' | 'schema' | 'unknown'
+      status?: number
+      /** Token kind is included even on failure so the UI can give targeted advice. */
+      tokenKind?: 'jenkins-api-token' | 'tuleap-access-key' | 'unknown'
+    }
 
 // ---- Jenkins → Tuleap TTM ----
 
