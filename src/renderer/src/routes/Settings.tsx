@@ -1413,8 +1413,9 @@ function JenkinsConfigCard(): React.JSX.Element {
           />
           <p className="text-xs text-muted-foreground">
             Si Jenkins vous redirige vers Tuleap pour vous connecter (SSO Tuleap), utilisez une{' '}
-            <strong>clé d'accès Tuleap</strong> avec le scope OpenID Connect plutôt qu'un token Jenkins
-            — sinon vos groupes de projet ne sont pas résolus et les dossiers renvoient 404.
+            <strong>clé d'accès Tuleap</strong> (Tuleap → Mon compte → Clés d'accès) avec le scope{' '}
+            <strong>REST API</strong> ou <strong>OpenID Connect</strong> selon ce qui est disponible.
+            Un token API Jenkins n'est pas accepté dans ce mode.
           </p>
           {config.hasJenkinsToken && (
             <div className="flex items-center gap-2 pt-1 text-xs text-muted-foreground">
@@ -1481,29 +1482,29 @@ function JenkinsConfigCard(): React.JSX.Element {
               <div className="rounded border border-amber-300 bg-amber-50 p-3 text-amber-800 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-300">
                 <p className="font-semibold">Clé d'accès Tuleap rejetée (HTTP 401)</p>
                 <p className="mt-1">
-                  Jenkins a reçu votre clé Tuleap (<code>tlp.k1.…</code>) mais la refuse. Causes
-                  fréquentes :
+                  Jenkins a reçu votre clé Tuleap (<code>tlp.k1.…</code>) mais la refuse.
                 </p>
-                <ol className="mt-1 list-decimal pl-4 space-y-1">
+                <p className="mt-2 font-semibold">À essayer dans l'ordre :</p>
+                <ol className="mt-1 list-decimal pl-4 space-y-1.5">
                   <li>
-                    <strong>Scope manquant</strong> — la clé doit avoir le scope{' '}
-                    <strong>OpenID Connect</strong>. Allez dans Tuleap → Mon compte → Clés
-                    d'accès, supprimez la clé actuelle et recréez-en une en cochant{' '}
-                    <em>OpenID Connect</em>.
+                    <strong>Scope "REST API"</strong> — si vous ne voyez pas le scope{' '}
+                    <em>OpenID Connect</em> dans la création de clé Tuleap, cochez simplement{' '}
+                    <strong>REST API</strong> et réessayez. Certaines versions du plugin Jenkins
+                    Tuleap acceptent ce scope pour l'auth Basic.
                   </li>
                   <li>
-                    <strong>Clé expirée</strong> — si vous avez défini une date d'expiration dans
-                    Tuleap, la clé peut avoir expiré. Recréez-en une sans date d'expiration.
+                    <strong>Scope "OpenID Connect"</strong> — si ce scope est disponible, cochez-le
+                    à la place (ou en plus). Il permet au plugin de résoudre vos groupes de projet.
+                    Note : l'entrée <em>«&nbsp;OAuth2 Jenkins prod&nbsp;»</em> visible dans Tuleap est
+                    l'application OAuth2 du SSO navigateur — ce n'est pas ce que vous configurez ici.
                   </li>
                   <li>
-                    <strong>Nom d'utilisateur incorrect</strong> — le champ "Nom d'utilisateur"
-                    doit être votre <em>login Tuleap exact</em> (pas le nom d'affichage, pas
-                    l'email). Vérifiez dans Tuleap → Mon compte.
+                    <strong>Login Tuleap exact</strong> — le champ "Nom d'utilisateur" doit être
+                    votre <em>login Tuleap</em> (pas le nom d'affichage, pas l'email). Vérifiez
+                    dans Tuleap → Mon compte.
                   </li>
                   <li>
-                    <strong>Instance Tuleap</strong> — la clé doit être créée sur l'instance
-                    Tuleap à laquelle Jenkins est connecté (
-                    <code>tuleap.sodern.net</code> dans votre cas).
+                    <strong>Clé expirée</strong> — recréez-en une sans date d'expiration.
                   </li>
                 </ol>
               </div>
