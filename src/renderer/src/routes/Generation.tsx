@@ -138,7 +138,7 @@ function Generation(): React.JSX.Element {
   }
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6 px-8 py-8">
+    <div className="stagger-children mx-auto max-w-6xl space-y-6 px-8 py-8">
       <div className="flex items-end justify-between">
         <div>
           <h2 className="text-2xl font-semibold tracking-tight">Génération IA</h2>

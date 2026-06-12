@@ -109,15 +109,30 @@ function Sidebar(): React.JSX.Element {
                     to={item.to}
                     className={({ isActive }) =>
                       cn(
-                        'flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors',
+                        'group relative flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-all duration-200',
                         isActive
-                          ? 'bg-accent text-accent-foreground font-medium'
-                          : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground'
+                          ? 'bg-accent text-accent-foreground font-medium shadow-sm'
+                          : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground hover:translate-x-0.5'
                       )
                     }
                   >
-                    <Icon className="size-4" />
-                    <span>{item.label}</span>
+                    {({ isActive }) => (
+                      <>
+                        <span
+                          className={cn(
+                            'absolute left-0 top-1/2 -translate-y-1/2 w-0.5 rounded-full bg-primary transition-all duration-300',
+                            isActive ? 'h-4 opacity-100' : 'h-0 opacity-0'
+                          )}
+                        />
+                        <Icon
+                          className={cn(
+                            'size-4 transition-transform duration-200',
+                            !isActive && 'group-hover:scale-110'
+                          )}
+                        />
+                        <span>{item.label}</span>
+                      </>
+                    )}
                   </NavLink>
                 )
               })}

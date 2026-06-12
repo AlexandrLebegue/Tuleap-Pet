@@ -264,7 +264,7 @@ export default function PrReviewer(): React.JSX.Element {
   const anyEnabled = sections.overview || sections.codingRules || sections.tests
 
   return (
-    <div className="flex h-full flex-col gap-4 overflow-y-auto p-6">
+    <div className="stagger-children flex h-full flex-col gap-4 overflow-y-auto p-6">
       <header>
         <h1 className="text-xl font-semibold">Pull Request Reviewer</h1>
         <p className="text-sm text-muted-foreground">

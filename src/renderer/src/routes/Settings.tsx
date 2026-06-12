@@ -455,7 +455,7 @@ function Settings(): React.JSX.Element {
       : config.hasLlmKey
 
   return (
-    <div className="mx-auto max-w-3xl px-8 py-10 space-y-10">
+    <div className="stagger-children mx-auto max-w-3xl px-8 py-10 space-y-10">
       <div>
         <h2 className="text-2xl font-semibold tracking-tight">Réglages</h2>
         <p className="mt-1 text-sm text-muted-foreground">
