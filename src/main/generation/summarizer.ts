@@ -23,7 +23,7 @@ export async function generateSprintSummary(
 
   const vars: Record<string, string | number> = {
     project_name: ctx.projectName,
-    sprint_name: ctx.label,
+    sprint_name: ctx.trackerLabel ? `${ctx.label} — ${ctx.trackerLabel}` : ctx.label,
     sprint_start: ctx.milestone ? formatDate(ctx.milestone.startDate) : 'inconnue',
     sprint_end: ctx.milestone ? formatDate(ctx.milestone.endDate) : 'inconnue',
     artifact_count: ctx.artifacts.length,

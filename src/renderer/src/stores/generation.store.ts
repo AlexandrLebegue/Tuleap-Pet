@@ -31,6 +31,7 @@ type Store = {
   trackers: TrackerSummary[]
   loadingTrackers: boolean
   selectedTrackerId: number | null
+  selectedTrackerLabel: string | null
   trackerArtifacts: ArtifactSummary[]
   loadingTrackerArtifacts: boolean
   selectedArtifactIds: number[]
@@ -132,6 +133,7 @@ export const useGeneration = create<Store>((set, get) => ({
   trackers: [],
   loadingTrackers: false,
   selectedTrackerId: null,
+  selectedTrackerLabel: null,
   trackerArtifacts: [],
   loadingTrackerArtifacts: false,
   selectedArtifactIds: [],
@@ -220,7 +222,20 @@ export const useGeneration = create<Store>((set, get) => ({
   },
 
   selectTracker: async (id: number | null) => {
-    set({ selectedTrackerId: id, trackerArtifacts: [], loadingTrackerArtifacts: id !== null, selectedArtifactIds: [], dateFrom: null, dateTo: null })
+    const trackers = get().trackers
+    const tracker = id !== null ? trackers.find((t) => t.id === id) ?? null : null
+    const trackerLabel = tracker?.label ?? null
+    set({
+      selectedTrackerId: id,
+      selectedTrackerLabel: trackerLabel,
+      trackerArtifacts: [],
+      loadingTrackerArtifacts: id !== null,
+      selectedArtifactIds: [],
+      dateFrom: null,
+      dateTo: null,
+      // Auto-populate customLabel with tracker name when not already set
+      customLabel: get().customLabel || trackerLabel || ''
+    })
     if (id === null) return
     try {
       const artifacts = await api.generation.listTrackerArtifacts(id)
@@ -261,7 +276,7 @@ export const useGeneration = create<Store>((set, get) => ({
   },
 
   generate: async (language = 'fr') => {
-    const { mode, selectedSprintId, selectedArtifactIds, customLabel } = get()
+    const { mode, selectedSprintId, selectedArtifactIds, customLabel, selectedTrackerLabel } = get()
 
     let source: GenerationSource | null = null
     if (mode === 'sprint') {
@@ -269,7 +284,12 @@ export const useGeneration = create<Store>((set, get) => ({
       source = { mode: 'sprint', milestoneId: selectedSprintId }
     } else {
       if (selectedArtifactIds.length === 0) return
-      source = { mode: 'custom', artifactIds: selectedArtifactIds, label: customLabel || 'Présentation' }
+      source = {
+        mode: 'custom',
+        artifactIds: selectedArtifactIds,
+        label: customLabel || selectedTrackerLabel || 'Présentation',
+        trackerLabel: selectedTrackerLabel ?? undefined
+      }
     }
 
     set({
@@ -393,6 +413,7 @@ export const useGeneration = create<Store>((set, get) => ({
       selectedArtifactIds: [],
       customLabel: '',
       selectedTrackerId: null,
+      selectedTrackerLabel: null,
       trackerArtifacts: [],
       dateFrom: null,
       dateTo: null

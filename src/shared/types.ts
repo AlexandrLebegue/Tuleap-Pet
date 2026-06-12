@@ -170,7 +170,7 @@ export type SprintReviewProgressEvent =
 
 export type GenerationSource =
   | { mode: 'sprint'; milestoneId: number }
-  | { mode: 'custom'; artifactIds: number[]; label: string }
+  | { mode: 'custom'; artifactIds: number[]; label: string; trackerLabel?: string }
 
 export type GenerationOptions = {
   source: GenerationSource

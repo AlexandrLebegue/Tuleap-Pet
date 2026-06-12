@@ -51,6 +51,7 @@ function Generation(): React.JSX.Element {
   const trackers = useGeneration((s) => s.trackers)
   const loadingTrackers = useGeneration((s) => s.loadingTrackers)
   const selectedTrackerId = useGeneration((s) => s.selectedTrackerId)
+  const selectedTrackerLabel = useGeneration((s) => s.selectedTrackerLabel)
   const trackerArtifacts = useGeneration((s) => s.trackerArtifacts)
   const loadingTrackerArtifacts = useGeneration((s) => s.loadingTrackerArtifacts)
   const selectedArtifactIds = useGeneration((s) => s.selectedArtifactIds)
@@ -259,10 +260,19 @@ function Generation(): React.JSX.Element {
       {mode === 'custom' && (
         <Card>
           <CardHeader>
-            <CardTitle>Artefacts personnalisés</CardTitle>
-            <CardDescription>
-              Sélectionnez des artefacts depuis n&apos;importe quel tracker pour générer une présentation sur mesure.
-            </CardDescription>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <CardTitle>Artefacts personnalisés</CardTitle>
+                <CardDescription>
+                  Sélectionnez des artefacts depuis n&apos;importe quel tracker pour générer une présentation sur mesure.
+                </CardDescription>
+              </div>
+              {selectedTrackerLabel && (
+                <Badge variant="secondary" className="shrink-0 text-xs">
+                  {selectedTrackerLabel}
+                </Badge>
+              )}
+            </div>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
