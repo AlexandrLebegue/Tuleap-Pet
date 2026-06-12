@@ -20,6 +20,10 @@ type Store = {
   thinking: boolean
   errorMessage: string | null
   unsubscribe: (() => void) | null
+  /** Deltas/tool events received before the 'started' DB reload completes —
+   * the assistant row doesn't exist in `messages` yet, so they'd be lost. */
+  pendingDeltas: Record<number, string>
+  pendingToolEvents: Record<number, ChatToolEvent[]>
 
   init: () => void
   shutdown: () => void
@@ -38,9 +42,21 @@ function applyDelta(messages: ChatMessage[], id: number, delta: string): ChatMes
   return messages.map((m) => (m.id === id ? { ...m, content: m.content + delta } : m))
 }
 
+/** Tool events arrive both via stream broadcast and via the 'started' DB
+ * reload — dedupe on (kind, toolCallId) to avoid double entries. */
+function dedupeToolEvents(events: ChatToolEvent[]): ChatToolEvent[] {
+  const seen = new Set<string>()
+  return events.filter((e) => {
+    const key = `${e.kind}:${e.toolCallId}`
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
 function applyToolEvent(messages: ChatMessage[], id: number, event: ChatToolEvent): ChatMessage[] {
   return messages.map((m) =>
-    m.id === id ? { ...m, toolEvents: [...(m.toolEvents ?? []), event] } : m
+    m.id === id ? { ...m, toolEvents: dedupeToolEvents([...(m.toolEvents ?? []), event]) } : m
   )
 }
 
@@ -55,6 +71,8 @@ export const useChat = create<Store>((set, get) => ({
   thinking: false,
   errorMessage: null,
   unsubscribe: null,
+  pendingDeltas: {},
+  pendingToolEvents: {},
 
   init: () => {
     if (get().unsubscribe) return
@@ -147,39 +165,70 @@ export const useChat = create<Store>((set, get) => ({
     }
     switch (event.type) {
       case 'started': {
-        // Reload from DB to pick up the freshly-inserted user + empty assistant rows.
+        set({ status: 'streaming', pendingDeltas: {}, pendingToolEvents: {} })
+        // Reload from DB to pick up the freshly-inserted user + empty assistant
+        // rows, then merge any deltas/tool events that streamed in while the
+        // reload was in flight (fast models can beat the IPC roundtrip).
         void api.chat.getConversation(event.conversationId).then((r) => {
-          set({ messages: r.messages, status: 'streaming' })
+          set((state) => ({
+            messages: r.messages.map((m) => {
+              const pendingText = state.pendingDeltas[m.id]
+              const pendingTools = state.pendingToolEvents[m.id]
+              if (!pendingText && !pendingTools) return m
+              return {
+                ...m,
+                content: m.content + (pendingText ?? ''),
+                toolEvents: dedupeToolEvents([...(m.toolEvents ?? []), ...(pendingTools ?? [])])
+              }
+            }),
+            pendingDeltas: {},
+            pendingToolEvents: {}
+          }))
         })
         break
       }
       case 'delta': {
-        set((state) => ({
-          messages: applyDelta(state.messages, event.assistantMessageId, event.delta)
-        }))
+        set((state) => {
+          if (state.messages.some((m) => m.id === event.assistantMessageId)) {
+            return { messages: applyDelta(state.messages, event.assistantMessageId, event.delta) }
+          }
+          // Assistant row not loaded yet — buffer instead of dropping.
+          return {
+            pendingDeltas: {
+              ...state.pendingDeltas,
+              [event.assistantMessageId]:
+                (state.pendingDeltas[event.assistantMessageId] ?? '') + event.delta
+            }
+          }
+        })
         break
       }
-      case 'tool-call': {
-        set((state) => ({
-          messages: applyToolEvent(state.messages, event.assistantMessageId, {
-            kind: 'call',
-            name: event.name,
-            toolCallId: event.toolCallId,
-            args: event.args
-          })
-        }))
-        break
-      }
+      case 'tool-call':
       case 'tool-result': {
-        set((state) => ({
-          messages: applyToolEvent(state.messages, event.assistantMessageId, {
-            kind: 'result',
-            name: event.name,
-            toolCallId: event.toolCallId,
-            result: event.result,
-            error: event.error
-          })
-        }))
+        const toolEvent: ChatToolEvent =
+          event.type === 'tool-call'
+            ? { kind: 'call', name: event.name, toolCallId: event.toolCallId, args: event.args }
+            : {
+                kind: 'result',
+                name: event.name,
+                toolCallId: event.toolCallId,
+                result: event.result,
+                error: event.error
+              }
+        set((state) => {
+          if (state.messages.some((m) => m.id === event.assistantMessageId)) {
+            return { messages: applyToolEvent(state.messages, event.assistantMessageId, toolEvent) }
+          }
+          return {
+            pendingToolEvents: {
+              ...state.pendingToolEvents,
+              [event.assistantMessageId]: [
+                ...(state.pendingToolEvents[event.assistantMessageId] ?? []),
+                toolEvent
+              ]
+            }
+          }
+        })
         break
       }
       case 'done': {

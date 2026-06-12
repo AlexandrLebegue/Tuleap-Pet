@@ -5,6 +5,7 @@ import remarkGfm from 'remark-gfm'
 import { Download } from 'lucide-react'
 import type { ChatMessage } from '@shared/types'
 import { cn } from '@renderer/lib/utils'
+import { useChat } from '@renderer/stores/chat.store'
 import { Badge } from '@renderer/components/ui/badge'
 import { Button } from '@renderer/components/ui/button'
 
@@ -178,6 +179,7 @@ function downloadFile(filename: string, content: string): void {
 
 function ChatMessageBubble({ message }: Props): React.JSX.Element {
   const isUser = message.role === 'user'
+  const streaming = useChat((s) => s.status) === 'streaming'
   const codeBlocks = React.useMemo(
     () => (!isUser && message.content ? extractCodeBlocks(message.content) : []),
     [isUser, message.content]
@@ -255,8 +257,12 @@ function ChatMessageBubble({ message }: Props): React.JSX.Element {
               <ReactMarkdown remarkPlugins={[remarkGfm]}>
                 {message.content}
               </ReactMarkdown>
-            ) : (
+            ) : streaming ? (
               <span className="italic text-muted-foreground">…</span>
+            ) : (
+              <span className="italic text-muted-foreground">
+                (aucune réponse générée — réessayez)
+              </span>
             )}
           </div>
         )}

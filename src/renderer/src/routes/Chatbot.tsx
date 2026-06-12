@@ -103,7 +103,8 @@ function ConversationHeader({
       <p className="text-xs text-muted-foreground">
         Modèle :{' '}
         <code>{llmProvider === 'local' ? localModel ?? 'local' : llmModel}</code> · Tools :
-        get_self, list_projects, list_trackers, list_artifacts, get_artifact, list_milestones
+        get_self, list_trackers, list_artifacts, get_artifact, list_milestones, écriture Tuleap
+        (+ Jenkins si configuré)
       </p>
     </header>
   )

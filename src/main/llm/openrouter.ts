@@ -150,11 +150,12 @@ export function createOpenRouterProvider(opts: OpenRouterProviderOptions): LlmPr
           }
         }
 
-        // Use the SDK's assembled text as authoritative source — it includes
-        // text from ALL steps in multi-step tool calling, even if some
-        // text-delta events were not captured during streaming.
+        // buffered captures every text-delta across ALL tool-calling steps;
+        // result.text may only contain the last step. Prefer buffered, fall
+        // back to the SDK text when nothing streamed — same precedence as the
+        // chat IPC layer, so both ends agree on the final content.
         const sdkText = await result.text
-        const finalText = sdkText || buffered
+        const finalText = buffered || sdkText
         const finishReason = (await result.finishReason) ?? null
         const usage = toUsage(await result.usage)
         onChunk({ type: 'finish', finishReason, usage })

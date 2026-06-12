@@ -86,7 +86,7 @@ export function createLocalProvider(opts: LocalProviderOptions): LlmProvider {
           tools: request.tools,
           stopWhen: request.tools ? stepCountIs(request.maxSteps ?? 6) : undefined,
           providerOptions: request.thinking
-            ? { openai: { reasoning_effort: 'high' } }
+            ? { openai: { reasoningEffort: 'high' } }
             : undefined
         })
         debugLog('[local-llm] generate OK finishReason=%s tokens=%o', result.finishReason, result.usage)
@@ -126,7 +126,7 @@ export function createLocalProvider(opts: LocalProviderOptions): LlmProvider {
           tools: request.tools,
           stopWhen: request.tools ? stepCountIs(request.maxSteps ?? 6) : undefined,
           providerOptions: request.thinking
-            ? { openai: { reasoning_effort: 'high' } }
+            ? { openai: { reasoningEffort: 'high' } }
             : undefined
         })
 
@@ -186,11 +186,12 @@ export function createLocalProvider(opts: LocalProviderOptions): LlmProvider {
           }
         }
 
-        // Use the SDK's assembled text as authoritative source — it includes
-        // text from ALL steps in multi-step tool calling, even if some
-        // text-delta events were not captured during streaming.
+        // buffered captures every text-delta across ALL tool-calling steps;
+        // result.text may only contain the last step. Prefer buffered, fall
+        // back to the SDK text when nothing streamed — same precedence as the
+        // chat IPC layer, so both ends agree on the final content.
         const sdkText = await result.text
-        const finalText = sdkText || buffered
+        const finalText = buffered || sdkText
         const finishReason = (await result.finishReason) ?? null
         const usage = toUsage(await result.usage)
         onChunk({ type: 'finish', finishReason, usage })

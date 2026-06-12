@@ -274,6 +274,9 @@ export function registerChatHandlers(): void {
     const llmMessages = ensureSystemMessage(history.slice(0, -1)) // exclude the empty assistant we just inserted
 
     let buffered = ''
+    // Tool results collected during the stream — used by the synthesis
+    // fallback when the model stops after tool calls without a final answer.
+    const collectedToolResults: Array<{ name: string; result: unknown; error?: string }> = []
     try {
       const provider = resolveLlmProvider()
       const thinking = opts.thinking ?? false
@@ -289,7 +292,7 @@ export function registerChatHandlers(): void {
           messages: llmMessages,
           tools,
           temperature: 0.4,
-          maxOutputTokens: thinking ? 16000 : 2048,
+          maxOutputTokens: thinking ? 16000 : 4096,
           thinking
         },
         (chunk) => {
@@ -317,6 +320,11 @@ export function registerChatHandlers(): void {
               args: chunk.args
             })
           } else if (chunk.type === 'tool-result') {
+            collectedToolResults.push({
+              name: chunk.toolName,
+              result: chunk.result,
+              error: chunk.error
+            })
             appendToolEvent(assistant.id, {
               kind: 'result',
               name: chunk.toolName,
@@ -338,22 +346,61 @@ export function registerChatHandlers(): void {
           }
         }
       )
-      // In multi-step tool calling the SDK's result.text may only contain
-      // the LAST step's text, while buffered captures ALL text-delta events
-      // from every step. Use buffered as primary source; fall back to
-      // result.text only when no deltas were received at all.
-      const finalText = buffered || result.text
-      if (finalText !== buffered) {
-        // No deltas streamed — persist result.text and broadcast it
-        updateMessageContent(assistant.id, finalText)
-        if (finalText) {
-          broadcast(senderId, {
-            type: 'delta',
-            conversationId: conv.id,
-            assistantMessageId: assistant.id,
-            delta: finalText
+      // buffered accumulates every text-delta across all tool-calling steps;
+      // result.text is the provider's fallback when nothing streamed. The
+      // providers apply the same precedence (buffered || sdkText) so the two
+      // layers agree.
+      let finalText = buffered || result.text
+
+      // Weak models sometimes stop right after tool calls without writing a
+      // final answer (finishReason "tool-calls" or step limit reached). The
+      // message would stay empty and the UI would show "…" forever. Ask the
+      // model once more — without tools — to synthesize from the results.
+      if (!finalText.trim() && collectedToolResults.length > 0) {
+        debugLog('[chat] empty final text after %d tool call(s) — running synthesis fallback',
+          collectedToolResults.length)
+        try {
+          const toolsJson = JSON.stringify(collectedToolResults).slice(0, 6000)
+          const synthesis = await provider.generate({
+            messages: [
+              ...llmMessages,
+              {
+                role: 'user',
+                content:
+                  `Voici les résultats des outils appelés pour répondre à ma question précédente :\n${toolsJson}\n\n` +
+                  `Réponds maintenant à ma question en te basant uniquement sur ces résultats. Sois concis.`
+              }
+            ],
+            temperature: 0.2,
+            maxOutputTokens: 1024
           })
+          finalText = synthesis.text.trim()
+        } catch (synthErr) {
+          debugError('[chat] synthesis fallback failed: %s',
+            synthErr instanceof Error ? synthErr.message : String(synthErr))
         }
+      }
+
+      // Never persist an empty assistant message — the UI would render a
+      // permanent "…" placeholder. Explain what happened instead.
+      if (!finalText.trim()) {
+        finalText =
+          collectedToolResults.length > 0
+            ? "_Le modèle n'a pas formulé de réponse après l'appel des outils — " +
+              'les résultats bruts sont affichés ci-dessus. Reformulez ou réessayez._'
+            : `_Le modèle n'a renvoyé aucune réponse (raison : ${result.finishReason ?? 'inconnue'}). Réessayez._`
+      }
+
+      if (finalText !== buffered) {
+        // Content not (fully) streamed as deltas — persist it and send the
+        // missing remainder to the renderer.
+        updateMessageContent(assistant.id, finalText)
+        broadcast(senderId, {
+          type: 'delta',
+          conversationId: conv.id,
+          assistantMessageId: assistant.id,
+          delta: finalText.startsWith(buffered) ? finalText.slice(buffered.length) : finalText
+        })
         buffered = finalText
       }
       debugLog('[chat] done model=%s finishReason=%s tokens=%o',
