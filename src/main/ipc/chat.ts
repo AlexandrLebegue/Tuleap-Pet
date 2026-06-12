@@ -34,14 +34,21 @@ function broadcast(senderId: number, event: ChatStreamEvent): void {
 function chatHistoryAsLlmMessages(history: ChatMessage[]): LlmMessage[] {
   return history
     .filter((m) => m.role === 'system' || m.role === 'user' || m.role === 'assistant')
-    .filter((m) => m.content.trim().length > 0)
-    .map(
-      (m) =>
-        ({
-          role: m.role as 'system' | 'user' | 'assistant',
-          content: m.content
-        }) satisfies LlmMessage
-    )
+    .flatMap((m): LlmMessage[] => {
+      if (m.role === 'assistant') {
+        // Prepend tool-call names so weak models see "I used a tool last turn"
+        // and learn the expected behaviour from in-context examples.
+        const calls = (m.toolEvents ?? [])
+          .filter((e): e is Extract<typeof e, { kind: 'call' }> => e.kind === 'call')
+          .map((e) => e.name)
+        const toolPrefix = calls.length > 0 ? `[Outils utilisés : ${calls.join(', ')}]\n` : ''
+        const fullContent = (toolPrefix + m.content.trim()).trim()
+        if (!fullContent) return []
+        return [{ role: 'assistant', content: fullContent }]
+      }
+      if (!m.content.trim()) return []
+      return [{ role: m.role as 'system' | 'user', content: m.content }]
+    })
 }
 
 function buildContextBlock(): string {
@@ -80,72 +87,76 @@ function buildSystemPrompt(): string {
 
   const contextBlock = buildContextBlock()
 
-  const tuleapToolsSection = `## Outils Tuleap — utilisation et exemples
+  const tuleapToolsSection = `## Outils Tuleap
 
-**get_self** — Renvoie l'utilisateur Tuleap connecté (id, username, nom, email). Aucun paramètre.
-→ Exemple : "Qui suis-je ?" → appeler get_self {}
+**get_self** — Utilisateur connecté (id, username, nom, email)
+→ "Qui suis-je ?" → get_self {}
 
-**list_trackers** — Liste les trackers du projet courant. Paramètre optionnel : projectId (si omis, utilise le projet configuré ci-dessus).
-→ Exemple : "Quels trackers existent ?" → appeler list_trackers {}
+**list_trackers** — Trackers du projet courant
+→ "Quels trackers ?" → list_trackers {}
 
-**list_artifacts** — Liste les artéfacts d'un tracker. trackerId obligatoire. limit et offset optionnels (défaut : 25).
-→ Exemple : "Items du tracker 12 ?" → appeler list_artifacts { trackerId: 12 }
-→ Exemple : "Page 2 du tracker 12 ?" → appeler list_artifacts { trackerId: 12, limit: 25, offset: 25 }
+**list_artifacts** — Artéfacts d'un tracker (trackerId requis, limit/offset optionnels)
+→ "Items du tracker 12 ?" → list_artifacts { "trackerId": 12 }
+→ "Page 2 ?" → list_artifacts { "trackerId": 12, "limit": 25, "offset": 25 }
 
-**get_artifact** — Détail complet d'un artéfact : titre, statut, description, champs, liens. id obligatoire.
-→ Exemple : "Détails de l'artéfact 5678 ?" → appeler get_artifact { id: 5678 }
+**get_artifact** — Détail complet d'un artéfact (id requis)
+→ "Artéfact 5678 ?" → get_artifact { "id": 5678 }
 
-**list_milestones** — Sprints du projet courant. status optionnel : open | closed | all (défaut open).
-→ Exemple : "Sprint en cours ?" → appeler list_milestones {}
-→ Exemple : "Tous les sprints ?" → appeler list_milestones { status: "all" }`
+**list_milestones** — Sprints du projet (status: open|closed|all, défaut: open)
+→ "Sprint en cours ?" → list_milestones {}
+→ "Tous les sprints ?" → list_milestones { "status": "all" }`
 
   const jenkinsToolsSection = !jenkinsOk ? '' : `
-## Outils Jenkins — utilisation et exemples
+## Outils Jenkins
 
-**jenkins_list_jobs** — Liste les jobs Jenkins à la racine ou dans un dossier.
-→ Exemple : "Jobs Jenkins ?" → appeler jenkins_list_jobs {}
-→ Exemple : "Jobs dans le dossier api ?" → appeler jenkins_list_jobs { folder: "api" }
+**jenkins_list_jobs** — Jobs à la racine ou dans un dossier
+→ "Jobs Jenkins ?" → jenkins_list_jobs {}
+→ "Jobs dans api ?" → jenkins_list_jobs { "folder": "api" }
 
-**jenkins_get_build_history** — Derniers builds d'un job. jobName obligatoire. limit optionnel (défaut 10).
-→ Exemple : "Derniers builds de mon-api ?" → appeler jenkins_get_build_history { jobName: "mon-api" }
+**jenkins_get_build_history** — Derniers builds d'un job (jobName requis, limit défaut 10)
+→ "Builds de mon-api ?" → jenkins_get_build_history { "jobName": "mon-api" }
 
-**jenkins_get_build_detail** — Détails d'un build précis : résultat, durée, paramètres, résumé tests. jobName et buildNumber obligatoires.
-→ Exemple : "Détails du build #42 de mon-api ?" → appeler jenkins_get_build_detail { jobName: "mon-api", buildNumber: 42 }
+**jenkins_get_build_detail** — Détails d'un build (jobName + buildNumber requis)
+→ "Build #42 de mon-api ?" → jenkins_get_build_detail { "jobName": "mon-api", "buildNumber": 42 }
 
-**jenkins_get_test_report** — Rapport JUnit d'un build : passés / échoués / ignorés + liste des tests échoués. jobName et buildNumber obligatoires.
-→ Exemple : "Tests du build #42 ?" → appeler jenkins_get_test_report { jobName: "mon-api", buildNumber: 42 }
+**jenkins_get_test_report** — Tests JUnit d'un build (jobName + buildNumber requis)
+→ "Tests du build #42 ?" → jenkins_get_test_report { "jobName": "mon-api", "buildNumber": 42 }
 
-**jenkins_get_queue** — File d'attente Jenkins. Aucun paramètre.
-→ Exemple : "Builds en attente ?" → appeler jenkins_get_queue {}`
+**jenkins_get_queue** — File d'attente Jenkins
+→ "Builds en attente ?" → jenkins_get_queue {}`
 
-  const chainedExample = !jenkinsOk ? `## Exemple chaîné
+  const chainedExample = !jenkinsOk ? `## Exemple de raisonnement correct
 Question : "Combien d'items dans le tracker Bugs ?"
-→ Étape 1 : appeler list_trackers {} → trouver l'id du tracker "Bugs" (ex: 7)
-→ Étape 2 : appeler list_artifacts { trackerId: 7 } → lire le champ total
-→ Répondre : "Le tracker Bugs contient X artéfacts."` : `## Exemple chaîné (Tuleap + Jenkins)
-Question : "Résultats des tests du dernier build de mon-api ?"
-→ Étape 1 : appeler jenkins_get_build_history { jobName: "mon-api", limit: 1 } → buildNumber = 87
-→ Étape 2 : appeler jenkins_get_test_report { jobName: "mon-api", buildNumber: 87 }
-→ Répondre : "Build #87 : 102 tests, 99 passés, 3 échoués : [liste des tests échoués]"`
+Étape 1 — Je ne connais pas l'id du tracker → list_trackers {} → id=7
+Étape 2 — Je veux le nombre d'artéfacts → list_artifacts { "trackerId": 7 } → total=42
+Réponse : "Le tracker Bugs contient 42 artéfacts."` : `## Exemple de raisonnement correct
+Question : "Tests du dernier build de mon-api ?"
+Étape 1 — Je veux le dernier numéro de build → jenkins_get_build_history { "jobName": "mon-api", "limit": 1 } → buildNumber=87
+Étape 2 — Je veux le rapport → jenkins_get_test_report { "jobName": "mon-api", "buildNumber": 87 } → 3 échoués
+Réponse : "Build #87 : 102 tests, 99 passés, 3 échoués : [...]"`
 
-  const basePrompt = `Tu es un assistant intégré à Tuleap${jenkinsOk ? ' et Jenkins' : ''}. Tu réponds en français, de façon concise et structurée.
+  const basePrompt = `Tu es un assistant IA intégré à Tuleap${jenkinsOk ? ' et Jenkins' : ''}. Tu réponds en français, de façon concise.
+
+## ⚡ RÈGLE ABSOLUE — à appliquer avant tout
+Dès qu'une question porte sur des données réelles (artéfacts, utilisateurs, builds, sprints, tests) :
+1. Identifie l'outil à appeler dans la liste ci-dessous
+2. Appelle-le IMMÉDIATEMENT — sans écrire de texte avant
+3. Réponds uniquement à partir des données retournées
+
+⛔ Interdit : inventer un id, un titre, un résultat, un statut.
+✅ Sans outil : questions conceptuelles, calculs, explications générales.
 
 ${contextBlock}
-
-## Règle fondamentale
-Appelle un outil dès que la question porte sur des données réelles (artéfacts, builds, tests, sprints, utilisateur).
-Ne JAMAIS inventer un id, un titre, un résultat ou un statut.
-Si la question est conversationnelle ou conceptuelle, réponds directement sans outil.
 
 ${tuleapToolsSection}
 ${jenkinsToolsSection}
 
 ${chainedExample}
 
-## Règles de formatage
-- Ids Tuleap entre crochets : #1234${config.tuleapUrl ? `  — lien direct : ${config.tuleapUrl}/plugins/tracker/?aid=1234` : ''}
-- Listes ou tableaux quand plus de 3 éléments
-- Si un outil échoue : expliquer brièvement l'erreur et proposer une correction`
+## Format
+- Ids Tuleap : #1234${config.tuleapUrl ? `  (lien : ${config.tuleapUrl}/plugins/tracker/?aid=1234)` : ''}
+- Tableaux si > 3 éléments
+- Si un outil échoue : expliquer brièvement et proposer une correction`
 
   if (expertMode) {
     const expertSection = doxygenMode ? getCombinedPrompt(true) : getExpertSystemPrompt()
@@ -315,7 +326,7 @@ export function registerChatHandlers(): void {
         {
           messages: llmMessages,
           tools,
-          temperature: 0.4,
+          temperature: 0.2,
           maxOutputTokens: thinking ? 24000 : 8192,
           thinking
         },
