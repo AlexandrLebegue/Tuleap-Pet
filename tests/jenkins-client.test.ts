@@ -28,61 +28,28 @@ function makeClient(fetchImpl: typeof globalThis.fetch): JenkinsClient {
   return new JenkinsClient({ baseUrl: BASE_URL, username: USERNAME, apiToken: API_TOKEN, fetchImpl })
 }
 
-describe('JenkinsClient token classification', () => {
-  const noFetch = (async () => textResponse('')) as unknown as typeof fetch
-
-  it('detects a Jenkins API token (11 + 32 hex)', () => {
-    const client = new JenkinsClient({
-      baseUrl: BASE_URL,
-      username: USERNAME,
-      apiToken: '11201c7e9f6953d11e7114d0cf119459b2',
-      fetchImpl: noFetch
-    })
-    expect(client.tokenKind).toBe('jenkins-api-token')
-  })
-
-  it('detects a Tuleap access key (tlp.k1.…)', () => {
-    const client = new JenkinsClient({
-      baseUrl: BASE_URL,
-      username: USERNAME,
-      apiToken: 'tlp.k1.13.aabbccddeeff00112233445566778899',
-      fetchImpl: noFetch
-    })
-    expect(client.tokenKind).toBe('tuleap-access-key')
-  })
-
-  it('classifies anything else as unknown', () => {
-    expect(makeClient(noFetch).tokenKind).toBe('unknown')
-  })
-})
-
 describe('JenkinsClient auth header', () => {
   it('sends Basic Authorization header', async () => {
     const expected = `Basic ${Buffer.from(`${USERNAME}:${API_TOKEN}`).toString('base64')}`
     const fetchImpl = vi.fn(async (_input, init) => {
       const headers = init?.headers as Record<string, string>
       expect(headers['Authorization']).toBe(expected)
-      return jsonResponse({ nodeName: 'master', version: '2.400', name: 'frsp660', authenticated: true, anonymous: false, authorities: ['authenticated'] })
+      return jsonResponse({ nodeName: 'master', version: '2.400' })
     })
     const client = makeClient(fetchImpl as unknown as typeof fetch)
     await client.testConnection()
-    // testConnection makes 2 requests: /api/json + /whoAmI/api/json
-    expect(fetchImpl).toHaveBeenCalledTimes(2)
+    expect(fetchImpl).toHaveBeenCalledOnce()
   })
 })
 
 describe('JenkinsClient.testConnection', () => {
-  it('returns version, nodeName, whoAmI info', async () => {
-    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
-      const url = typeof input === 'string' ? input : input.toString()
-      if (url.includes('whoAmI')) {
-        return jsonResponse({ name: 'frsp660', authenticated: true, anonymous: false, authorities: ['authenticated', 'grp-jenkins'] })
-      }
-      return jsonResponse({ nodeName: 'built-in', version: '2.400.1', _class: 'hudson.model.Hudson' })
-    })
+  it('returns version and nodeName', async () => {
+    const fetchImpl = vi.fn(async () =>
+      jsonResponse({ nodeName: 'built-in', version: '2.400.1', _class: 'hudson.model.Hudson' })
+    )
     const client = makeClient(fetchImpl as unknown as typeof fetch)
     const result = await client.testConnection()
-    expect(result).toMatchObject({ nodeName: 'built-in', version: '2.400.1', whoAmIName: 'frsp660', missingGroups: false })
+    expect(result).toMatchObject({ nodeName: 'built-in', version: '2.400.1' })
   })
 
   it('throws JenkinsAuthError on 401', async () => {

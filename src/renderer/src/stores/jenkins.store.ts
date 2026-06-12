@@ -71,7 +71,6 @@ type Store = {
   discovering: boolean
   discoverError: string | null
   discoverAll: (folder?: string) => Promise<void>
-  clearDiscovered: () => void
 }
 
 export const useJenkins = create<Store>((set, get) => ({
@@ -273,11 +272,11 @@ export const useJenkins = create<Store>((set, get) => ({
   },
 
   discoverAll: async (folder?: string) => {
-    set({ discovering: true, discoverError: null, discovered: [] })
+    set({ discovering: true, discoverError: null })
     try {
       const result = await api.jenkins.discoverJobs(folder ? { folder } : undefined)
       if (result.ok) {
-        set({ discovering: false, discovered: result.jobs })
+        set({ discovered: result.jobs, discovering: false })
       } else {
         set({ discovering: false, discoverError: result.error })
       }
@@ -287,9 +286,5 @@ export const useJenkins = create<Store>((set, get) => ({
         discoverError: err instanceof Error ? err.message : String(err)
       })
     }
-  },
-
-  clearDiscovered: () => {
-    set({ discovered: [], discoverError: null })
   }
 }))

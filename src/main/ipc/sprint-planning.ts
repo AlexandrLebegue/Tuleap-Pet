@@ -100,12 +100,18 @@ Réponds STRICTEMENT en JSON :
           temperature: 0.4,
           maxOutputTokens: 2000
         })
-        const text = llm.text.trim().replace(/^```(?:json)?\s*|```$/g, '')
+        // Strip markdown code fences, then try to extract embedded JSON
+        const rawText = llm.text.trim()
+        const stripped = rawText.replace(/^```(?:json)?\s*/m, '').replace(/```\s*$/m, '').trim()
+        // Some models emit JSON wrapped in extra prose — extract the first {...} block
+        const jsonMatch = stripped.match(/\{[\s\S]*\}/)
+        const jsonStr = jsonMatch ? jsonMatch[0] : stripped
         let parsed: { selection: Array<{ id: number; reason: string; risk: 'low' | 'medium' | 'high' }>; rationale: string }
         try {
-          parsed = JSON.parse(text)
+          parsed = JSON.parse(jsonStr)
+          if (!Array.isArray(parsed.selection)) parsed.selection = []
         } catch {
-          parsed = { selection: [], rationale: 'Parsing LLM échoué — réessayez.' }
+          parsed = { selection: [], rationale: `L'IA n'a pas renvoyé un JSON valide. Réponse brute : ${rawText.slice(0, 200)}` }
         }
         const titleById = new Map(candidates.map((c) => [c.id, c.title]))
         audit('planning.propose', String(args.milestoneId), {

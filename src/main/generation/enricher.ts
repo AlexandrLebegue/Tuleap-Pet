@@ -16,6 +16,8 @@ const CHILD_ENRICH_CAP = 60
 export type EnrichedContext = {
   projectName: string
   label: string
+  /** Tracker / artifact type label for custom mode (e.g. "Anomalies", "Exigences"). */
+  trackerLabel: string | null
   milestone: MilestoneSummary | null
   /** Top-level sprint content items — used for stats (done/in-progress/todo counts) */
   artifacts: ArtifactSummary[]
@@ -65,6 +67,8 @@ export async function buildEnrichedContext(
   let artifacts: ArtifactSummary[] = []
   let label: string
 
+  let trackerLabel: string | null = null
+
   if (source.mode === 'sprint') {
     const milestoneRaw = await client.getMilestone(source.milestoneId)
     milestone = mapMilestone(milestoneRaw)
@@ -75,6 +79,7 @@ export async function buildEnrichedContext(
     artifacts = contentItems.map(mapMilestoneContentItem)
   } else {
     label = source.label
+    trackerLabel = source.trackerLabel ?? null
     const results = await Promise.allSettled(
       source.artifactIds.map((id) => client.getArtifact(id))
     )
@@ -117,6 +122,7 @@ export async function buildEnrichedContext(
   return {
     projectName,
     label,
+    trackerLabel,
     milestone,
     artifacts,          // top-level only — for stats
     detailedArtifacts,  // top-level + children — for LLM context

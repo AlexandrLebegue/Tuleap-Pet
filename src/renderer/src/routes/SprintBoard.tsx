@@ -34,6 +34,7 @@ export default function SprintBoard(): React.JSX.Element {
   const [loading, setLoading] = useState(false)
   const [risks, setRisks] = useState<Risk[]>([])
   const [scanning, setScanning] = useState(false)
+  const [scanDone, setScanDone] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -58,6 +59,8 @@ export default function SprintBoard(): React.JSX.Element {
   async function loadBoard(milestoneId: number): Promise<void> {
     setLoading(true)
     setError(null)
+    setRisks([])
+    setScanDone(false)
     try {
       const board = await window.api.sprintBoard.getBoard({ milestoneId })
       setSprintItems(board.sprintItems)
@@ -72,9 +75,13 @@ export default function SprintBoard(): React.JSX.Element {
 
   async function scanRisks(): Promise<void> {
     setScanning(true)
+    setScanDone(false)
     try {
       const result = await window.api.sprintBoard.scanRisks({ items: sprintItems })
-      if (result.ok) setRisks(result.risks)
+      if (result.ok) {
+        setRisks(result.risks)
+        setScanDone(true)
+      }
     } finally {
       setScanning(false)
     }
@@ -142,7 +149,7 @@ export default function SprintBoard(): React.JSX.Element {
         </div>
 
         {tab === 'board' && (
-          <div className="flex gap-2">
+          <div className="flex items-center gap-2">
             <Button
               size="sm"
               variant="outline"
@@ -157,8 +164,13 @@ export default function SprintBoard(): React.JSX.Element {
               onClick={scanRisks}
               disabled={scanning || sprintItems.length === 0}
             >
-              {scanning ? 'Analyse…' : 'Scanner les risques (IA)'}
+              {scanning ? 'Analyse…' : 'Scanner les risques'}
             </Button>
+            {scanDone && !scanning && (
+              <span className="text-xs text-muted-foreground">
+                {risks.length === 0 ? 'Aucun risque détecté' : `${risks.length} risque${risks.length > 1 ? 's' : ''} détecté${risks.length > 1 ? 's' : ''}`}
+              </span>
+            )}
           </div>
         )}
       </header>
@@ -233,7 +245,7 @@ function BoardPanel({
                 <h3 className="text-xs font-semibold uppercase">{col}</h3>
                 <Badge variant="outline">{list.length}</Badge>
               </div>
-              <div className="flex flex-col gap-2 overflow-y-auto">
+              <div className="min-h-0 flex-1 flex flex-col gap-2 overflow-y-auto">
                 {list.map((item) => (
                   <KanbanCard key={item.id} item={item} risk={riskById.get(item.id)} workflow={workflow} onMove={onMove} />
                 ))}

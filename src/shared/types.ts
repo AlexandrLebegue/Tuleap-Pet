@@ -174,7 +174,7 @@ export type SprintReviewProgressEvent =
 
 export type GenerationSource =
   | { mode: 'sprint'; milestoneId: number }
-  | { mode: 'custom'; artifactIds: number[]; label: string }
+  | { mode: 'custom'; artifactIds: number[]; label: string; trackerLabel?: string }
 
 export type GenerationOptions = {
   source: GenerationSource
@@ -420,6 +420,7 @@ export type JenkinsDiscoverResult =
 export type JenkinsValidateResult =
   | { ok: true; exists: boolean; kind: string | null; url: string | null }
   | { ok: false; error: string; kind: string; status?: number }
+
 
 export type JenkinsBuildSummary = {
   number: number

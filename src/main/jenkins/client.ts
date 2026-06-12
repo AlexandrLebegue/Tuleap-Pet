@@ -15,7 +15,6 @@ import {
   jenkinsQueueSchema,
   jenkinsRootSchema,
   jenkinsTestReportSchema,
-  jenkinsWhoAmISchema,
   type JenkinsBuildRaw,
   type JenkinsJobRaw,
   type JenkinsTestReportRaw
@@ -25,12 +24,10 @@ import type {
   JenkinsBuildDetail,
   JenkinsBuildResult,
   JenkinsBuildSummary,
-  JenkinsDiscoveredJob,
   JenkinsJob,
   JenkinsNode,
   JenkinsQueueItem
 } from '@shared/types'
-import { debugLog, debugWarn } from '../logger'
 
 type FetchLike = typeof globalThis.fetch
 
@@ -43,10 +40,6 @@ export type JenkinsClientOptions = {
 }
 
 const DEFAULT_TIMEOUT_MS = 20_000
-// Some corporate reverse proxies / WAFs return 404 (or block) requests that do
-// not carry a browser-like User-Agent. Send a realistic one to avoid that.
-const JENKINS_USER_AGENT =
-  'Mozilla/5.0 (Tuleap-Companion) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36'
 const FOLDER_CLASSES = [
   'WorkflowMultiBranchProject',
   'OrganizationFolder',
@@ -85,36 +78,6 @@ function toBuildResult(raw: string | null | undefined): JenkinsBuildResult {
 
 function isFolder(jobClass: string): boolean {
   return FOLDER_CLASSES.some((fc) => jobClass.includes(fc))
-}
-
-function jobSegments(jobName: string): string {
-  // "Folder/Sub/Job" → "job/Folder/job/Sub/job/Job" (handles arbitrary depth)
-  return jobName.split('/').map(s => `job/${encodeURIComponent(s.trim())}`).join('/')
-}
-
-/**
- * Detect what kind of secret was configured. Matters when Jenkins delegates
- * auth to Tuleap (tuleap-oauth plugin): a plain Jenkins API token authenticates
- * but carries no Tuleap project groups (→ 404 on protected folders), whereas a
- * Tuleap access key (tlp.k1.…) is validated against Tuleap and resolves groups.
- */
-function classifyToken(token: string): 'jenkins-api-token' | 'tuleap-access-key' | 'unknown' {
-  if (/^tlp\.k\d+\./i.test(token.trim())) return 'tuleap-access-key'
-  if (/^11[0-9a-f]{32}$/i.test(token.trim())) return 'jenkins-api-token'
-  return 'unknown'
-}
-
-/**
- * Classify a Jenkins job by its _class string so the crawler knows whether to
- * descend into it (folder / organization folder) or collect it as selectable
- * (multibranch project or leaf job). Substring match keeps it resilient to
- * plugin-specific class names (incl. the Tuleap organization folder plugin).
- */
-function classifyJob(jobClass: string): 'folder' | 'multibranch' | 'job' {
-  const c = (jobClass ?? '').toLowerCase()
-  if (c.includes('multibranch')) return 'multibranch'
-  if (c.includes('folder')) return 'folder'
-  return 'job'
 }
 
 function mapJob(raw: JenkinsJobRaw): JenkinsJob {
@@ -255,9 +218,7 @@ function parseCoverageData(data: Record<string, unknown>): { lineCoverage: numbe
 }
 
 export class JenkinsClient {
-  readonly baseUrl: string
-  /** What the configured secret looks like — drives SSO diagnostics in the UI. */
-  readonly tokenKind: 'jenkins-api-token' | 'tuleap-access-key' | 'unknown'
+  private readonly baseUrl: string
   private readonly authHeader: string
   private readonly fetchImpl: FetchLike
   private readonly timeoutMs: number
@@ -267,7 +228,6 @@ export class JenkinsClient {
     if (!opts.username) throw new Error('username manquant')
     if (!opts.apiToken) throw new Error('apiToken manquant')
     this.baseUrl = opts.baseUrl.replace(/\/+$/, '')
-    this.tokenKind = classifyToken(opts.apiToken)
     this.authHeader = `Basic ${Buffer.from(`${opts.username}:${opts.apiToken}`).toString('base64')}`
     this.fetchImpl = opts.fetchImpl ?? globalThis.fetch.bind(globalThis)
     this.timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS
@@ -283,10 +243,8 @@ export class JenkinsClient {
         method: 'GET',
         headers: {
           Accept: 'application/json',
-          Authorization: this.authHeader,
-          'User-Agent': JENKINS_USER_AGENT
+          Authorization: this.authHeader
         },
-        redirect: 'manual',
         signal: controller.signal
       })
     } catch (err) {
@@ -296,33 +254,13 @@ export class JenkinsClient {
     } finally {
       clearTimeout(timer)
     }
-    debugLog('[jenkins] GET %s → HTTP %d', url, response.status)
     if (response.status === 401 || response.status === 403) {
-      const hint =
-        this.tokenKind === 'tuleap-access-key'
-          ? "Clé d'accès Tuleap rejetée (401) — vérifiez : scope OpenID Connect activé, clé non expirée, nom d'utilisateur = login Tuleap exact."
-          : this.tokenKind === 'jenkins-api-token'
-            ? 'Token API Jenkins rejeté (401) — vérifiez que le token est valide et non révoqué.'
-            : `Identifiants refusés (HTTP ${response.status}) — vérifiez le nom d'utilisateur et le token.`
-      debugWarn('[jenkins] AUTH %d %s — tokenKind=%s hint: %s', response.status, url, this.tokenKind, hint)
-      throw new JenkinsAuthError(hint, response.status)
-    }
-    // A 3xx redirect on an API endpoint almost always means the request was not
-    // authenticated and Jenkins (or an SSO proxy) is bouncing to a login page.
-    if (response.status >= 300 && response.status < 400) {
-      const location = response.headers.get('location') ?? '?'
       throw new JenkinsAuthError(
-        `Jenkins a redirigé ${url} vers ${location} (HTTP ${response.status}). ` +
-          `L'authentification par token n'a probablement pas été acceptée (SSO/proxy ?).`,
+        `Authentification refusée par Jenkins (HTTP ${response.status}).`,
         response.status
       )
     }
     if (response.status === 404) {
-      debugWarn(
-        '[jenkins] 404 sur %s — la ressource existe peut-être mais le token ' +
-          "n'a pas le droit Discover/Read (Jenkins masque l'existence en 404).",
-        url
-      )
       throw new JenkinsNotFoundError(`Ressource Jenkins introuvable: ${path}`, 404)
     }
     if (!response.ok) {
@@ -343,8 +281,7 @@ export class JenkinsClient {
     try {
       response = await this.fetchImpl(url, {
         method: 'GET',
-        headers: { Authorization: this.authHeader, 'User-Agent': JENKINS_USER_AGENT },
-        redirect: 'manual',
+        headers: { Authorization: this.authHeader },
         signal: controller.signal
       })
     } catch (err) {
@@ -394,62 +331,17 @@ export class JenkinsClient {
     return parsed.data
   }
 
-  async testConnection(): Promise<{
-    version: string
-    nodeName: string
-    whoAmIName: string
-    authorities: string[]
-    missingGroups: boolean
-    tokenKind: 'jenkins-api-token' | 'tuleap-access-key' | 'unknown'
-  }> {
-    const [root, whoAmI] = await Promise.all([
-      this.json(jenkinsRootSchema, '/api/json', { tree: 'nodeName,version' }),
-      this.json(jenkinsWhoAmISchema, '/whoAmI/api/json', {
-        tree: 'name,authenticated,anonymous,authorities'
-      }).catch(() => ({ name: '', authenticated: false, anonymous: true, authorities: [] }))
-    ])
-    const authorities: string[] = whoAmI.authorities ?? []
-    const missingGroups =
-      authorities.length === 0 ||
-      (authorities.length === 1 && (authorities[0] ?? '').toLowerCase() === 'authenticated')
-    if (missingGroups) {
-      if (this.tokenKind === 'jenkins-api-token') {
-        debugWarn(
-          '[jenkins] testConnection: authorities=%s avec un token API Jenkins — ' +
-            'si Jenkins délègue son authentification à Tuleap (plugin tuleap-oauth), ' +
-            'les groupes de projet Tuleap ne sont pas résolus et les dossiers protégés renvoient 404. ' +
-            "Solution : utiliser une clé d'accès Tuleap (tlp.k1.…, scope OpenID Connect) à la place du token Jenkins.",
-          JSON.stringify(authorities)
-        )
-      } else {
-        debugWarn(
-          '[jenkins] testConnection: authorities=%s — pas de groupes résolus pour %s (tokenKind=%s). ' +
-            "L'accès aux dossiers protégés échouera en 404.",
-          JSON.stringify(authorities),
-          whoAmI.name,
-          this.tokenKind
-        )
-      }
-    } else {
-      debugLog(
-        '[jenkins] testConnection: utilisateur=%s authorities=%s tokenKind=%s',
-        whoAmI.name,
-        JSON.stringify(authorities),
-        this.tokenKind
-      )
-    }
-    return {
-      version: root.version,
-      nodeName: root.nodeName,
-      whoAmIName: whoAmI.name,
-      authorities,
-      missingGroups,
-      tokenKind: this.tokenKind
-    }
+  async testConnection(): Promise<{ version: string; nodeName: string }> {
+    const data = await this.json(
+      jenkinsRootSchema,
+      '/api/json',
+      { tree: 'nodeName,version' }
+    )
+    return { version: data.version, nodeName: data.nodeName }
   }
 
   async listJobs(folder?: string): Promise<JenkinsJob[]> {
-    const basePath = folder ? `/${jobSegments(folder)}/api/json` : '/api/json'
+    const basePath = folder ? `/job/${encodeURIComponent(folder)}/api/json` : '/api/json'
     const data = await this.json(jenkinsJobListSchema, basePath, {
       tree: 'jobs[name,displayName,url,color,_class,lastBuild[number,result,timestamp]]',
       depth: '1'
@@ -457,76 +349,9 @@ export class JenkinsClient {
     return (data.jobs ?? []).map(mapJob)
   }
 
-  /**
-   * Recursively crawl the whole Jenkins instance (or a sub-folder) and return a
-   * flat, exhaustive list of selectable jobs (multibranch projects + leaf jobs).
-   * Descends into plain folders and organization folders; does NOT descend into
-   * multibranch projects (their children are branches, not selectable targets).
-   * Robust: a 404/403 on a sub-folder is logged and skipped, never fatal.
-   */
-  async discoverJobs(rootFolder = '', maxDepth = 8): Promise<JenkinsDiscoveredJob[]> {
-    const out: JenkinsDiscoveredJob[] = []
-    const visit = async (folder: string, depth: number): Promise<void> => {
-      if (depth > maxDepth) {
-        debugWarn('[jenkins] discover: profondeur max atteinte à %s', folder || '<root>')
-        return
-      }
-      debugLog('[jenkins] discover: liste %s (profondeur %d)', folder || '<root>', depth)
-      let jobs: JenkinsJob[]
-      try {
-        jobs = await this.listJobs(folder || undefined)
-      } catch (err) {
-        debugWarn(
-          '[jenkins] discover: ignore %s — %s',
-          folder || '<root>',
-          err instanceof Error ? err.message : String(err)
-        )
-        return
-      }
-      debugLog('[jenkins] discover: %d entrée(s) dans %s', jobs.length, folder || '<root>')
-      for (const j of jobs) {
-        const fullPath = folder ? `${folder}/${j.name}` : j.name
-        const kind = classifyJob(j.jobClass)
-        debugLog('[jenkins] discover:  → %s  _class=%s  kind=%s', fullPath, j.jobClass, kind)
-        if (kind === 'folder') {
-          await visit(fullPath, depth + 1)
-        } else {
-          out.push({
-            fullPath,
-            name: j.name,
-            displayName: j.displayName,
-            url: j.url,
-            kind,
-            color: j.color
-          })
-        }
-      }
-    }
-    await visit(rootFolder, 0)
-    debugLog('[jenkins] discover: %d job(s) sélectionnable(s) au total', out.length)
-    return out
-  }
-
-  /** Lightweight existence/validation check for a (possibly nested) job path. */
-  async jobExists(
-    jobPath: string
-  ): Promise<{ exists: boolean; kind: string | null; url: string | null }> {
-    try {
-      const data = await this.json(
-        z.object({ _class: z.string().optional(), url: z.string().optional() }).passthrough(),
-        `/${jobSegments(jobPath)}/api/json`,
-        { tree: '_class,url' }
-      )
-      return { exists: true, kind: data._class ?? null, url: data.url ?? null }
-    } catch (err) {
-      if (err instanceof JenkinsNotFoundError) return { exists: false, kind: null, url: null }
-      throw err
-    }
-  }
-
   async getBranchStatus(jobName: string, branchName: string): Promise<JenkinsBranchStatus | null> {
     const encodedBranch = branchName.split('/').map(encodeURIComponent).join('%2F')
-    const path = `/${jobSegments(jobName)}/job/${encodedBranch}/lastBuild/api/json`
+    const path = `/job/${encodeURIComponent(jobName)}/job/${encodedBranch}/lastBuild/api/json`
     try {
       const data = await this.json(jenkinsBranchBuildSchema, path, {
         tree: 'number,result,timestamp,building,url'
@@ -549,7 +374,7 @@ export class JenkinsClient {
     const tree = `builds[number,url,result,duration,timestamp,displayName,building]{0,${limit}}`
     const data = await this.json(
       z.object({ builds: z.array(jenkinsBuildSchema).optional().default([]) }).passthrough(),
-      `/${jobSegments(jobName)}/api/json`,
+      `/job/${encodeURIComponent(jobName)}/api/json`,
       { tree }
     )
     return (data.builds ?? []).map(mapBuildSummary)
@@ -563,14 +388,14 @@ export class JenkinsClient {
     ].join(',')
     const raw = await this.json(
       jenkinsBuildSchema,
-      `/${jobSegments(jobName)}/${buildNumber}/api/json`,
+      `/job/${encodeURIComponent(jobName)}/${buildNumber}/api/json`,
       { tree }
     )
     return mapBuildDetail(raw, jobName)
   }
 
   async getConsoleText(jobName: string, buildNumber: number): Promise<string> {
-    return this.requestText(`/${jobSegments(jobName)}/${buildNumber}/consoleText`)
+    return this.requestText(`/job/${encodeURIComponent(jobName)}/${buildNumber}/consoleText`)
   }
 
   async getQueue(): Promise<JenkinsQueueItem[]> {
@@ -595,7 +420,7 @@ export class JenkinsClient {
     try {
       return await this.json(
         jenkinsTestReportSchema,
-        `/${jobSegments(jobName)}/${buildNumber}/testReport/api/json`,
+        `/job/${encodeURIComponent(jobName)}/${buildNumber}/testReport/api/json`,
         { tree }
       )
     } catch (err) {
@@ -615,7 +440,7 @@ export class JenkinsClient {
   ): Promise<{ totalCount: number; tools: Array<{ name: string; count: number }> } | null> {
     try {
       const response = await this.request(
-        `/${jobSegments(jobName)}/${buildNumber}/warnings-ng/api/json`,
+        `/job/${encodeURIComponent(jobName)}/${buildNumber}/warnings-ng/api/json`,
         { tree: 'totalSize,groups[name,size]' }
       )
       const data = (await response.json()) as Record<string, unknown>
@@ -647,7 +472,7 @@ export class JenkinsClient {
     for (const { path, tree } of endpoints) {
       try {
         const response = await this.request(
-          `/${jobSegments(jobName)}/${buildNumber}/${path}/api/json`,
+          `/job/${encodeURIComponent(jobName)}/${buildNumber}/${path}/api/json`,
           { tree }
         )
         const data = (await response.json()) as Record<string, unknown>

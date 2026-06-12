@@ -55,28 +55,44 @@ function buildSlideVars(
       ? 'Clos'
       : 'Ouvert'
 
-  const base: Record<string, string | number> = {
+  // For custom (non-sprint) mode, some slides benefit from a focused artifact subset
+  const primaryArtifacts = (() => {
+    switch (type) {
+      case 'livrables': return ctx.detailedArtifacts.filter((a) => {
+        const s = (a.status ?? '').toLowerCase()
+        return s.includes('done') || s.includes('ferm') || s.includes('termin') || s.includes('clos')
+      })
+      case 'risques': return ctx.detailedArtifacts.filter((a) => {
+        const s = (a.status ?? '').toLowerCase()
+        return !s.includes('done') && !s.includes('ferm') && !s.includes('termin') && !s.includes('clos')
+      })
+      default: return ctx.detailedArtifacts
+    }
+  })()
+
+  const trackerHint = ctx.trackerLabel
+    ? `\nType d'artefacts : ${ctx.trackerLabel}`
+    : ''
+
+  return {
     project_name: ctx.projectName,
-    sprint_name: ctx.label,
+    sprint_name: ctx.trackerLabel ? `${ctx.label} — ${ctx.trackerLabel}` : ctx.label,
     sprint_start: ctx.milestone ? formatDate(ctx.milestone.startDate) : 'inconnue',
     sprint_end: ctx.milestone ? formatDate(ctx.milestone.endDate) : 'inconnue',
-    sprint_status: sprintStatus,
+    sprint_status: ctx.milestone ? sprintStatus : (ctx.trackerLabel ? `Personnalisé (${ctx.trackerLabel})` : 'Personnalisé'),
     artifact_count: total,
     done_count: doneCount,
     in_progress_count: inProgressCount,
     todo_count: todoCount,
     completion_rate: completionRate,
     date: ctx.generatedAt,
-    summary: summary.slice(0, 1200),
-    artifacts_block: formatArtifactBlock(ctx.detailedArtifacts, ctx.childArtifactIds),
+    summary: summary.slice(0, 1200) + trackerHint,
+    artifacts_block: formatArtifactBlock(primaryArtifacts, ctx.childArtifactIds),
     done_artifacts_block: formatArtifactSummaryBlock(buckets.done),
     in_progress_artifacts_block: formatArtifactSummaryBlock(buckets.inProgress),
     todo_artifacts_block: formatArtifactSummaryBlock(buckets.todo),
     contributors_block: buildContributorsBlock(ctx.detailedArtifacts)
   }
-
-  void type
-  return base
 }
 
 export async function generateAllSlides(
