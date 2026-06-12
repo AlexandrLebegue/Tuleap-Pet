@@ -2,8 +2,9 @@ import * as React from 'react'
 import { useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { Download } from 'lucide-react'
+import { Download, FileText } from 'lucide-react'
 import type { ChatMessage } from '@shared/types'
+import { splitMessageContent } from '@shared/chat-attachments'
 import { cn } from '@renderer/lib/utils'
 import { useChat } from '@renderer/stores/chat.store'
 import { Badge } from '@renderer/components/ui/badge'
@@ -184,6 +185,12 @@ function ChatMessageBubble({ message }: Props): React.JSX.Element {
     () => (!isUser && message.content ? extractCodeBlocks(message.content) : []),
     [isUser, message.content]
   )
+  // User messages may embed attached documents — collapse them into chips
+  // instead of dumping the whole extracted text in the bubble.
+  const userParts = React.useMemo(
+    () => (isUser ? splitMessageContent(message.content) : null),
+    [isUser, message.content]
+  )
   return (
     <div className={cn('flex w-full', isUser ? 'justify-end' : 'justify-start')}>
       <div
@@ -232,8 +239,26 @@ function ChatMessageBubble({ message }: Props): React.JSX.Element {
           </div>
         )}
         {isUser ? (
-          <div className="whitespace-pre-wrap leading-relaxed">
-            {message.content || ''}
+          <div className="space-y-2">
+            <div className="whitespace-pre-wrap leading-relaxed">
+              {userParts?.text || ''}
+            </div>
+            {userParts && userParts.attachments.length > 0 && (
+              <div className="flex flex-col gap-1 border-t border-primary-foreground/20 pt-2">
+                {userParts.attachments.map((att, idx) => (
+                  <details key={`${att.name}-${idx}`} className="text-xs">
+                    <summary className="flex cursor-pointer items-center gap-1.5 opacity-90">
+                      <FileText className="size-3.5 shrink-0" />
+                      <span className="font-mono">{att.name}</span>
+                      <span className="opacity-70">({att.text.length.toLocaleString()} car.)</span>
+                    </summary>
+                    <pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap rounded bg-black/20 p-2 text-[11px]">
+                      {att.text}
+                    </pre>
+                  </details>
+                ))}
+              </div>
+            )}
           </div>
         ) : (
           <div className="prose prose-sm dark:prose-invert max-w-none leading-relaxed

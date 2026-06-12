@@ -185,6 +185,19 @@ export type GenerationOptions = {
 
 export type ChatRole = 'user' | 'assistant' | 'system' | 'tool'
 
+/** A document attached to a chat message, with its extracted text. */
+export type ChatAttachment = {
+  /** File name (basename only). */
+  name: string
+  /** Extracted plain text (possibly truncated). */
+  text: string
+  /** Original file size in bytes. */
+  sizeBytes: number
+  /** True when the extracted text was cut at the per-file character cap. */
+  truncated: boolean
+  kind: 'pdf' | 'docx' | 'text'
+}
+
 export type ChatToolEvent =
   | { kind: 'call'; name: string; toolCallId: string; args: unknown }
   | { kind: 'result'; name: string; toolCallId: string; result: unknown; error?: string }

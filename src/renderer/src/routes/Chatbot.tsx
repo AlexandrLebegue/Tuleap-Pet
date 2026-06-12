@@ -6,7 +6,7 @@ import { useChat } from '@renderer/stores/chat.store'
 import { Card, CardDescription, CardHeader, CardTitle } from '@renderer/components/ui/card'
 import { Button } from '@renderer/components/ui/button'
 import { Input } from '@renderer/components/ui/input'
-import { Trash2, Plus, Send, Pencil, Check, X, Brain, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
+import { Trash2, Plus, Send, Pencil, Check, X, Brain, PanelLeftClose, PanelLeftOpen, Paperclip, FileText } from 'lucide-react'
 import { cn } from '@renderer/lib/utils'
 import ChatMessageBubble from '@renderer/components/ChatMessageBubble'
 import type { ChatConversation, LlmProviderKind } from '@shared/types'
@@ -131,6 +131,11 @@ function Chatbot(): React.JSX.Element {
   const setDraft = useChat((s) => s.setDraft)
   const thinking = useChat((s) => s.thinking)
   const setThinking = useChat((s) => s.setThinking)
+  const attachments = useChat((s) => s.attachments)
+  const attachmentError = useChat((s) => s.attachmentError)
+  const pickingAttachments = useChat((s) => s.pickingAttachments)
+  const pickAttachments = useChat((s) => s.pickAttachments)
+  const removeAttachment = useChat((s) => s.removeAttachment)
 
   const [sidebarOpen, setSidebarOpen] = useState(true)
 
@@ -288,6 +293,33 @@ function Chatbot(): React.JSX.Element {
 
         {selectedConv && (
           <footer className="border-t border-border px-6 py-3">
+            {attachments.length > 0 && (
+              <div className="mb-2 flex flex-wrap gap-1.5">
+                {attachments.map((att, idx) => (
+                  <span
+                    key={`${att.name}-${idx}`}
+                    className="inline-flex items-center gap-1.5 rounded-md border border-border bg-muted/60 px-2 py-1 text-xs"
+                    title={`${(att.sizeBytes / 1024).toFixed(0)} Ko · ${att.text.length} caractères extraits${att.truncated ? ' (tronqué)' : ''}`}
+                  >
+                    <FileText className="size-3.5 shrink-0 text-muted-foreground" />
+                    <span className="max-w-[180px] truncate font-mono">{att.name}</span>
+                    {att.truncated && (
+                      <span className="text-[10px] text-amber-600">tronqué</span>
+                    )}
+                    <button
+                      onClick={() => removeAttachment(idx)}
+                      className="text-muted-foreground hover:text-destructive"
+                      aria-label={`Retirer ${att.name}`}
+                    >
+                      <X className="size-3" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+            {attachmentError && (
+              <p className="mb-2 text-xs text-destructive">{attachmentError}</p>
+            )}
             <div className="flex gap-2">
               <textarea
                 value={draft}
@@ -298,17 +330,32 @@ function Chatbot(): React.JSX.Element {
                 className="flex-1 resize-none rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               />
               <div className="flex flex-col gap-2">
-                <Button
-                  size="icon"
-                  variant={thinking ? 'default' : 'outline'}
-                  onClick={() => setThinking(!thinking)}
-                  title={thinking ? 'Thinking activé — cliquer pour désactiver' : 'Activer le mode thinking (raisonnement étendu)'}
-                >
-                  <Brain className="size-4" />
-                </Button>
+                <div className="flex gap-2">
+                  <Button
+                    size="icon"
+                    variant="outline"
+                    onClick={() => void pickAttachments()}
+                    disabled={pickingAttachments || status === 'sending' || status === 'streaming'}
+                    title="Joindre des documents (PDF, Word, code, texte…)"
+                  >
+                    <Paperclip className="size-4" />
+                  </Button>
+                  <Button
+                    size="icon"
+                    variant={thinking ? 'default' : 'outline'}
+                    onClick={() => setThinking(!thinking)}
+                    title={thinking ? 'Thinking activé — cliquer pour désactiver' : 'Activer le mode thinking (raisonnement étendu)'}
+                  >
+                    <Brain className="size-4" />
+                  </Button>
+                </div>
                 <Button
                   onClick={() => send()}
-                  disabled={!draft.trim() || status === 'sending' || status === 'streaming'}
+                  disabled={
+                    (!draft.trim() && attachments.length === 0) ||
+                    status === 'sending' ||
+                    status === 'streaming'
+                  }
                 >
                   <Send className="size-4" />
                 </Button>

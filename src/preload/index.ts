@@ -3,6 +3,7 @@ import type {
   AdminScanResult,
   ArtifactDetail,
   ArtifactSummary,
+  ChatAttachment,
   ChatConversation,
   ChatMessage,
   ChatStreamEvent,
@@ -235,8 +236,15 @@ const chat = {
     ipcRenderer.invoke('chat:rename-conversation', { id, title }),
   deleteConversation: (id: number): Promise<{ ok: true }> =>
     ipcRenderer.invoke('chat:delete-conversation', id),
-  sendMessage: (args: { conversationId: number; content: string; thinking?: boolean }): Promise<ChatSendResult> =>
-    ipcRenderer.invoke('chat:send-message', args),
+  sendMessage: (args: {
+    conversationId: number
+    content: string
+    thinking?: boolean
+    attachments?: ChatAttachment[]
+  }): Promise<ChatSendResult> => ipcRenderer.invoke('chat:send-message', args),
+  /** Opens the OS file picker and extracts text from the selected documents. */
+  pickAttachments: (): Promise<{ attachments: ChatAttachment[]; errors: string[] }> =>
+    ipcRenderer.invoke('chat:pick-attachments'),
   /** Subscribe to streaming events; returns an unsubscribe function. */
   subscribe: (handler: (event: ChatStreamEvent) => void): (() => void) => {
     const wrapped = (_e: unknown, payload: ChatStreamEvent): void => handler(payload)

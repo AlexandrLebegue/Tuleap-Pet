@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type {
+  ChatAttachment,
   ChatConversation,
   ChatMessage,
   ChatStreamEvent,
@@ -24,6 +25,10 @@ type Store = {
    * the assistant row doesn't exist in `messages` yet, so they'd be lost. */
   pendingDeltas: Record<number, string>
   pendingToolEvents: Record<number, ChatToolEvent[]>
+  /** Documents attached to the next message (already extracted as text). */
+  attachments: ChatAttachment[]
+  attachmentError: string | null
+  pickingAttachments: boolean
 
   init: () => void
   shutdown: () => void
@@ -34,6 +39,8 @@ type Store = {
   remove: (id: number) => Promise<void>
   setDraft: (text: string) => void
   setThinking: (value: boolean) => void
+  pickAttachments: () => Promise<void>
+  removeAttachment: (index: number) => void
   send: () => Promise<void>
   handleEvent: (event: ChatStreamEvent) => void
 }
@@ -73,6 +80,9 @@ export const useChat = create<Store>((set, get) => ({
   unsubscribe: null,
   pendingDeltas: {},
   pendingToolEvents: {},
+  attachments: [],
+  attachmentError: null,
+  pickingAttachments: false,
 
   init: () => {
     if (get().unsubscribe) return
@@ -138,14 +148,40 @@ export const useChat = create<Store>((set, get) => ({
 
   setThinking: (value: boolean) => set({ thinking: value }),
 
+  pickAttachments: async () => {
+    if (get().pickingAttachments) return
+    set({ pickingAttachments: true, attachmentError: null })
+    try {
+      const result = await api.chat.pickAttachments()
+      set((state) => ({
+        attachments: [...state.attachments, ...result.attachments].slice(0, 8),
+        attachmentError: result.errors.length > 0 ? result.errors.join(' · ') : null,
+        pickingAttachments: false
+      }))
+    } catch (err) {
+      set({
+        pickingAttachments: false,
+        attachmentError: err instanceof Error ? err.message : String(err)
+      })
+    }
+  },
+
+  removeAttachment: (index: number) =>
+    set((state) => ({ attachments: state.attachments.filter((_, i) => i !== index) })),
+
   send: async () => {
-    const { selectedId, draft, thinking } = get()
+    const { selectedId, draft, thinking, attachments } = get()
     if (!selectedId) return
     const trimmed = draft.trim()
-    if (!trimmed) return
-    set({ status: 'sending', draft: '', errorMessage: null })
+    if (!trimmed && attachments.length === 0) return
+    set({ status: 'sending', draft: '', attachments: [], attachmentError: null, errorMessage: null })
     try {
-      const result = await api.chat.sendMessage({ conversationId: selectedId, content: trimmed, thinking })
+      const result = await api.chat.sendMessage({
+        conversationId: selectedId,
+        content: trimmed,
+        thinking,
+        attachments: attachments.length > 0 ? attachments : undefined
+      })
       if (!result.ok) {
         set({ status: 'error', errorMessage: result.error })
       }

@@ -18,7 +18,9 @@ import { getChatbotDoxygenMode, getChatbotExpertMode, getChatbotToolsEnabled, ge
 import { hasJenkinsToken } from '../store/secrets'
 import { getCombinedPrompt, getExpertSystemPrompt } from '../prompts/expert-prompts'
 import { debugLog, debugError } from '../logger'
-import type { ChatMessage, ChatStreamEvent } from '@shared/types'
+import { pickAttachments } from '../chat/attachments'
+import { buildMessageWithAttachments } from '@shared/chat-attachments'
+import type { ChatAttachment, ChatMessage, ChatStreamEvent } from '@shared/types'
 
 const STREAM_CHANNEL = 'chat:stream'
 
@@ -240,18 +242,37 @@ export function registerChatHandlers(): void {
     return { ok: true }
   })
 
+  ipcMain.handle('chat:pick-attachments', async (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    audit('chat.attachments.pick')
+    return pickAttachments(win)
+  })
+
   ipcMain.handle('chat:send-message', async (event, args: unknown) => {
-    const opts = (args ?? {}) as { conversationId?: number; content?: string; thinking?: boolean }
+    const opts = (args ?? {}) as {
+      conversationId?: number
+      content?: string
+      thinking?: boolean
+      attachments?: ChatAttachment[]
+    }
     if (typeof opts.conversationId !== 'number' || typeof opts.content !== 'string') {
       throw new Error('Arguments invalides.')
     }
+    const attachments = Array.isArray(opts.attachments)
+      ? opts.attachments.filter(
+          (a): a is ChatAttachment =>
+            a != null && typeof a.name === 'string' && typeof a.text === 'string'
+        )
+      : []
     const trimmed = opts.content.trim()
-    if (!trimmed) throw new Error('Message vide.')
+    if (!trimmed && attachments.length === 0) throw new Error('Message vide.')
 
     const conv = getConversation(opts.conversationId)
     if (!conv) throw new Error('Conversation introuvable.')
 
-    addMessage({ conversationId: conv.id, role: 'user', content: trimmed })
+    const question = trimmed || 'Analyse le(s) document(s) joint(s).'
+    const userContent = buildMessageWithAttachments(question, attachments)
+    addMessage({ conversationId: conv.id, role: 'user', content: userContent })
     const assistant = addMessage({
       conversationId: conv.id,
       role: 'assistant',
@@ -268,7 +289,10 @@ export function registerChatHandlers(): void {
       assistantMessageId: assistant.id
     })
 
-    audit('chat.message.send', String(conv.id), { length: trimmed.length })
+    audit('chat.message.send', String(conv.id), {
+      length: userContent.length,
+      attachments: attachments.length
+    })
 
     const history = listMessages(conv.id)
     const llmMessages = ensureSystemMessage(history.slice(0, -1)) // exclude the empty assistant we just inserted
@@ -292,7 +316,7 @@ export function registerChatHandlers(): void {
           messages: llmMessages,
           tools,
           temperature: 0.4,
-          maxOutputTokens: thinking ? 16000 : 4096,
+          maxOutputTokens: thinking ? 24000 : 8192,
           thinking
         },
         (chunk) => {
@@ -416,7 +440,7 @@ export function registerChatHandlers(): void {
       audit('chat.message.done', String(conv.id), { usage: result.usage })
 
       // Auto-name conversation on first successful reply
-      autoNameConversation(conv.id, trimmed).catch((e) =>
+      autoNameConversation(conv.id, question).catch((e) =>
         debugError('[chat] auto-name failed: %s', e instanceof Error ? e.message : String(e))
       )
 
