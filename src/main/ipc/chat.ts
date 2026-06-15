@@ -390,45 +390,64 @@ export function registerChatHandlers(): void {
       // layers agree.
       let finalText = buffered || result.text
 
-      // Weak models sometimes stop after tool calls without writing a final
-      // answer (finishReason "tool-calls"). Run a synthesis call to produce text.
-      // Two triggers:
-      //  A) Normal: tool-result events captured → synthesize from results.
-      //  B) Fallback: tool-calls happened but results missing (SDK quirk / tool
-      //     error) → synthesize from what we know (tool names + args).
+      // Synthesis is needed in two distinct situations:
+      //
+      // Case A — no text at all after tool calls (model called tool + said nothing)
+      //   → synthesis generates the full answer
+      //
+      // Case B — model wrote a short "loader" phrase ("Je recherche…"), called
+      //   tools, got results, then stopped without writing the actual answer.
+      //   finalText is non-empty so the old guard (!finalText) missed this.
+      //   Heuristic: if tool results were captured AND finalText is short
+      //   (< 120 chars, probably just an intro phrase), synthesize and APPEND.
+      //
+      // Case C — tool calls happened but tool-result events were not captured
+      //   (AI SDK quirk / tool threw before yielding result) — synthesize from
+      //   call metadata to at least give the user something.
+      const toolsExecuted = collectedToolResults.length > 0
+      const toolsCalled = collectedToolCalls.length > 0
+      const stoppedOnToolCalls = result.finishReason === 'tool-calls'
+
       const needsSynthesis =
-        !finalText.trim() &&
-        (collectedToolResults.length > 0 ||
-          (collectedToolCalls.length > 0 && result.finishReason === 'tool-calls'))
+        (toolsExecuted || (toolsCalled && stoppedOnToolCalls)) &&
+        (!finalText.trim() || (toolsExecuted && finalText.trim().length < 120))
+
       if (needsSynthesis) {
-        const nCalls = collectedToolCalls.length
-        debugLog('[chat] empty final text after %d tool call(s) (results=%d) — synthesis fallback',
-          nCalls, collectedToolResults.length)
+        debugLog('[chat] synthesis fallback — calls=%d results=%d textLen=%d reason=%s',
+          collectedToolCalls.length, collectedToolResults.length,
+          finalText.trim().length, result.finishReason)
         try {
-          // Extract the original user question (last user message in history).
           const originalQuestion =
             llmMessages.filter((m) => m.role === 'user').at(-1)?.content ?? question
-          // Build synthesis payload: prefer captured results, fall back to call info.
           const toolsPayload =
-            collectedToolResults.length > 0
+            toolsExecuted
               ? JSON.stringify(collectedToolResults).slice(0, 6000)
-              : `[Les outils ont été appelés mais leurs résultats ne sont pas disponibles : ${JSON.stringify(collectedToolCalls)}]`
+              : `[Outils appelés sans résultats capturés : ${JSON.stringify(collectedToolCalls)}]`
+          // If the model already wrote an intro phrase (Case B), instruct synthesis
+          // to write ONLY the answer part so the streamed intro is not repeated.
+          const priorText = finalText.trim()
+          const synthesisInstruction = priorText
+            ? `Le modèle avait commencé à répondre par : "${priorText.slice(0, 200)}"\nÉcris UNIQUEMENT la suite — la réponse concrète aux données ci-dessous, sans répéter l'introduction.`
+            : `Rédige une réponse claire et concise à la question en te basant sur ces données.`
           const synthesis = await provider.generate({
-            // Clean two-message structure — no consecutive user messages.
             messages: [
               { role: 'system', content: 'Tu es un assistant. Réponds en français, de façon concise.' },
               {
                 role: 'user',
                 content:
-                  `Question posée : "${originalQuestion.slice(0, 400)}"\n\n` +
-                  `Données obtenues via les outils Tuleap/Jenkins :\n${toolsPayload}\n\n` +
-                  `Rédige une réponse claire et concise à la question en te basant sur ces données.`
+                  `Question : "${originalQuestion.slice(0, 400)}"\n\n` +
+                  `Données Tuleap/Jenkins :\n${toolsPayload}\n\n` +
+                  synthesisInstruction
               }
             ],
             temperature: 0.1,
             maxOutputTokens: 1024
           })
-          finalText = synthesis.text.trim()
+          const synthText = synthesis.text.trim()
+          // Append synthesis after the intro phrase (if any), or use as the full answer.
+          finalText = priorText && synthText
+            ? priorText.trimEnd() + '\n\n' + synthText
+            : synthText || priorText
         } catch (synthErr) {
           debugError('[chat] synthesis fallback failed: %s',
             synthErr instanceof Error ? synthErr.message : String(synthErr))
@@ -439,7 +458,7 @@ export function registerChatHandlers(): void {
       // permanent "…" placeholder. Explain what happened instead.
       if (!finalText.trim()) {
         finalText =
-          collectedToolCalls.length > 0
+          toolsCalled
             ? "_Le modèle n'a pas formulé de réponse après l'appel des outils — " +
               'les résultats bruts sont affichés ci-dessus. Reformulez ou réessayez._'
             : `_Le modèle n'a renvoyé aucune réponse (raison : ${result.finishReason ?? 'inconnue'}). Réessayez._`
