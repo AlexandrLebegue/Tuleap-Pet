@@ -104,7 +104,11 @@ function buildSystemPrompt(): string {
 
 **list_milestones** — Sprints du projet (status: open|closed|all, défaut: open)
 → "Sprint en cours ?" → list_milestones {}
-→ "Tous les sprints ?" → list_milestones { "status": "all" }`
+→ "Tous les sprints ?" → list_milestones { "status": "all" }
+
+**find_artifacts_by_assignee** — Artéfacts assignés à une personne (filtre en mémoire par nom)
+→ "User stories assignées à Alexandre ?" → find_artifacts_by_assignee { "trackerId": 12, "assigneeName": "Alexandre" }
+→ "Tâches d'Alice Dupont ?" → find_artifacts_by_assignee { "trackerId": 5, "assigneeName": "Alice Dupont" }`
 
   const jenkinsToolsSection = !jenkinsOk ? '' : `
 ## Outils Jenkins

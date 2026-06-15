@@ -10,6 +10,39 @@ import {
 } from '../tuleap'
 import { getConfig } from '../store/config'
 import { audit } from '../store/db'
+import type { ArtifactSummaryRaw } from '../tuleap/schemas'
+
+function matchesAssignee(raw: ArtifactSummaryRaw, needle: string): boolean {
+  const values = (raw as unknown as { values?: unknown[] }).values
+  if (!Array.isArray(values)) return false
+
+  for (const v of values) {
+    if (!v || typeof v !== 'object') continue
+    const field = v as Record<string, unknown>
+    const label = String(field['label'] ?? '').toLowerCase()
+    const type = String(field['type'] ?? '').toLowerCase()
+
+    const isUserField = type === 'sb' || type === 'msb'
+    const isAssignField =
+      label.includes('assign') || label.includes('assigné') || label.includes('responsable')
+    if (!isUserField && !isAssignField) continue
+
+    const checkUser = (u: unknown): boolean => {
+      if (!u || typeof u !== 'object') return false
+      const obj = u as Record<string, unknown>
+      return [obj['display_name'], obj['real_name'], obj['username']]
+        .filter((n): n is string => typeof n === 'string' && n.length > 0)
+        .some((n) => n.toLowerCase().includes(needle))
+    }
+
+    const fieldValues = field['values']
+    if (Array.isArray(fieldValues) && fieldValues.some(checkUser)) return true
+
+    if (checkUser(field['value'])) return true
+  }
+
+  return false
+}
 
 function projectIdOrThrow(): number {
   const id = getConfig().projectId
@@ -112,6 +145,53 @@ export function buildTuleapTools(): Record<string, Tool> {
           limit: 50
         })
         return page.items.map(mapMilestone)
+      }
+    }),
+
+    find_artifacts_by_assignee: tool({
+      description:
+        "Trouve les artefacts d'un tracker assignes a une personne (filtre par nom en memoire). " +
+        'Analyse les champs "Assigne a" / "Assigned to" / "Responsable". ' +
+        'Limite aux 200 premiers artefacts du tracker.',
+      inputSchema: z.object({
+        trackerId: z.number().int().positive(),
+        assigneeName: z
+          .string()
+          .describe('Nom complet ou partiel de la personne (ex: "Alexandre Lebegue", "alex")'),
+        limit: z
+          .number()
+          .int()
+          .min(1)
+          .max(100)
+          .optional()
+          .describe('Nombre max de résultats à retourner (défaut: 25)')
+      }),
+      async execute(input): Promise<unknown> {
+        const args = input as { trackerId: number; assigneeName: string; limit?: number }
+        audit('chat.tool', 'find_artifacts_by_assignee', args)
+        const client = await buildTuleapClient()
+        const needle = args.assigneeName.toLowerCase().trim()
+        const maxResults = args.limit ?? 25
+        const FETCH_LIMIT = 200
+
+        const page = await client.listArtifacts(args.trackerId, {
+          limit: FETCH_LIMIT,
+          offset: 0,
+          values: 'all'
+        })
+
+        const matched = page.items.filter((raw) => matchesAssignee(raw, needle))
+        const sliced = matched.slice(0, maxResults)
+
+        return {
+          items: sliced.map(mapArtifactSummary),
+          matched: matched.length,
+          fetched: page.items.length,
+          total: page.total,
+          ...(page.total > FETCH_LIMIT
+            ? { note: `Seuls ${FETCH_LIMIT}/${page.total} artéfacts analysés — résultats partiels.` }
+            : {})
+        }
       }
     })
   }

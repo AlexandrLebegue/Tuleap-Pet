@@ -7,6 +7,7 @@ describe('buildTuleapTools', () => {
   it('exposes the documented tool names', () => {
     expect(Object.keys(tools).sort()).toEqual(
       [
+        'find_artifacts_by_assignee',
         'get_artifact',
         'get_self',
         'list_artifacts',
