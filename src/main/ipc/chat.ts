@@ -141,9 +141,9 @@ Réponse : "Build #87 : 102 tests, 99 passés, 3 échoués : [...]"`
 Dès qu'une question porte sur des données réelles (artéfacts, utilisateurs, builds, sprints, tests) :
 1. Identifie l'outil à appeler dans la liste ci-dessous
 2. Appelle-le IMMÉDIATEMENT — sans écrire de texte avant
-3. Réponds uniquement à partir des données retournées
+3. **Après avoir reçu les résultats, écrire OBLIGATOIREMENT une réponse textuelle** — ne jamais s'arrêter sur un appel d'outil sans répondre
 
-⛔ Interdit : inventer un id, un titre, un résultat, un statut.
+⛔ Interdit : inventer un id, un titre, un résultat, un statut. Finir sur un appel d'outil sans réponse.
 ✅ Sans outil : questions conceptuelles, calculs, explications générales.
 
 ${contextBlock}
@@ -309,8 +309,10 @@ export function registerChatHandlers(): void {
     const llmMessages = ensureSystemMessage(history.slice(0, -1)) // exclude the empty assistant we just inserted
 
     let buffered = ''
-    // Tool results collected during the stream — used by the synthesis
-    // fallback when the model stops after tool calls without a final answer.
+    // Tool calls and results collected during the stream.
+    // collectedToolCalls tracks every tool invoked so we can run synthesis
+    // even when tool-result events are missing (AI SDK version quirks / tool errors).
+    const collectedToolCalls: Array<{ name: string; args: unknown }> = []
     const collectedToolResults: Array<{ name: string; result: unknown; error?: string }> = []
     try {
       const provider = resolveLlmProvider()
@@ -340,6 +342,7 @@ export function registerChatHandlers(): void {
               delta: chunk.delta
             })
           } else if (chunk.type === 'tool-call') {
+            collectedToolCalls.push({ name: chunk.toolName, args: chunk.args })
             appendToolEvent(assistant.id, {
               kind: 'call',
               name: chunk.toolName,
@@ -387,26 +390,42 @@ export function registerChatHandlers(): void {
       // layers agree.
       let finalText = buffered || result.text
 
-      // Weak models sometimes stop right after tool calls without writing a
-      // final answer (finishReason "tool-calls" or step limit reached). The
-      // message would stay empty and the UI would show "…" forever. Ask the
-      // model once more — without tools — to synthesize from the results.
-      if (!finalText.trim() && collectedToolResults.length > 0) {
-        debugLog('[chat] empty final text after %d tool call(s) — running synthesis fallback',
-          collectedToolResults.length)
+      // Weak models sometimes stop after tool calls without writing a final
+      // answer (finishReason "tool-calls"). Run a synthesis call to produce text.
+      // Two triggers:
+      //  A) Normal: tool-result events captured → synthesize from results.
+      //  B) Fallback: tool-calls happened but results missing (SDK quirk / tool
+      //     error) → synthesize from what we know (tool names + args).
+      const needsSynthesis =
+        !finalText.trim() &&
+        (collectedToolResults.length > 0 ||
+          (collectedToolCalls.length > 0 && result.finishReason === 'tool-calls'))
+      if (needsSynthesis) {
+        const nCalls = collectedToolCalls.length
+        debugLog('[chat] empty final text after %d tool call(s) (results=%d) — synthesis fallback',
+          nCalls, collectedToolResults.length)
         try {
-          const toolsJson = JSON.stringify(collectedToolResults).slice(0, 6000)
+          // Extract the original user question (last user message in history).
+          const originalQuestion =
+            llmMessages.filter((m) => m.role === 'user').at(-1)?.content ?? question
+          // Build synthesis payload: prefer captured results, fall back to call info.
+          const toolsPayload =
+            collectedToolResults.length > 0
+              ? JSON.stringify(collectedToolResults).slice(0, 6000)
+              : `[Les outils ont été appelés mais leurs résultats ne sont pas disponibles : ${JSON.stringify(collectedToolCalls)}]`
           const synthesis = await provider.generate({
+            // Clean two-message structure — no consecutive user messages.
             messages: [
-              ...llmMessages,
+              { role: 'system', content: 'Tu es un assistant. Réponds en français, de façon concise.' },
               {
                 role: 'user',
                 content:
-                  `Voici les résultats des outils appelés pour répondre à ma question précédente :\n${toolsJson}\n\n` +
-                  `Réponds maintenant à ma question en te basant uniquement sur ces résultats. Sois concis.`
+                  `Question posée : "${originalQuestion.slice(0, 400)}"\n\n` +
+                  `Données obtenues via les outils Tuleap/Jenkins :\n${toolsPayload}\n\n` +
+                  `Rédige une réponse claire et concise à la question en te basant sur ces données.`
               }
             ],
-            temperature: 0.2,
+            temperature: 0.1,
             maxOutputTokens: 1024
           })
           finalText = synthesis.text.trim()
@@ -420,7 +439,7 @@ export function registerChatHandlers(): void {
       // permanent "…" placeholder. Explain what happened instead.
       if (!finalText.trim()) {
         finalText =
-          collectedToolResults.length > 0
+          collectedToolCalls.length > 0
             ? "_Le modèle n'a pas formulé de réponse après l'appel des outils — " +
               'les résultats bruts sont affichés ci-dessus. Reformulez ou réessayez._'
             : `_Le modèle n'a renvoyé aucune réponse (raison : ${result.finishReason ?? 'inconnue'}). Réessayez._`
