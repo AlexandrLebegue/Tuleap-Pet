@@ -1,12 +1,13 @@
-import { generateText, streamText, stepCountIs, type ModelMessage } from 'ai'
+import { generateText, stepCountIs, type ModelMessage } from 'ai'
 import { createOpenRouter } from '@openrouter/ai-sdk-provider'
 import { toLlmError } from './errors'
+import { runAgentLoop } from './agent'
 import type {
+  LlmAgentCallbacks,
   LlmGenerateRequest,
   LlmGenerateResult,
   LlmMessage,
   LlmProvider,
-  LlmStreamChunk,
   LlmUsage
 } from './types'
 
@@ -76,91 +77,19 @@ export function createOpenRouterProvider(opts: OpenRouterProviderOptions): LlmPr
       }
     },
 
-    async stream(
+    async runTools(
       request: LlmGenerateRequest,
-      onChunk: (chunk: LlmStreamChunk) => void
+      cb?: LlmAgentCallbacks
     ): Promise<LlmGenerateResult> {
       const modelId = resolveModel(request.model)
       try {
-        const result = streamText({
-          model: openrouter(modelId),
-          messages: toModelMessages(request.messages),
-          temperature: request.thinking ? undefined : request.temperature,
-          maxOutputTokens: request.maxOutputTokens,
-          tools: request.tools,
-          stopWhen: request.tools ? stepCountIs(request.maxSteps ?? 6) : undefined,
-          providerOptions: request.thinking
-            ? { openrouter: { reasoning: { effort: 'high' } } }
-            : undefined
-        })
-
-        let buffered = ''
-        for await (const part of result.fullStream) {
-          switch (part.type) {
-            case 'text-delta': {
-              const delta =
-                (part as unknown as { textDelta?: string }).textDelta ??
-                (part as unknown as { text?: string }).text ??
-                (part as unknown as { delta?: string }).delta ??
-                ''
-              if (delta) {
-                buffered += delta
-                onChunk({ type: 'text', delta })
-              }
-              break
-            }
-            case 'tool-call': {
-              const tc = part as unknown as {
-                toolName: string
-                toolCallId: string
-                input?: unknown
-                args?: unknown
-              }
-              onChunk({
-                type: 'tool-call',
-                toolName: tc.toolName,
-                toolCallId: tc.toolCallId,
-                args: tc.input ?? tc.args
-              })
-              break
-            }
-            case 'tool-result': {
-              const tr = part as unknown as {
-                toolName: string
-                toolCallId: string
-                output?: unknown
-                result?: unknown
-                error?: string
-              }
-              onChunk({
-                type: 'tool-result',
-                toolName: tr.toolName,
-                toolCallId: tr.toolCallId,
-                result: tr.output ?? tr.result,
-                error: tr.error
-              })
-              break
-            }
-            case 'error': {
-              const e = part as unknown as { error: unknown }
-              throw e.error ?? new Error('Erreur de streaming inconnue')
-            }
-            default:
-              break
-          }
-        }
-
-        // buffered captures every text-delta across ALL tool-calling steps;
-        // result.text may only contain the last step. Prefer buffered, fall
-        // back to the SDK text when nothing streamed — same precedence as the
-        // chat IPC layer, so both ends agree on the final content.
-        const sdkText = await result.text
-        const finalText = buffered || sdkText
-        const finishReason = (await result.finishReason) ?? null
-        const usage = toUsage(await result.usage)
-        onChunk({ type: 'finish', finishReason, usage })
-
-        return { text: finalText, model: modelId, finishReason, usage }
+        return await runAgentLoop(
+          openrouter(modelId),
+          modelId,
+          request,
+          cb,
+          request.thinking ? { openrouter: { reasoning: { effort: 'high' } } } : undefined
+        )
       } catch (err) {
         throw toLlmError(err, modelId)
       }

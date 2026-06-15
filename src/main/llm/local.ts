@@ -1,14 +1,15 @@
-import { generateText, streamText, stepCountIs, type ModelMessage } from 'ai'
+import { generateText, stepCountIs, type ModelMessage } from 'ai'
 import { createOpenAI } from '@ai-sdk/openai'
 import { net, session } from 'electron'
 import { toLlmError } from './errors'
+import { runAgentLoop } from './agent'
 import { debugLog, debugError } from '../logger'
 import type {
+  LlmAgentCallbacks,
   LlmGenerateRequest,
   LlmGenerateResult,
   LlmMessage,
   LlmProvider,
-  LlmStreamChunk,
   LlmUsage
 } from './types'
 
@@ -111,98 +112,24 @@ export function createLocalProvider(opts: LocalProviderOptions): LlmProvider {
       }
     },
 
-    async stream(
+    async runTools(
       request: LlmGenerateRequest,
-      onChunk: (chunk: LlmStreamChunk) => void
+      cb?: LlmAgentCallbacks
     ): Promise<LlmGenerateResult> {
       const id = request.model?.trim() || modelId
-      debugLog('[local-llm] stream → POST %s/chat/completions model=%s', baseURL, id)
+      debugLog('[local-llm] runTools → POST %s/chat/completions model=%s', baseURL, id)
       try {
-        const result = streamText({
-          model: client.chat(id),
-          messages: toModelMessages(request.messages),
-          temperature: request.thinking ? undefined : request.temperature,
-          maxOutputTokens: request.maxOutputTokens,
-          tools: request.tools,
-          stopWhen: request.tools ? stepCountIs(request.maxSteps ?? 6) : undefined,
-          providerOptions: request.thinking
-            ? { openai: { reasoningEffort: 'high' } }
-            : undefined
-        })
-
-        let buffered = ''
-        for await (const part of result.fullStream) {
-          switch (part.type) {
-            case 'text-delta': {
-              const delta =
-                (part as unknown as { textDelta?: string }).textDelta ??
-                (part as unknown as { text?: string }).text ??
-                (part as unknown as { delta?: string }).delta ??
-                ''
-              if (delta) {
-                buffered += delta
-                onChunk({ type: 'text', delta })
-              }
-              break
-            }
-            case 'tool-call': {
-              const tc = part as unknown as {
-                toolName: string
-                toolCallId: string
-                input?: unknown
-                args?: unknown
-              }
-              onChunk({
-                type: 'tool-call',
-                toolName: tc.toolName,
-                toolCallId: tc.toolCallId,
-                args: tc.input ?? tc.args
-              })
-              break
-            }
-            case 'tool-result': {
-              const tr = part as unknown as {
-                toolName: string
-                toolCallId: string
-                output?: unknown
-                result?: unknown
-                error?: string
-              }
-              onChunk({
-                type: 'tool-result',
-                toolName: tr.toolName,
-                toolCallId: tr.toolCallId,
-                result: tr.output ?? tr.result,
-                error: tr.error
-              })
-              break
-            }
-            case 'error': {
-              const e = part as unknown as { error: unknown }
-              throw e.error ?? new Error('Erreur de streaming inconnue')
-            }
-            default:
-              break
-          }
-        }
-
-        // buffered captures every text-delta across ALL tool-calling steps;
-        // result.text may only contain the last step. Prefer buffered, fall
-        // back to the SDK text when nothing streamed — same precedence as the
-        // chat IPC layer, so both ends agree on the final content.
-        const sdkText = await result.text
-        const finalText = buffered || sdkText
-        const finishReason = (await result.finishReason) ?? null
-        const usage = toUsage(await result.usage)
-        onChunk({ type: 'finish', finishReason, usage })
-
-        debugLog('[local-llm] stream OK finishReason=%s tokens=%o sdkText=%d buffered=%d',
-          finishReason, usage, sdkText.length, buffered.length)
-        return { text: finalText, model: id, finishReason, usage }
+        return await runAgentLoop(
+          client.chat(id),
+          id,
+          request,
+          cb,
+          request.thinking ? { openai: { reasoningEffort: 'high' } } : undefined
+        )
       } catch (err) {
         const e = err as Record<string, unknown>
         debugError(
-          '[local-llm] stream ERROR status=%s url=%s body=%s msg=%s',
+          '[local-llm] runTools ERROR status=%s url=%s body=%s msg=%s',
           e?.['statusCode'] ?? e?.['status'] ?? '?',
           e?.['url'] ?? '?',
           typeof e?.['responseBody'] === 'string'

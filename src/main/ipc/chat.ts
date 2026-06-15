@@ -308,12 +308,10 @@ export function registerChatHandlers(): void {
     const history = listMessages(conv.id)
     const llmMessages = ensureSystemMessage(history.slice(0, -1)) // exclude the empty assistant we just inserted
 
-    let buffered = ''
-    // Tool calls and results collected during the stream.
-    // collectedToolCalls tracks every tool invoked so we can run synthesis
-    // even when tool-result events are missing (AI SDK version quirks / tool errors).
-    const collectedToolCalls: Array<{ name: string; args: unknown }> = []
-    const collectedToolResults: Array<{ name: string; result: unknown; error?: string }> = []
+    // Text streamed so far (sum of onText deltas). Used to persist progress and
+    // to compute the remainder if the final answer is longer than streamed.
+    let streamed = ''
+    let sawToolCall = false
     try {
       const provider = resolveLlmProvider()
       const thinking = opts.thinking ?? false
@@ -324,158 +322,101 @@ export function registerChatHandlers(): void {
       const tools = toolsEnabled
         ? { ...buildTuleapTools(), ...buildTuleapWriteTools(), ...(jenkinsToolsEnabled ? buildJenkinsTools() : {}) }
         : undefined
-      const result = await provider.stream(
+
+      // Explicit agentic loop: the provider runs model → tools → model until the
+      // model produces a final text answer (or maxSteps is hit). Tool events and
+      // text are surfaced live via callbacks. result.text IS the answer — no
+      // synthesis fallback, no heuristics. Order of text vs. tools doesn't matter.
+      const result = await provider.runTools(
         {
           messages: llmMessages,
           tools,
           temperature: 0.2,
           maxOutputTokens: thinking ? 24000 : 8192,
+          maxSteps: 8,
           thinking
         },
-        (chunk) => {
-          if (chunk.type === 'text') {
-            buffered += chunk.delta
+        {
+          onToolEvent: (ev) => {
+            if (ev.kind === 'call') {
+              sawToolCall = true
+              appendToolEvent(assistant.id, {
+                kind: 'call',
+                name: ev.toolName,
+                toolCallId: ev.toolCallId,
+                args: ev.args
+              })
+              broadcast(senderId, {
+                type: 'tool-call',
+                conversationId: conv.id,
+                assistantMessageId: assistant.id,
+                toolCallId: ev.toolCallId,
+                name: ev.toolName,
+                args: ev.args
+              })
+            } else {
+              appendToolEvent(assistant.id, {
+                kind: 'result',
+                name: ev.toolName,
+                toolCallId: ev.toolCallId,
+                result: ev.result,
+                error: ev.error
+              })
+              broadcast(senderId, {
+                type: 'tool-result',
+                conversationId: conv.id,
+                assistantMessageId: assistant.id,
+                toolCallId: ev.toolCallId,
+                name: ev.toolName,
+                result: ev.result,
+                error: ev.error
+              })
+            }
+          },
+          onText: (delta) => {
+            streamed += delta
+            updateMessageContent(assistant.id, streamed)
             broadcast(senderId, {
               type: 'delta',
               conversationId: conv.id,
               assistantMessageId: assistant.id,
-              delta: chunk.delta
+              delta
             })
-          } else if (chunk.type === 'tool-call') {
-            collectedToolCalls.push({ name: chunk.toolName, args: chunk.args })
-            appendToolEvent(assistant.id, {
-              kind: 'call',
-              name: chunk.toolName,
-              toolCallId: chunk.toolCallId,
-              args: chunk.args
-            })
-            broadcast(senderId, {
-              type: 'tool-call',
-              conversationId: conv.id,
-              assistantMessageId: assistant.id,
-              toolCallId: chunk.toolCallId,
-              name: chunk.toolName,
-              args: chunk.args
-            })
-          } else if (chunk.type === 'tool-result') {
-            collectedToolResults.push({
-              name: chunk.toolName,
-              result: chunk.result,
-              error: chunk.error
-            })
-            appendToolEvent(assistant.id, {
-              kind: 'result',
-              name: chunk.toolName,
-              toolCallId: chunk.toolCallId,
-              result: chunk.result,
-              error: chunk.error
-            })
-            broadcast(senderId, {
-              type: 'tool-result',
-              conversationId: conv.id,
-              assistantMessageId: assistant.id,
-              toolCallId: chunk.toolCallId,
-              name: chunk.toolName,
-              result: chunk.result,
-              error: chunk.error
-            })
-          } else if (chunk.type === 'finish') {
-            updateMessageContent(assistant.id, buffered)
           }
         }
       )
-      // buffered accumulates every text-delta across all tool-calling steps;
-      // result.text is the provider's fallback when nothing streamed. The
-      // providers apply the same precedence (buffered || sdkText) so the two
-      // layers agree.
-      let finalText = buffered || result.text
 
-      // Synthesis is needed in two distinct situations:
-      //
-      // Case A — no text at all after tool calls (model called tool + said nothing)
-      //   → synthesis generates the full answer
-      //
-      // Case B — model wrote a short "loader" phrase ("Je recherche…"), called
-      //   tools, got results, then stopped without writing the actual answer.
-      //   finalText is non-empty so the old guard (!finalText) missed this.
-      //   Heuristic: if tool results were captured AND finalText is short
-      //   (< 120 chars, probably just an intro phrase), synthesize and APPEND.
-      //
-      // Case C — tool calls happened but tool-result events were not captured
-      //   (AI SDK quirk / tool threw before yielding result) — synthesize from
-      //   call metadata to at least give the user something.
-      const toolsExecuted = collectedToolResults.length > 0
-      const toolsCalled = collectedToolCalls.length > 0
-      const stoppedOnToolCalls = result.finishReason === 'tool-calls'
-
-      const needsSynthesis =
-        (toolsExecuted || (toolsCalled && stoppedOnToolCalls)) &&
-        (!finalText.trim() || (toolsExecuted && finalText.trim().length < 120))
-
-      if (needsSynthesis) {
-        debugLog('[chat] synthesis fallback — calls=%d results=%d textLen=%d reason=%s',
-          collectedToolCalls.length, collectedToolResults.length,
-          finalText.trim().length, result.finishReason)
-        try {
-          const originalQuestion =
-            llmMessages.filter((m) => m.role === 'user').at(-1)?.content ?? question
-          const toolsPayload =
-            toolsExecuted
-              ? JSON.stringify(collectedToolResults).slice(0, 6000)
-              : `[Outils appelés sans résultats capturés : ${JSON.stringify(collectedToolCalls)}]`
-          // If the model already wrote an intro phrase (Case B), instruct synthesis
-          // to write ONLY the answer part so the streamed intro is not repeated.
-          const priorText = finalText.trim()
-          const synthesisInstruction = priorText
-            ? `Le modèle avait commencé à répondre par : "${priorText.slice(0, 200)}"\nÉcris UNIQUEMENT la suite — la réponse concrète aux données ci-dessous, sans répéter l'introduction.`
-            : `Rédige une réponse claire et concise à la question en te basant sur ces données.`
-          const synthesis = await provider.generate({
-            messages: [
-              { role: 'system', content: 'Tu es un assistant. Réponds en français, de façon concise.' },
-              {
-                role: 'user',
-                content:
-                  `Question : "${originalQuestion.slice(0, 400)}"\n\n` +
-                  `Données Tuleap/Jenkins :\n${toolsPayload}\n\n` +
-                  synthesisInstruction
-              }
-            ],
-            temperature: 0.1,
-            maxOutputTokens: 1024
+      // result.text is the authoritative final answer. If callbacks streamed
+      // less than the final text (provider quirk), emit the remainder.
+      let finalText = result.text.trim() || streamed.trim()
+      if (finalText && finalText.length > streamed.length) {
+        const remainder = finalText.startsWith(streamed)
+          ? finalText.slice(streamed.length)
+          : finalText
+        if (remainder) {
+          broadcast(senderId, {
+            type: 'delta',
+            conversationId: conv.id,
+            assistantMessageId: assistant.id,
+            delta: remainder
           })
-          const synthText = synthesis.text.trim()
-          // Append synthesis after the intro phrase (if any), or use as the full answer.
-          finalText = priorText && synthText
-            ? priorText.trimEnd() + '\n\n' + synthText
-            : synthText || priorText
-        } catch (synthErr) {
-          debugError('[chat] synthesis fallback failed: %s',
-            synthErr instanceof Error ? synthErr.message : String(synthErr))
         }
       }
 
-      // Never persist an empty assistant message — the UI would render a
-      // permanent "…" placeholder. Explain what happened instead.
-      if (!finalText.trim()) {
-        finalText =
-          toolsCalled
-            ? "_Le modèle n'a pas formulé de réponse après l'appel des outils — " +
-              'les résultats bruts sont affichés ci-dessus. Reformulez ou réessayez._'
-            : `_Le modèle n'a renvoyé aucune réponse (raison : ${result.finishReason ?? 'inconnue'}). Réessayez._`
-      }
-
-      if (finalText !== buffered) {
-        // Content not (fully) streamed as deltas — persist it and send the
-        // missing remainder to the renderer.
-        updateMessageContent(assistant.id, finalText)
+      // Only happens if the model genuinely produced nothing. Explain plainly.
+      if (!finalText) {
+        finalText = sawToolCall
+          ? "_Les outils ont été appelés mais le modèle n'a pas formulé de réponse. Les résultats sont affichés ci-dessus. Réessayez._"
+          : `_Le modèle n'a renvoyé aucune réponse (raison : ${result.finishReason ?? 'inconnue'}). Réessayez._`
         broadcast(senderId, {
           type: 'delta',
           conversationId: conv.id,
           assistantMessageId: assistant.id,
-          delta: finalText.startsWith(buffered) ? finalText.slice(buffered.length) : finalText
+          delta: finalText
         })
-        buffered = finalText
       }
+
+      updateMessageContent(assistant.id, finalText)
       debugLog('[chat] done model=%s finishReason=%s tokens=%o',
         result.model, result.finishReason, result.usage)
       broadcast(senderId, {
@@ -496,7 +437,7 @@ export function registerChatHandlers(): void {
       return { ok: true, assistantMessageId: assistant.id }
     } catch (err) {
       const e = toLlmError(err)
-      debugError('[chat] stream error kind=%s message=%s', e.kind, e.message)
+      debugError('[chat] runTools error kind=%s message=%s', e.kind, e.message)
       const errorText = `[Erreur ${e.kind}] ${e.message}`
       updateMessageContent(assistant.id, errorText)
       broadcast(senderId, {

@@ -14,7 +14,7 @@ import { describe, it, expect } from 'vitest'
 import { z } from 'zod'
 import { tool } from 'ai'
 import { createOpenRouterProvider } from '../src/main/llm/openrouter'
-import type { LlmStreamChunk } from '../src/main/llm/types'
+import type { LlmToolEvent } from '../src/main/llm/types'
 
 // ─── Dummy Tool ──────────────────────────────────────────────────────────────
 
@@ -95,13 +95,13 @@ describe.skipIf(SKIP_DIAGNOSTIC)('Diagnostic: Chat tool-calling with OpenRouter'
     expect(result.finishReason).toBeTruthy()
   }, TIMEOUT)
 
-  it('stream() — streaming tool round-trip (same as chat IPC handler)', async () => {
+  it('runTools() — agentic tool round-trip (same as chat IPC handler)', async () => {
     const tools = buildDummyTools()
-    const chunks: LlmStreamChunk[] = []
+    const toolEvents: LlmToolEvent[] = []
+    let streamed = ''
 
-    // This replicates the exact pattern from src/main/ipc/chat.ts lines 196-248
-    let buffered = ''
-    const result = await provider.stream(
+    // This replicates the exact pattern from src/main/ipc/chat.ts handler.
+    const result = await provider.runTools(
       {
         messages: [SYSTEM_MSG, USER_MSG],
         tools,
@@ -109,89 +109,55 @@ describe.skipIf(SKIP_DIAGNOSTIC)('Diagnostic: Chat tool-calling with OpenRouter'
         maxOutputTokens: 512,
         maxSteps: 4
       },
-      (chunk) => {
-        chunks.push(chunk)
-        if (chunk.type === 'text') {
-          buffered += chunk.delta
-          console.log('[stream] text-delta:', JSON.stringify(chunk.delta))
-        } else if (chunk.type === 'tool-call') {
-          console.log('[stream] tool-call:', chunk.toolName, 'args:', JSON.stringify(chunk.args))
-        } else if (chunk.type === 'tool-result') {
-          console.log('[stream] tool-result:', chunk.toolName, 'result:', JSON.stringify(chunk.result))
-        } else if (chunk.type === 'finish') {
-          console.log('[stream] finish:', chunk.finishReason, 'usage:', chunk.usage)
+      {
+        onToolEvent: (ev) => {
+          toolEvents.push(ev)
+          if (ev.kind === 'call') {
+            console.log('[runTools] tool-call:', ev.toolName, 'args:', JSON.stringify(ev.args))
+          } else {
+            console.log('[runTools] tool-result:', ev.toolName, 'result:', JSON.stringify(ev.result))
+          }
+        },
+        onText: (delta) => {
+          streamed += delta
+          console.log('[runTools] text:', JSON.stringify(delta))
         }
       }
     )
 
-    console.log('[stream] final result.text:', result.text)
-    console.log('[stream] buffered:', buffered)
+    console.log('[runTools] final result.text:', result.text)
 
     // ─── Assertions ────────────────────────────────────────────────────
 
-    // 1. We should have received at least one tool-call chunk
-    const toolCalls = chunks.filter((c) => c.type === 'tool-call')
-    console.log(`[stream] total tool-call chunks: ${toolCalls.length}`)
-    expect(toolCalls.length).toBeGreaterThanOrEqual(1)
+    // 1. At least one tool call targeting say_bonjour
+    const calls = toolEvents.filter((e) => e.kind === 'call')
+    expect(calls.length).toBeGreaterThanOrEqual(1)
+    expect(calls.some((e) => e.toolName === 'say_bonjour')).toBe(true)
 
-    // 2. The tool-call should target say_bonjour
-    const sayBonjourCall = toolCalls.find(
-      (c) => c.type === 'tool-call' && c.toolName === 'say_bonjour'
-    )
-    expect(sayBonjourCall).toBeDefined()
-
-    // 3. We should have received at least one tool-result chunk
-    const toolResults = chunks.filter((c) => c.type === 'tool-result')
-    console.log(`[stream] total tool-result chunks: ${toolResults.length}`)
-    expect(toolResults.length).toBeGreaterThanOrEqual(1)
-
-    // 4. The tool-result should contain "Bonjour"
-    const bonjourResult = toolResults.find(
-      (c) => c.type === 'tool-result' && c.toolName === 'say_bonjour'
-    )
-    expect(bonjourResult).toBeDefined()
-    if (bonjourResult && bonjourResult.type === 'tool-result') {
-      expect(JSON.stringify(bonjourResult.result).toLowerCase()).toContain('bonjour')
+    // 2. At least one tool result containing "Bonjour"
+    const results = toolEvents.filter((e) => e.kind === 'result')
+    expect(results.length).toBeGreaterThanOrEqual(1)
+    const bonjour = results.find((e) => e.toolName === 'say_bonjour')
+    expect(bonjour).toBeDefined()
+    if (bonjour && bonjour.kind === 'result') {
+      expect(JSON.stringify(bonjour.result).toLowerCase()).toContain('bonjour')
     }
 
-    // 5. We should have a finish chunk
-    const finishChunks = chunks.filter((c) => c.type === 'finish')
-    expect(finishChunks.length).toBe(1)
-
-    // 6. Final text should be non-empty and contain "Bonjour"
+    // 3. Final text is non-empty and contains "Bonjour"
     expect(result.text).toBeTruthy()
     expect(result.text.toLowerCase()).toContain('bonjour')
-
-    // 7. Diagnostic: does result.text match buffered? (multi-step issue detection)
-    if (result.text !== buffered) {
-      console.warn(
-        '[stream] ⚠️  MISMATCH: result.text differs from buffered text.',
-        `\n  result.text length: ${result.text.length}`,
-        `\n  buffered length: ${buffered.length}`,
-        `\n  Missing portion: "${result.text.slice(buffered.length)}"`
-      )
-    } else {
-      console.log('[stream] ✅ result.text matches buffered (no missing deltas)')
-    }
+    expect(result.finishReason).toBeTruthy()
   }, TIMEOUT)
 
-  it('stream() — without tools (baseline sanity check)', async () => {
-    let buffered = ''
-    const result = await provider.stream(
-      {
-        messages: [
-          { role: 'system', content: 'Réponds très brièvement en français.' },
-          { role: 'user', content: 'Dis bonjour.' }
-        ],
-        temperature: 0,
-        maxOutputTokens: 100
-      },
-      (chunk) => {
-        if (chunk.type === 'text') {
-          buffered += chunk.delta
-        }
-      }
-    )
+  it('runTools() — without tools (baseline sanity check)', async () => {
+    const result = await provider.runTools({
+      messages: [
+        { role: 'system', content: 'Réponds très brièvement en français.' },
+        { role: 'user', content: 'Dis bonjour.' }
+      ],
+      temperature: 0,
+      maxOutputTokens: 100
+    })
 
     console.log('[no-tools] result.text:', result.text)
     expect(result.text).toBeTruthy()

@@ -21,11 +21,12 @@ export { buildTuleapWriteTools, applyWrite } from './write-tools'
 export { buildJenkinsTools } from './jenkins-tools'
 export type { PendingWriteAction } from './write-tools'
 export type {
+  LlmAgentCallbacks,
   LlmGenerateRequest,
   LlmGenerateResult,
   LlmMessage,
   LlmProvider,
-  LlmStreamChunk,
+  LlmToolEvent,
   LlmUsage
 } from './types'
 

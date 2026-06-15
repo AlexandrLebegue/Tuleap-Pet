@@ -2,10 +2,10 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import type {
+  LlmAgentCallbacks,
   LlmGenerateRequest,
   LlmGenerateResult,
-  LlmProvider,
-  LlmStreamChunk
+  LlmProvider
 } from '../../src/main/llm/types'
 
 export type MockHandler = (req: LlmGenerateRequest) => string
@@ -21,13 +21,9 @@ class MockProvider implements LlmProvider {
       usage: null
     }
   }
-  async stream(
-    req: LlmGenerateRequest,
-    onChunk: (chunk: LlmStreamChunk) => void
-  ): Promise<LlmGenerateResult> {
+  async runTools(req: LlmGenerateRequest, cb?: LlmAgentCallbacks): Promise<LlmGenerateResult> {
     const text = this.getHandler()(req)
-    onChunk({ type: 'text', delta: text })
-    onChunk({ type: 'finish', finishReason: 'stop', usage: null })
+    cb?.onText?.(text)
     return { text, model: 'mock', finishReason: 'stop', usage: null }
   }
 }
