@@ -340,6 +340,10 @@ export type CommentingOptions = {
   contextDepth?: number
   contextTokenBudget?: number
   inlineComments?: boolean
+  /** Git-tree commenter: write the Doxygen brief above the declaration in the .h file. */
+  commentHeader?: boolean
+  /** Git-tree commenter: add inline comments inside the function body (in the .c file). */
+  commentBody?: boolean
   /** Test-generator pipeline mode ('basic' = fast single call, 'advanced' = call-graph context). */
   testPipelineMode?: 'basic' | 'advanced'
   testBuildEnabled?: boolean
@@ -384,6 +388,22 @@ export type TestGenSelection = {
   /** Source file relative to the clone dir. */
   sourceFile: string
   functions: string[]
+}
+
+/**
+ * A commenter target (Git-tree commenter): one function to document. The brief
+ * goes above its declaration in the header; inline comments go in its body in
+ * the implementation file. All paths are relative to the clone dir.
+ */
+export type CommentTarget = {
+  /** Header (.h) declaring the function — where the brief block is inserted. */
+  headerPath: string
+  name: string
+  /** File implementing the function (.c, or the header itself if inline). */
+  implFile: string
+  implLine: number
+  /** True when the function is defined inline in the header. */
+  inHeader: boolean
 }
 
 export type JobStatus =

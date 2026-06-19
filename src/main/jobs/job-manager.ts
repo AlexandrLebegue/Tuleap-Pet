@@ -4,13 +4,10 @@ import { randomBytes } from 'node:crypto'
 import type { BrowserWindow } from 'electron'
 import { buildTuleapClient } from '../tuleap/build'
 import { getConfig } from '../store/config'
-import { processSingleFile } from '../commenter/commenter'
-import { runContextCommenter } from '../commenter/context-commenter'
-import type { ContextCommenterProgress } from '../commenter/context-commenter'
+import { runSelectiveCommenter } from '../commenter/selective-commenter'
+import type { SelectiveCommentProgress } from '../commenter/selective-commenter'
 import {
   cloneRepo,
-  listSourceFiles,
-  listChangedFiles,
   createBranch,
   gitAdd,
   gitCommit,
@@ -26,7 +23,8 @@ import type {
   JobStreamEvent,
   JobType,
   CommentingOptions,
-  TestGenSelection
+  TestGenSelection,
+  CommentTarget
 } from '@shared/types'
 
 function makeJobId(): string {
@@ -53,6 +51,8 @@ type JobStartArgs = {
   options?: CommentingOptions
   /** Commenter only: subset of source files to process (relative paths). */
   selectedFiles?: string[]
+  /** Commenter only: functions to document (header brief + body comments). */
+  commentTargets?: CommentTarget[]
   /** Test-generator only: source files + the functions to test. */
   selection?: TestGenSelection[]
   /** Reuse an already-cloned working dir (e.g. from the file-selection step) instead of cloning again. */
@@ -295,8 +295,10 @@ async function runTestGeneration(
 }
 
 /**
- * Comment every (or only changed) source file in the clone. Returns the commit
- * message, or {@link CANCELLED} if aborted.
+ * Document an explicit selection of functions (header-driven, advanced pipeline
+ * only): Doxygen brief above the declaration in the .h, and/or inline comments
+ * inside the function body in the .c. Returns the commit message, or
+ * {@link CANCELLED} if aborted.
  */
 async function runCommenting(
   win: BrowserWindow | null,
@@ -306,97 +308,60 @@ async function runCommenting(
   signal: AbortSignal,
   cleanupDir: () => void
 ): Promise<string> {
-  const commentOptions: CommentingOptions = args.options ?? {
-    preserveExisting: true,
-    addFileHeader: true,
-    detailedComments: true,
-    applyCodingRules: false,
-    onlyChangedFiles: false
+  const targets = args.commentTargets ?? []
+  if (targets.length === 0) {
+    throw new Error('Aucune fonction sélectionnée à commenter.')
   }
 
-  let files = await listSourceFiles(targetDir)
-  // Restrict to the user's explicit file selection when provided.
-  if (args.selectedFiles && args.selectedFiles.length > 0) {
-    const wanted = new Set(args.selectedFiles)
-    files = files.filter((f) => wanted.has(f))
+  const commentHeader = args.options?.commentHeader ?? true
+  const commentBody = args.options?.commentBody ?? false
+  if (!commentHeader && !commentBody) {
+    throw new Error('Sélectionnez au moins « commenter le header » ou « commenter le corps ».')
   }
-  if (commentOptions.onlyChangedFiles) {
-    const changed = new Set(await listChangedFiles(targetDir))
-    files = files.filter((f) => changed.has(f))
-    if (files.length === 0) {
-      throw new Error('Aucun fichier C/C++ modifié trouvé dans le dernier commit.')
-    }
-  } else if (files.length === 0) {
-    throw new Error(
-      `Aucun fichier C/C++ à commenter${
-        args.selectedFiles && args.selectedFiles.length > 0 ? ' (sélection vide)' : ''
-      } dans la branche "${args.branchName}" du dépôt "${args.repoName}".`
-    )
+
+  if (signal.aborted) {
+    cleanupDir()
+    emit(win, { type: 'cancelled', jobId })
+    return CANCELLED
   }
 
   updateStatus(win, jobId, 'processing')
-  let skipped = 0
 
-  if (!commentOptions.useContextPipeline) {
-    for (let i = 0; i < files.length; i++) {
-      if (signal.aborted) {
-        cleanupDir()
-        emit(win, { type: 'cancelled', jobId })
-        return CANCELLED
-      }
-      const filename = files[i]!
+  const emitProgress = (ev: SelectiveCommentProgress): void => {
+    if (ev.type === 'function') {
       emit(win, {
         type: 'progress',
         jobId,
-        current: i + 1,
-        total: files.length,
-        currentFile: filename
+        current: ev.index,
+        total: ev.total,
+        currentFile: ev.name
       })
-      try {
-        const fullPath = path.join(targetDir, filename)
-        const content = fs.readFileSync(fullPath, 'utf8')
-        const commented = await processSingleFile(content, filename, commentOptions)
-        fs.writeFileSync(fullPath, commented, 'utf8')
-      } catch (fileErr) {
-        skipped++
-        debugError(
-          '[job-manager] skipped %s: %s',
-          filename,
-          fileErr instanceof Error ? fileErr.message : String(fileErr)
-        )
-      }
-    }
-  } else {
-    // Contextual pipeline: process all files in batch.
-    const absolutePaths = files.map((f) => path.join(targetDir, f))
-    const emitCtx = (ev: ContextCommenterProgress): void => {
-      win?.webContents.send('commenter:context-progress', ev)
-    }
-    try {
-      const ctxResult = await runContextCommenter(
-        {
-          projectRoot: targetDir,
-          filePaths: absolutePaths,
-          forceAll: commentOptions.forceAll,
-          depth: commentOptions.contextDepth,
-          tokenBudget: commentOptions.contextTokenBudget,
-          inlineComments: commentOptions.inlineComments
-        },
-        emitCtx
-      )
-      for (const f of ctxResult.files) {
-        fs.writeFileSync(f.filePath, f.newContent, 'utf8')
-      }
-      skipped = files.length - ctxResult.files.length
-    } catch (ctxErr) {
-      debugError(
-        '[job-manager] context pipeline error: %s',
-        ctxErr instanceof Error ? ctxErr.message : String(ctxErr)
-      )
-      throw ctxErr
     }
   }
 
-  const processed = files.length - skipped
-  return `[AI] Commentaires Doxygen — ${processed} fichier(s)${skipped > 0 ? `, ${skipped} ignoré(s)` : ''}`
+  const result = await runSelectiveCommenter(
+    targetDir,
+    targets,
+    {
+      commentHeader,
+      commentBody,
+      depth: args.options?.contextDepth,
+      tokenBudget: args.options?.contextTokenBudget
+    },
+    emitProgress
+  )
+
+  for (const w of result.warnings) {
+    debugError('[job-manager] commenter warning: %s', w)
+  }
+
+  if (result.changedFiles.length === 0) {
+    throw new Error(
+      `Aucun commentaire généré (${result.failed} fonction(s) en échec). Rien à committer.`
+    )
+  }
+
+  return `[AI] Commentaires Doxygen — ${result.commented} fonction(s)${
+    result.failed > 0 ? `, ${result.failed} en échec` : ''
+  }`
 }

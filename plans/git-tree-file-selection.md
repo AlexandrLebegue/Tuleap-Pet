@@ -1,10 +1,14 @@
 # Plan — Sélection de fichiers dans la boucle Git Explorer (Commentateur / Tests)
 
-> **Statut : implémenté.** Clone asynchrone (`prepareJob`) + sélecteur de fichiers
-> (recherche, cases à cocher, tout cocher/décocher), suppression de la pipeline de
-> tests « Basique », correction du commit vide. **Ajout :** option de portée des
-> commentaires — *en-tête de fonction uniquement* vs *commentaires dans le corps
-> des fonctions* (champ `inlineComments`, appliqué aux deux pipelines).
+> **⚠️ Partiellement remplacé.** Le commentateur n'utilise plus le sélecteur de
+> *fichiers* (`JobFilePicker`, supprimé) : il adopte désormais la **sélection
+> header → fonctions** (`HeaderFunctionSelector`), restreinte au **C** (`.h`), avec
+> deux cases à cocher — *commenter le header* (brief Doxygen dans le `.h`) et
+> *commenter le corps* (commentaires inline dans le `.c`). Voir
+> `runSelectiveCommenter` (`src/main/commenter/selective-commenter.ts`).
+>
+> **Statut initial (conservé) :** clone asynchrone, suppression de la pipeline de
+> tests « Basique », correction du commit vide.
 
 ## 1. Résumé du besoin
 

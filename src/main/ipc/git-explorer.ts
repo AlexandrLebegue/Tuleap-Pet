@@ -14,10 +14,11 @@ import type {
   GitCommit,
   JobType,
   CommentingOptions,
-  TestGenSelection
+  TestGenSelection,
+  CommentTarget
 } from '@shared/types'
 
-function buildSettingsState() {
+function buildSettingsState(): { tempClonePath: string | null; gitCloneSsh: boolean } {
   const config = getConfig()
   return { tempClonePath: config.tempClonePath, gitCloneSsh: config.gitCloneSsh }
 }
@@ -140,6 +141,7 @@ export function registerGitExplorerHandlers(): void {
       options,
       selection,
       selectedFiles,
+      commentTargets,
       existingCloneDir
     } = args as {
       repoId: number
@@ -150,6 +152,7 @@ export function registerGitExplorerHandlers(): void {
       options?: CommentingOptions
       selection?: TestGenSelection[]
       selectedFiles?: string[]
+      commentTargets?: CommentTarget[]
       existingCloneDir?: string
     }
     const win = BrowserWindow.fromWebContents(event.sender)
@@ -162,6 +165,7 @@ export function registerGitExplorerHandlers(): void {
       options,
       selection,
       selectedFiles,
+      commentTargets,
       existingCloneDir
     })
     return { jobId }

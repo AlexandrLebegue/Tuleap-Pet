@@ -3,19 +3,30 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { api } from '@renderer/lib/api'
 import { useSettings } from '@renderer/stores/settings.store'
 import { Button } from '@renderer/components/ui/button'
-import CommentingOptionsPanel from '@renderer/components/CommentingOptionsPanel'
-import JobFilePicker from '@renderer/components/JobFilePicker'
 import HeaderFunctionSelector, { fnKey } from '@renderer/components/HeaderFunctionSelector'
 import type {
   GitRepository,
   GitBranch,
   GitCommit,
   HeaderEntry,
+  CommentTarget,
   JenkinsBranchStatus,
   JenkinsBuildResult,
-  Page,
-  CommentingOptions
+  Page
 } from '@shared/types'
+
+/** Keep only C headers (.h) and functions implemented in .c/.h (C only). */
+function filterCHeaders(headers: HeaderEntry[]): HeaderEntry[] {
+  return headers
+    .filter((h) => h.headerPath.toLowerCase().endsWith('.h'))
+    .map((h) => ({
+      ...h,
+      functions: h.functions.filter(
+        (f) => f.implFile.toLowerCase().endsWith('.c') || f.implFile.toLowerCase().endsWith('.h')
+      )
+    }))
+    .filter((h) => h.functions.length > 0)
+}
 
 function jenkinsBadge(status: JenkinsBranchStatus | null | undefined): React.JSX.Element | null {
   if (!status) return null
@@ -51,30 +62,23 @@ function jenkinsBadge(status: JenkinsBranchStatus | null | undefined): React.JSX
   return null
 }
 
-const DEFAULT_OPTIONS: CommentingOptions = {
-  preserveExisting: true,
-  addFileHeader: true,
-  detailedComments: true,
-  applyCodingRules: false,
-  onlyChangedFiles: false,
-  useContextPipeline: false,
-  forceAll: false,
-  contextDepth: 3,
-  inlineComments: false
-}
+// Commenter modal: clone async → pick functions (header-driven, C only) → run.
+type CmStage = 'cloning' | 'selecting' | 'starting' | 'error'
 
-// Commenter job modal: clone async → pick files → run.
-type JobModal = {
+type CmModal = {
   repo: GitRepository
   branch: string
-  options: CommentingOptions
-  cloneUrlOverride: string
-  phase: 'preparing' | 'ready' | 'error'
+  cloneUrl: string
+  stage: CmStage
   cloneDir: string | null
-  files: string[]
-  changedFiles: string[]
+  headers: HeaderEntry[]
   selected: Set<string>
-  error?: string
+  /** Generate the Doxygen brief above the declaration in the .h. */
+  commentHeader: boolean
+  /** Add inline comments inside the function body in the .c. */
+  commentBody: boolean
+  depth: number
+  error: string | null
 }
 
 // Test-generator modal: clone async → pick functions (header-driven) → run.
@@ -110,9 +114,9 @@ export default function GitExplorer(): React.JSX.Element {
   const [loadingCommits, setLoadingCommits] = useState(false)
 
   // Commenter modal
-  const [jobModal, setJobModal] = useState<JobModal | null>(null)
-  const [starting, setStarting] = useState(false)
-  const jobStartedRef = useRef(false)
+  const [cm, setCm] = useState<CmModal | null>(null)
+  const cmCloneDirRef = useRef<string | null>(null)
+  const cmStartedRef = useRef(false)
 
   // Test-generator modal
   const [tg, setTg] = useState<TgModal | null>(null)
@@ -193,85 +197,105 @@ export default function GitExplorer(): React.JSX.Element {
     [selectedRepo]
   )
 
-  // ─── Commenter: clone async, then pick files ────────────────────────────────
-  const prepare = useCallback(async (repo: GitRepository, branch: string, cloneUrl: string) => {
-    setJobModal((prev) => (prev ? { ...prev, phase: 'preparing', error: undefined } : prev))
-    const res = await api.gitExplorer.cloneAndList({
-      repoName: repo.name,
-      cloneUrl: cloneUrl.trim(),
-      branchName: branch
-    })
-    if (res.ok) {
-      jobStartedRef.current = false
-      setJobModal((prev) =>
+  // ─── Commenter: clone async, then pick header functions (C only) ────────────
+  const openCommenter = useCallback(
+    async (branch: string) => {
+      if (!selectedRepo) return
+      const repo = selectedRepo
+      cmStartedRef.current = false
+      cmCloneDirRef.current = null
+      setCm({
+        repo,
+        branch,
+        cloneUrl: repo.cloneUrl,
+        stage: 'cloning',
+        cloneDir: null,
+        headers: [],
+        selected: new Set(),
+        commentHeader: true,
+        commentBody: false,
+        depth: 3,
+        error: null
+      })
+      const clone = await api.testgen.gitCloneAndList({
+        repoUrl: repo.cloneUrl,
+        branch,
+        onlyRecentFiles: false
+      })
+      if (!clone.ok) {
+        setCm((prev) => (prev ? { ...prev, stage: 'error', error: clone.error } : prev))
+        return
+      }
+      cmCloneDirRef.current = clone.cloneDir
+      const idx = await api.testgen.buildHeaderIndex({ cloneDir: clone.cloneDir })
+      if (!idx.ok) {
+        setCm((prev) => (prev ? { ...prev, stage: 'error', error: idx.error } : prev))
+        return
+      }
+      setCm((prev) =>
         prev
           ? {
               ...prev,
-              phase: 'ready',
-              cloneDir: res.cloneDir,
-              files: res.files,
-              changedFiles: res.changedFiles,
-              selected: new Set(res.files)
+              stage: 'selecting',
+              cloneDir: idx.cloneDir,
+              headers: filterCHeaders(idx.headers)
             }
           : prev
       )
-    } else {
-      setJobModal((prev) => (prev ? { ...prev, phase: 'error', error: res.error } : prev))
-    }
-  }, [])
-
-  const openModal = useCallback(
-    (branch: string) => {
-      if (!selectedRepo) return
-      const repo = selectedRepo
-      jobStartedRef.current = false
-      setJobModal({
-        repo,
-        branch,
-        options: { ...DEFAULT_OPTIONS },
-        cloneUrlOverride: repo.cloneUrl,
-        phase: 'preparing',
-        cloneDir: null,
-        files: [],
-        changedFiles: [],
-        selected: new Set()
-      })
-      void prepare(repo, branch, repo.cloneUrl)
     },
-    [selectedRepo, prepare]
+    [selectedRepo]
   )
 
-  const closeJobModal = useCallback(() => {
-    setJobModal((prev) => {
-      if (prev && !jobStartedRef.current && prev.cloneDir) {
-        void api.gitExplorer.cleanupClone(prev.cloneDir)
-      }
-      return null
-    })
+  const closeCommenter = useCallback(() => {
+    if (!cmStartedRef.current && cmCloneDirRef.current) {
+      void api.testgen.cleanupCloneDir({ cloneDir: cmCloneDirRef.current })
+    }
+    cmCloneDirRef.current = null
+    setCm(null)
   }, [])
 
-  const startJobFromModal = useCallback(async () => {
-    if (!jobModal) return
-    const cloneUrl = jobModal.cloneUrlOverride.trim()
-    if (!cloneUrl || jobModal.phase !== 'ready' || jobModal.selected.size === 0) return
-    setStarting(true)
-    try {
-      jobStartedRef.current = true
-      await api.gitExplorer.startJob({
-        repoId: jobModal.repo.id,
-        repoName: jobModal.repo.name,
-        cloneUrl,
-        branchName: jobModal.branch,
-        type: 'commentateur',
-        options: jobModal.options,
-        selectedFiles: [...jobModal.selected],
-        existingCloneDir: jobModal.cloneDir ?? undefined
-      })
-      setJobModal(null)
-    } finally {
-      setStarting(false)
+  const startCommenter = useCallback(async () => {
+    if (!cm || !cm.cloneDir) return
+    if (!cm.commentHeader && !cm.commentBody) return
+    const targets: CommentTarget[] = []
+    for (const h of cm.headers) {
+      for (const f of h.functions) {
+        if (cm.selected.has(fnKey(f))) {
+          targets.push({
+            headerPath: h.headerPath,
+            name: f.name,
+            implFile: f.implFile,
+            implLine: f.implLine,
+            inHeader: f.inHeader
+          })
+        }
+      }
     }
-  }, [jobModal])
+    if (targets.length === 0) return
+    setCm((prev) => (prev ? { ...prev, stage: 'starting' } : prev))
+    cmStartedRef.current = true
+    await api.gitExplorer.startJob({
+      repoId: cm.repo.id,
+      repoName: cm.repo.name,
+      cloneUrl: cm.cloneUrl,
+      branchName: cm.branch,
+      type: 'commentateur',
+      options: {
+        preserveExisting: true,
+        addFileHeader: false,
+        detailedComments: false,
+        applyCodingRules: false,
+        onlyChangedFiles: false,
+        commentHeader: cm.commentHeader,
+        commentBody: cm.commentBody,
+        contextDepth: cm.depth
+      },
+      commentTargets: targets,
+      existingCloneDir: cm.cloneDir
+    })
+    cmCloneDirRef.current = null
+    setCm(null)
+  }, [cm])
 
   // ─── Test-generator: clone async, then pick header functions ────────────────
   const openTestGen = useCallback(
@@ -466,7 +490,7 @@ export default function GitExplorer(): React.JSX.Element {
                 </button>
                 <div className="flex gap-1 shrink-0">
                   <button
-                    onClick={() => openModal(b.name)}
+                    onClick={() => void openCommenter(b.name)}
                     disabled={noTempPath}
                     className="text-xs px-1.5 py-0.5 rounded bg-primary/10 hover:bg-primary/20 text-primary disabled:opacity-40 disabled:cursor-not-allowed"
                     title="Lancer le commentateur"
@@ -656,104 +680,100 @@ export default function GitExplorer(): React.JSX.Element {
         </div>
       )}
 
-      {/* Commenter job modal */}
-      {jobModal && (
+      {/* Commenter: clone + header/function selection modal (C only) */}
+      {cm && (
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-          <div className="bg-card rounded-lg border shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto p-6 space-y-4">
-            <h2 className="text-lg font-semibold">💬 Lancer le commentateur</h2>
-
-            <div className="text-sm space-y-2">
-              <div className="flex gap-2 text-muted-foreground">
-                <span className="font-medium text-foreground shrink-0">Dépôt:</span>
-                <span>{jobModal.repo.name}</span>
-              </div>
-              <div className="flex gap-2 text-muted-foreground">
-                <span className="font-medium text-foreground shrink-0">Branche:</span>
-                <span>{jobModal.branch}</span>
-              </div>
+          <div className="bg-card rounded-lg border shadow-xl w-full max-w-2xl p-6 flex flex-col gap-4 max-h-[85vh]">
+            <div>
+              <h2 className="text-lg font-semibold">💬 Lancer le commentateur</h2>
+              <p className="text-sm text-muted-foreground">
+                {cm.repo.name} · branche <code className="text-xs">{cm.branch}</code>
+              </p>
             </div>
 
-            {jobModal.phase === 'preparing' && (
-              <div className="flex items-center gap-3 rounded-md border bg-muted/30 px-4 py-6 text-sm text-muted-foreground">
-                <span className="inline-block size-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-                Clonage du dépôt en cours…
-              </div>
+            {cm.stage === 'cloning' && (
+              <p className="text-sm text-muted-foreground py-8 text-center">
+                Clonage et analyse du dépôt en cours…
+              </p>
             )}
 
-            {jobModal.phase === 'error' && (
-              <div className="space-y-2">
-                <p className="text-sm text-destructive">{jobModal.error}</p>
-                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                  URL de clonage HTTPS
-                </label>
-                <input
-                  type="text"
-                  value={jobModal.cloneUrlOverride}
-                  onChange={(e) =>
-                    setJobModal((prev) =>
-                      prev ? { ...prev, cloneUrlOverride: e.target.value } : prev
-                    )
-                  }
-                  placeholder="https://tuleap.example.com/plugins/git/project/repo.git"
-                  spellCheck={false}
-                  className="w-full rounded-md border border-input bg-transparent px-3 py-1.5 text-xs font-mono shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                />
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={!jobModal.cloneUrlOverride.trim()}
-                  onClick={() =>
-                    void prepare(jobModal.repo, jobModal.branch, jobModal.cloneUrlOverride)
-                  }
-                >
-                  Réessayer le clonage
-                </Button>
-              </div>
+            {cm.stage === 'error' && (
+              <p className="text-sm text-destructive">{cm.error ?? 'Erreur inconnue.'}</p>
             )}
 
-            {jobModal.phase === 'ready' && (
+            {(cm.stage === 'selecting' || cm.stage === 'starting') && (
               <>
-                <div>
-                  <p className="mb-1 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                    Fichiers à commenter
-                  </p>
-                  <JobFilePicker
-                    files={jobModal.files}
-                    changedFiles={jobModal.changedFiles}
-                    selected={jobModal.selected}
-                    onChange={(next) =>
-                      setJobModal((prev) => (prev ? { ...prev, selected: next } : prev))
-                    }
-                    disabled={starting}
-                  />
+                <p className="text-xs text-muted-foreground">
+                  Sélectionnez les fonctions à commenter (headers C uniquement). Le brief Doxygen
+                  est écrit dans le <code className="text-[11px]">.h</code> au-dessus de la fonction
+                  ; les commentaires de code sont ajoutés dans le corps de la fonction.
+                </p>
+
+                <div className="flex flex-wrap gap-4 rounded-md border bg-muted/30 px-3 py-2">
+                  <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={cm.commentHeader}
+                      onChange={() =>
+                        setCm((prev) =>
+                          prev ? { ...prev, commentHeader: !prev.commentHeader } : prev
+                        )
+                      }
+                      className="h-4 w-4 accent-primary"
+                    />
+                    Commenter le header (brief dans le .h)
+                  </label>
+                  <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={cm.commentBody}
+                      onChange={() =>
+                        setCm((prev) => (prev ? { ...prev, commentBody: !prev.commentBody } : prev))
+                      }
+                      className="h-4 w-4 accent-primary"
+                    />
+                    Commenter le corps de la fonction
+                  </label>
+                  <label className="flex items-center gap-2 text-sm text-muted-foreground ml-auto">
+                    Profondeur de contexte
+                    <input
+                      type="number"
+                      min={1}
+                      max={10}
+                      value={cm.depth}
+                      onChange={(e) =>
+                        setCm((prev) =>
+                          prev
+                            ? { ...prev, depth: Math.max(1, parseInt(e.target.value) || 3) }
+                            : prev
+                        )
+                      }
+                      className="w-16 rounded-md border border-input bg-background px-2 py-1 text-xs"
+                    />
+                  </label>
                 </div>
-                <CommentingOptionsPanel
-                  options={jobModal.options}
-                  onChange={(opts) =>
-                    setJobModal((prev) => (prev ? { ...prev, options: opts } : prev))
-                  }
-                  showOnlyChangedFiles={false}
-                  showContextPipeline={true}
-                  showCommentScope={true}
-                  projectReady={true}
-                  compact={true}
+
+                <HeaderFunctionSelector
+                  headers={cm.headers}
+                  selected={cm.selected}
+                  onChange={(next) => setCm((prev) => (prev ? { ...prev, selected: next } : prev))}
                 />
               </>
             )}
 
-            <div className="flex gap-2 justify-end pt-2">
-              <Button variant="outline" onClick={closeJobModal} disabled={starting}>
+            <div className="flex gap-2 justify-end pt-2 border-t">
+              <Button variant="outline" onClick={closeCommenter} disabled={cm.stage === 'starting'}>
                 Annuler
               </Button>
               <Button
-                onClick={() => void startJobFromModal()}
-                disabled={starting || jobModal.phase !== 'ready' || jobModal.selected.size === 0}
+                onClick={() => void startCommenter()}
+                disabled={
+                  cm.stage !== 'selecting' ||
+                  cm.selected.size === 0 ||
+                  (!cm.commentHeader && !cm.commentBody)
+                }
               >
-                {starting
-                  ? 'Démarrage…'
-                  : jobModal.phase === 'ready'
-                    ? `Lancer sur ${jobModal.selected.size} fichier(s)`
-                    : 'Lancer le job'}
+                {cm.stage === 'starting' ? 'Démarrage…' : `Commenter (${cm.selected.size})`}
               </Button>
             </div>
           </div>

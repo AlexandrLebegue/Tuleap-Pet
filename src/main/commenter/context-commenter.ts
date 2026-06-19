@@ -58,7 +58,7 @@ paired header, callers, callees) and produce ONLY a Doxygen comment block.
 You do NOT modify the function body, never rename identifiers, and never
 change types.`
 
-function buildInlineCommentPrompt(fnText: string): { system: string; user: string } {
+export function buildInlineCommentPrompt(fnText: string): { system: string; user: string } {
   const system = `Tu es un expert en documentation inline de code C/C++ (style Doxygen).
 Ajoute des commentaires de flux dans le corps d'une fonction. Règles :
 - NE PAS ajouter ou modifier le header Doxygen — retourne seulement la signature + le corps.
@@ -79,11 +79,10 @@ Retourne UNIQUEMENT la fonction (signature + corps avec commentaires inline), en
   return { system, user }
 }
 
-function buildGeneratePrompt(args: {
-  fn: FunctionDef
-  ctxText: string
-  indent: string
-}): { system: string; user: string } {
+export function buildGeneratePrompt(args: { fn: FunctionDef; ctxText: string; indent: string }): {
+  system: string
+  user: string
+} {
   const user = `# CONTEXT
 
 ${args.ctxText}
@@ -119,7 +118,7 @@ Rules:
   return { system: SYSTEM_PROMPT, user }
 }
 
-function extractCommentBlock(raw: string): string {
+export function extractCommentBlock(raw: string): string {
   const patterns = [/```cpp\s*([\s\S]*?)```/, /```c\s*([\s\S]*?)```/, /```\s*([\s\S]*?)```/]
   for (const p of patterns) {
     const m = raw.match(p)
@@ -128,7 +127,11 @@ function extractCommentBlock(raw: string): string {
   return raw.trim()
 }
 
-async function callLlm(system: string, user: string, maxOutputTokens = 1024): Promise<string> {
+export async function callLlm(
+  system: string,
+  user: string,
+  maxOutputTokens = 1024
+): Promise<string> {
   const provider = resolveLlmProvider()
   const result = await provider.generate({
     messages: [
@@ -141,9 +144,9 @@ async function callLlm(system: string, user: string, maxOutputTokens = 1024): Pr
   return result.text
 }
 
-type Op = { startLine: number; endLineExclusive: number; replacement: string }
+export type Op = { startLine: number; endLineExclusive: number; replacement: string }
 
-function applyOps(content: string, ops: Op[]): string {
+export function applyOps(content: string, ops: Op[]): string {
   const sorted = [...ops].sort((a, b) => a.startLine - b.startLine)
   const lines = content.split('\n')
   const out: string[] = []
