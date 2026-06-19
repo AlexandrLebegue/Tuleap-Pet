@@ -570,6 +570,17 @@ const gitExplorer = {
     offset?: number
   }): Promise<Page<GitCommit>> => ipcRenderer.invoke('git:list-commits', args),
 
+  cloneAndList: (args: {
+    repoName: string
+    cloneUrl: string
+    branchName: string
+  }): Promise<
+    | { ok: true; cloneDir: string; files: string[]; changedFiles: string[] }
+    | { ok: false; error: string }
+  > => ipcRenderer.invoke('git:clone-and-list', args),
+
+  cleanupClone: (dir: string): Promise<void> => ipcRenderer.invoke('git:cleanup-clone', dir),
+
   startJob: (args: {
     repoId: number
     repoName: string
@@ -578,6 +589,7 @@ const gitExplorer = {
     type: JobType
     options?: CommentingOptions
     selection?: TestGenSelection[]
+    selectedFiles?: string[]
     existingCloneDir?: string
   }): Promise<{ jobId: string }> => ipcRenderer.invoke('git:start-job', args),
 

@@ -4,6 +4,7 @@ import { api } from '@renderer/lib/api'
 import { useSettings } from '@renderer/stores/settings.store'
 import { Button } from '@renderer/components/ui/button'
 import CommentingOptionsPanel from '@renderer/components/CommentingOptionsPanel'
+import JobFilePicker from '@renderer/components/JobFilePicker'
 import HeaderFunctionSelector, { fnKey } from '@renderer/components/HeaderFunctionSelector'
 import type {
   GitRepository,
@@ -13,8 +14,7 @@ import type {
   JenkinsBranchStatus,
   JenkinsBuildResult,
   Page,
-  CommentingOptions,
-  JobType
+  CommentingOptions
 } from '@shared/types'
 
 function jenkinsBadge(status: JenkinsBranchStatus | null | undefined): React.JSX.Element | null {
@@ -63,14 +63,21 @@ const DEFAULT_OPTIONS: CommentingOptions = {
   inlineComments: false
 }
 
+// Commenter job modal: clone async → pick files → run.
 type JobModal = {
-  type: JobType
   repo: GitRepository
   branch: string
   options: CommentingOptions
   cloneUrlOverride: string
+  phase: 'preparing' | 'ready' | 'error'
+  cloneDir: string | null
+  files: string[]
+  changedFiles: string[]
+  selected: Set<string>
+  error?: string
 }
 
+// Test-generator modal: clone async → pick functions (header-driven) → run.
 type TgStage = 'cloning' | 'selecting' | 'starting' | 'error'
 
 type TgModal = {
@@ -102,8 +109,15 @@ export default function GitExplorer(): React.JSX.Element {
   const [commitsOffset, setCommitsOffset] = useState(0)
   const [loadingCommits, setLoadingCommits] = useState(false)
 
+  // Commenter modal
   const [jobModal, setJobModal] = useState<JobModal | null>(null)
   const [starting, setStarting] = useState(false)
+  const jobStartedRef = useRef(false)
+
+  // Test-generator modal
+  const [tg, setTg] = useState<TgModal | null>(null)
+  const tgCloneDirRef = useRef<string | null>(null)
+  const tgStartedRef = useRef(false)
 
   // Release Notes modal
   const [rnModal, setRnModal] = useState<{ repoId: number; cloneUrl: string } | null>(null)
@@ -179,25 +193,87 @@ export default function GitExplorer(): React.JSX.Element {
     [selectedRepo]
   )
 
+  // ─── Commenter: clone async, then pick files ────────────────────────────────
+  const prepare = useCallback(async (repo: GitRepository, branch: string, cloneUrl: string) => {
+    setJobModal((prev) => (prev ? { ...prev, phase: 'preparing', error: undefined } : prev))
+    const res = await api.gitExplorer.cloneAndList({
+      repoName: repo.name,
+      cloneUrl: cloneUrl.trim(),
+      branchName: branch
+    })
+    if (res.ok) {
+      jobStartedRef.current = false
+      setJobModal((prev) =>
+        prev
+          ? {
+              ...prev,
+              phase: 'ready',
+              cloneDir: res.cloneDir,
+              files: res.files,
+              changedFiles: res.changedFiles,
+              selected: new Set(res.files)
+            }
+          : prev
+      )
+    } else {
+      setJobModal((prev) => (prev ? { ...prev, phase: 'error', error: res.error } : prev))
+    }
+  }, [])
+
   const openModal = useCallback(
-    (type: JobType, branch: string) => {
+    (branch: string) => {
       if (!selectedRepo) return
+      const repo = selectedRepo
+      jobStartedRef.current = false
       setJobModal({
-        type,
-        repo: selectedRepo,
+        repo,
         branch,
         options: { ...DEFAULT_OPTIONS },
-        cloneUrlOverride: selectedRepo.cloneUrl
+        cloneUrlOverride: repo.cloneUrl,
+        phase: 'preparing',
+        cloneDir: null,
+        files: [],
+        changedFiles: [],
+        selected: new Set()
       })
+      void prepare(repo, branch, repo.cloneUrl)
     },
-    [selectedRepo]
+    [selectedRepo, prepare]
   )
 
-  // ---- Test-generator: clone async, then pick header functions ----
-  const [tg, setTg] = useState<TgModal | null>(null)
-  const tgCloneDirRef = useRef<string | null>(null)
-  const tgStartedRef = useRef(false)
+  const closeJobModal = useCallback(() => {
+    setJobModal((prev) => {
+      if (prev && !jobStartedRef.current && prev.cloneDir) {
+        void api.gitExplorer.cleanupClone(prev.cloneDir)
+      }
+      return null
+    })
+  }, [])
 
+  const startJobFromModal = useCallback(async () => {
+    if (!jobModal) return
+    const cloneUrl = jobModal.cloneUrlOverride.trim()
+    if (!cloneUrl || jobModal.phase !== 'ready' || jobModal.selected.size === 0) return
+    setStarting(true)
+    try {
+      jobStartedRef.current = true
+      await api.gitExplorer.startJob({
+        repoId: jobModal.repo.id,
+        repoName: jobModal.repo.name,
+        cloneUrl,
+        branchName: jobModal.branch,
+        type: 'commentateur',
+        options: jobModal.options,
+        selectedFiles: [...jobModal.selected],
+        existingCloneDir: jobModal.cloneDir ?? undefined
+      })
+      setJobModal(null)
+    } finally {
+      setStarting(false)
+    }
+  }, [jobModal])
+
+  // ─── Test-generator: clone async, then pick header functions ────────────────
   const openTestGen = useCallback(
     async (branch: string) => {
       if (!selectedRepo) return
@@ -246,7 +322,6 @@ export default function GitExplorer(): React.JSX.Element {
 
   const startTestGen = useCallback(async () => {
     if (!tg || !tg.cloneDir) return
-    // Group selected functions by their implementation file.
     const byFile = new Map<string, string[]>()
     for (const h of tg.headers) {
       for (const f of h.functions) {
@@ -277,6 +352,7 @@ export default function GitExplorer(): React.JSX.Element {
     setTg(null)
   }, [tg])
 
+  // ─── Release Notes ──────────────────────────────────────────────────────────
   const openRnModal = useCallback(async () => {
     if (!selectedRepo) return
     setRnModal({ repoId: selectedRepo.id, cloneUrl: selectedRepo.cloneUrl })
@@ -286,10 +362,7 @@ export default function GitExplorer(): React.JSX.Element {
     setRnTo('')
     setRnLoading(true)
     const tags = await window.api.releaseNotes
-      .listRemoteTags({
-        repoId: selectedRepo.id,
-        cloneUrl: selectedRepo.cloneUrl
-      })
+      .listRemoteTags({ repoId: selectedRepo.id, cloneUrl: selectedRepo.cloneUrl })
       .catch(() => [] as string[])
     setRnTags(tags)
     if (tags.length >= 2) {
@@ -322,26 +395,6 @@ export default function GitExplorer(): React.JSX.Element {
       setRnLoading(false)
     }
   }
-
-  const startJobFromModal = useCallback(async () => {
-    if (!jobModal) return
-    const cloneUrl = jobModal.cloneUrlOverride.trim()
-    if (!cloneUrl) return
-    setStarting(true)
-    try {
-      await api.gitExplorer.startJob({
-        repoId: jobModal.repo.id,
-        repoName: jobModal.repo.name,
-        cloneUrl,
-        branchName: jobModal.branch,
-        type: jobModal.type,
-        options: jobModal.options
-      })
-      setJobModal(null)
-    } finally {
-      setStarting(false)
-    }
-  }, [jobModal])
 
   return (
     <div className="flex h-full flex-col">
@@ -413,7 +466,7 @@ export default function GitExplorer(): React.JSX.Element {
                 </button>
                 <div className="flex gap-1 shrink-0">
                   <button
-                    onClick={() => openModal('commentateur', b.name)}
+                    onClick={() => openModal(b.name)}
                     disabled={noTempPath}
                     className="text-xs px-1.5 py-0.5 rounded bg-primary/10 hover:bg-primary/20 text-primary disabled:opacity-40 disabled:cursor-not-allowed"
                     title="Lancer le commentateur"
@@ -466,8 +519,9 @@ export default function GitExplorer(): React.JSX.Element {
             )}
             {selectedBranch && !loadingCommits && commitsPage && commitsPage.items.length > 0 && (
               <p className="px-3 py-2 text-[11px] text-muted-foreground border-b bg-muted/30">
-                L'API REST Tuleap n'expose que le commit de tête de la branche. Pour parcourir
-                l'historique complet, lance un job (Commenter / Tests / etc.) qui clone le repo.
+                L&apos;API REST Tuleap n&apos;expose que le commit de tête de la branche. Pour
+                parcourir l&apos;historique complet, lance un job (Commenter / Tests / etc.) qui
+                clone le repo.
               </p>
             )}
             {commitsPage?.items.map((c) => (
@@ -544,7 +598,7 @@ export default function GitExplorer(): React.JSX.Element {
               </div>
               <div>
                 <label className="mb-1 block text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                  Tag / Ref — jusqu'à
+                  Tag / Ref — jusqu&apos;à
                 </label>
                 <select
                   className="w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm"
@@ -602,10 +656,10 @@ export default function GitExplorer(): React.JSX.Element {
         </div>
       )}
 
-      {/* Job launch modal */}
+      {/* Commenter job modal */}
       {jobModal && (
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-          <div className="bg-card rounded-lg border shadow-xl w-full max-w-md p-6 space-y-4">
+          <div className="bg-card rounded-lg border shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto p-6 space-y-4">
             <h2 className="text-lg font-semibold">💬 Lancer le commentateur</h2>
 
             <div className="text-sm space-y-2">
@@ -617,54 +671,89 @@ export default function GitExplorer(): React.JSX.Element {
                 <span className="font-medium text-foreground shrink-0">Branche:</span>
                 <span>{jobModal.branch}</span>
               </div>
-              <div className="flex gap-2 text-muted-foreground">
-                <span className="font-medium text-foreground shrink-0">Dossier temp:</span>
-                <code className="text-xs truncate">{config.tempClonePath}</code>
+            </div>
+
+            {jobModal.phase === 'preparing' && (
+              <div className="flex items-center gap-3 rounded-md border bg-muted/30 px-4 py-6 text-sm text-muted-foreground">
+                <span className="inline-block size-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                Clonage du dépôt en cours…
               </div>
-            </div>
+            )}
 
-            {/* Clone URL — editable so user can fix it if auto-resolution failed */}
-            <div className="space-y-1">
-              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                URL de clonage HTTPS
-              </label>
-              <input
-                type="text"
-                value={jobModal.cloneUrlOverride}
-                onChange={(e) =>
-                  setJobModal((prev) =>
-                    prev ? { ...prev, cloneUrlOverride: e.target.value } : prev
-                  )
-                }
-                placeholder="https://tuleap.example.com/plugins/git/project/repo.git"
-                spellCheck={false}
-                className="w-full rounded-md border border-input bg-transparent px-3 py-1.5 text-xs font-mono shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              />
-              {!jobModal.cloneUrlOverride.trim() && (
-                <p className="text-xs text-destructive">
-                  URL introuvable automatiquement — saisissez l'URL HTTPS du dépôt.
-                </p>
-              )}
-            </div>
+            {jobModal.phase === 'error' && (
+              <div className="space-y-2">
+                <p className="text-sm text-destructive">{jobModal.error}</p>
+                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                  URL de clonage HTTPS
+                </label>
+                <input
+                  type="text"
+                  value={jobModal.cloneUrlOverride}
+                  onChange={(e) =>
+                    setJobModal((prev) =>
+                      prev ? { ...prev, cloneUrlOverride: e.target.value } : prev
+                    )
+                  }
+                  placeholder="https://tuleap.example.com/plugins/git/project/repo.git"
+                  spellCheck={false}
+                  className="w-full rounded-md border border-input bg-transparent px-3 py-1.5 text-xs font-mono shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                />
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={!jobModal.cloneUrlOverride.trim()}
+                  onClick={() =>
+                    void prepare(jobModal.repo, jobModal.branch, jobModal.cloneUrlOverride)
+                  }
+                >
+                  Réessayer le clonage
+                </Button>
+              </div>
+            )}
 
-            <CommentingOptionsPanel
-              options={jobModal.options}
-              onChange={(opts) => setJobModal((prev) => (prev ? { ...prev, options: opts } : prev))}
-              showOnlyChangedFiles={true}
-              showContextPipeline={true}
-              projectReady={true}
-              compact={true}
-            />
+            {jobModal.phase === 'ready' && (
+              <>
+                <div>
+                  <p className="mb-1 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                    Fichiers à commenter
+                  </p>
+                  <JobFilePicker
+                    files={jobModal.files}
+                    changedFiles={jobModal.changedFiles}
+                    selected={jobModal.selected}
+                    onChange={(next) =>
+                      setJobModal((prev) => (prev ? { ...prev, selected: next } : prev))
+                    }
+                    disabled={starting}
+                  />
+                </div>
+                <CommentingOptionsPanel
+                  options={jobModal.options}
+                  onChange={(opts) =>
+                    setJobModal((prev) => (prev ? { ...prev, options: opts } : prev))
+                  }
+                  showOnlyChangedFiles={false}
+                  showContextPipeline={true}
+                  showCommentScope={true}
+                  projectReady={true}
+                  compact={true}
+                />
+              </>
+            )}
 
             <div className="flex gap-2 justify-end pt-2">
-              <Button variant="outline" onClick={() => setJobModal(null)} disabled={starting}>
+              <Button variant="outline" onClick={closeJobModal} disabled={starting}>
                 Annuler
               </Button>
               <Button
                 onClick={() => void startJobFromModal()}
-                disabled={starting || !jobModal.cloneUrlOverride.trim()}
+                disabled={starting || jobModal.phase !== 'ready' || jobModal.selected.size === 0}
               >
-                {starting ? 'Démarrage…' : 'Lancer le job'}
+                {starting
+                  ? 'Démarrage…'
+                  : jobModal.phase === 'ready'
+                    ? `Lancer sur ${jobModal.selected.size} fichier(s)`
+                    : 'Lancer le job'}
               </Button>
             </div>
           </div>

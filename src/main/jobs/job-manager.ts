@@ -51,6 +51,8 @@ type JobStartArgs = {
   branchName: string
   type: JobType
   options?: CommentingOptions
+  /** Commenter only: subset of source files to process (relative paths). */
+  selectedFiles?: string[]
   /** Test-generator only: source files + the functions to test. */
   selection?: TestGenSelection[]
   /** Reuse an already-cloned working dir (e.g. from the file-selection step) instead of cloning again. */
@@ -313,6 +315,11 @@ async function runCommenting(
   }
 
   let files = await listSourceFiles(targetDir)
+  // Restrict to the user's explicit file selection when provided.
+  if (args.selectedFiles && args.selectedFiles.length > 0) {
+    const wanted = new Set(args.selectedFiles)
+    files = files.filter((f) => wanted.has(f))
+  }
   if (commentOptions.onlyChangedFiles) {
     const changed = new Set(await listChangedFiles(targetDir))
     files = files.filter((f) => changed.has(f))
@@ -321,8 +328,9 @@ async function runCommenting(
     }
   } else if (files.length === 0) {
     throw new Error(
-      `Aucun fichier C/C++ trouvé dans la branche "${args.branchName}" du dépôt "${args.repoName}". ` +
-        `Vérifie que la branche contient bien des fichiers .c/.h/.cpp/.hpp (et qu'ils sont commités).`
+      `Aucun fichier C/C++ à commenter${
+        args.selectedFiles && args.selectedFiles.length > 0 ? ' (sélection vide)' : ''
+      } dans la branche "${args.branchName}" du dépôt "${args.repoName}".`
     )
   }
 

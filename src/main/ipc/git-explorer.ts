@@ -1,8 +1,12 @@
 import { BrowserWindow, dialog, ipcMain } from 'electron'
+import fs from 'node:fs'
+import path from 'node:path'
 import { buildTuleapClient, mapGitCommit } from '../tuleap'
 import { getConfig, setTempClonePath, setGitCloneSsh } from '../store/config'
 import { startJob, cancelJob } from '../jobs/job-manager'
 import { resolveCloneUrl } from '../tuleap/clone-url'
+import { cloneRepo, listSourceFiles, listChangedFiles } from '../commenter/git-utils'
+import { injectGitCredentials, explainGitAuthFailure } from '../jobs/git-credentials'
 import type {
   GitBranch,
   GitRepository,
@@ -76,18 +80,78 @@ export function registerGitExplorerHandlers(): void {
     }
   })
 
-  ipcMain.handle('git:start-job', async (event, args: unknown): Promise<{ jobId: string }> => {
-    const { repoId, repoName, cloneUrl, branchName, type, options, selection, existingCloneDir } =
-      args as {
-        repoId: number
+  // Clone a branch asynchronously and list its source files (+ files changed in
+  // the last commit). Used by the commenter file picker; the returned cloneDir
+  // is later reused by the job via existingCloneDir.
+  ipcMain.handle(
+    'git:clone-and-list',
+    async (
+      _event,
+      args: unknown
+    ): Promise<
+      | { ok: true; cloneDir: string; files: string[]; changedFiles: string[] }
+      | { ok: false; error: string }
+    > => {
+      const { repoName, cloneUrl, branchName } = args as {
         repoName: string
         cloneUrl: string
         branchName: string
-        type: JobType
-        options?: CommentingOptions
-        selection?: TestGenSelection[]
-        existingCloneDir?: string
       }
+      const { tempClonePath } = getConfig()
+      if (!tempClonePath) {
+        return { ok: false, error: 'Aucun dossier temporaire configuré dans les réglages.' }
+      }
+      const cloneDir = path.join(tempClonePath, `${repoName}_sel_${Date.now().toString(36)}`)
+      try {
+        const credUrl = await injectGitCredentials(cloneUrl)
+        await cloneRepo(credUrl, cloneDir, branchName)
+        const files = await listSourceFiles(cloneDir)
+        const changed = new Set(await listChangedFiles(cloneDir))
+        const changedFiles = files.filter((f) => changed.has(f))
+        return { ok: true, cloneDir, files, changedFiles }
+      } catch (err) {
+        try {
+          if (fs.existsSync(cloneDir)) fs.rmSync(cloneDir, { recursive: true, force: true })
+        } catch {
+          /* ignore */
+        }
+        const raw = err instanceof Error ? err.message : String(err)
+        return { ok: false, error: explainGitAuthFailure(raw) ?? raw }
+      }
+    }
+  )
+
+  ipcMain.handle('git:cleanup-clone', (_event, dir: unknown): void => {
+    if (typeof dir !== 'string' || !dir) return
+    try {
+      if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true })
+    } catch {
+      /* ignore */
+    }
+  })
+
+  ipcMain.handle('git:start-job', async (event, args: unknown): Promise<{ jobId: string }> => {
+    const {
+      repoId,
+      repoName,
+      cloneUrl,
+      branchName,
+      type,
+      options,
+      selection,
+      selectedFiles,
+      existingCloneDir
+    } = args as {
+      repoId: number
+      repoName: string
+      cloneUrl: string
+      branchName: string
+      type: JobType
+      options?: CommentingOptions
+      selection?: TestGenSelection[]
+      selectedFiles?: string[]
+      existingCloneDir?: string
+    }
     const win = BrowserWindow.fromWebContents(event.sender)
     const jobId = startJob(win, {
       repoId,
@@ -97,6 +161,7 @@ export function registerGitExplorerHandlers(): void {
       type,
       options,
       selection,
+      selectedFiles,
       existingCloneDir
     })
     return { jobId }
