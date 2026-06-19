@@ -12,8 +12,8 @@ import { audit } from '../store/db'
 import { debugError } from '../logger'
 import { cloneRepo, listSourceFiles, listChangedFiles } from '../commenter/git-utils'
 import { injectGitCredentials } from '../jobs/git-credentials'
-
-const CPP_EXTS = new Set(['.c', '.cpp', '.cc', '.cxx', '.h', '.hpp', '.hxx'])
+import { listCppFiles, findFilesByBasename } from '../cpp-analyzer/fs-scan'
+import { isCppFile } from '../cpp-analyzer/pairing'
 
 export function registerTestGeneratorHandlers(): void {
   ipcMain.handle('testgen:extract-functions', async (_event, args: unknown) => {
@@ -114,8 +114,7 @@ export function registerTestGeneratorHandlers(): void {
     if (!root) return { ok: false as const, reason: 'no-project-root' }
     if (!fs.existsSync(root)) return { ok: false as const, reason: 'project-missing' }
     const base = path.basename(filename)
-    const matches: string[] = []
-    walkForBasename(root, base, matches, 1000)
+    const matches = findFilesByBasename(root, new Set([base]), 1000).get(base) ?? []
     if (matches.length === 0) return { ok: false as const, reason: 'not-found' }
     return { ok: true as const, candidates: matches }
   })
@@ -185,7 +184,7 @@ export function registerTestGeneratorHandlers(): void {
       let files: string[]
       if (onlyRecentFiles) {
         const changed = await listChangedFiles(cloneDir)
-        files = changed.filter((f) => CPP_EXTS.has(path.extname(f).toLowerCase()))
+        files = changed.filter((f) => isCppFile(f))
       } else {
         files = await listSourceFiles(cloneDir)
       }
@@ -243,8 +242,9 @@ export function registerTestGeneratorHandlers(): void {
   ipcMain.handle('testgen:list-folder-files', async (_event, args: unknown) => {
     const { folderPath } = args as { folderPath: string }
     if (!fs.existsSync(folderPath)) return { ok: false as const, error: 'Dossier introuvable.' }
-    const files: string[] = []
-    walkForCppFiles(folderPath, folderPath, files, 5000)
+    const files = listCppFiles(folderPath, 5000).map((p) =>
+      path.relative(folderPath, p).replace(/\\/g, '/')
+    )
     return { ok: true as const, files }
   })
 
@@ -256,58 +256,4 @@ export function registerTestGeneratorHandlers(): void {
     if (canceled || !filePaths[0]) return { ok: false as const, cancelled: true as const }
     return { ok: true as const, path: filePaths[0] }
   })
-}
-
-function walkForBasename(root: string, target: string, out: string[], limit: number): void {
-  if (out.length >= limit) return
-  let entries: fs.Dirent[]
-  try {
-    entries = fs.readdirSync(root, { withFileTypes: true })
-  } catch {
-    return
-  }
-  for (const e of entries) {
-    if (out.length >= limit) break
-    const full = path.join(root, e.name)
-    if (e.isDirectory()) {
-      if (
-        e.name === 'build' ||
-        e.name === 'node_modules' ||
-        e.name.startsWith('.git') ||
-        e.name === '_deps' ||
-        e.name === 'CMakeFiles'
-      )
-        continue
-      walkForBasename(full, target, out, limit)
-    } else if (e.isFile() && e.name === target) {
-      out.push(full)
-    }
-  }
-}
-
-function walkForCppFiles(root: string, current: string, out: string[], limit: number): void {
-  if (out.length >= limit) return
-  let entries: fs.Dirent[]
-  try {
-    entries = fs.readdirSync(current, { withFileTypes: true })
-  } catch {
-    return
-  }
-  for (const e of entries) {
-    if (out.length >= limit) break
-    const full = path.join(current, e.name)
-    if (e.isDirectory()) {
-      if (
-        e.name === 'build' ||
-        e.name === 'node_modules' ||
-        e.name.startsWith('.git') ||
-        e.name === '_deps' ||
-        e.name === 'CMakeFiles'
-      )
-        continue
-      walkForCppFiles(root, full, out, limit)
-    } else if (e.isFile() && CPP_EXTS.has(path.extname(e.name).toLowerCase())) {
-      out.push(path.relative(root, full))
-    }
-  }
 }
