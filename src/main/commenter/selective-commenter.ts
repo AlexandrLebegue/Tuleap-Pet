@@ -40,6 +40,36 @@ export type SelectiveCommentResult = {
 const escapeRegExp = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
 /**
+ * Remove any leading comment block(s) / blank lines that appear *before* the
+ * function signature. The body pass must only add comments INSIDE the function;
+ * a brief block above the function belongs in the header, never in the .c.
+ */
+export function stripLeadingDoxygen(code: string): string {
+  const lines = code.split('\n')
+  let i = 0
+  const isBlank = (l: string): boolean => l.trim() === ''
+  while (i < lines.length) {
+    const t = (lines[i] ?? '').trim()
+    if (isBlank(t)) {
+      i++
+      continue
+    }
+    if (t.startsWith('/*')) {
+      // Consume the whole block comment (e.g. the /*---*/ + /*! \brief ... */ header).
+      while (i < lines.length && !(lines[i] ?? '').includes('*/')) i++
+      if (i < lines.length) i++
+      continue
+    }
+    if (t.startsWith('//')) {
+      i++
+      continue
+    }
+    break // first line of actual code (the signature)
+  }
+  return lines.slice(i).join('\n')
+}
+
+/**
  * Locate the line (1-based) of a function *declaration* inside a header. The
  * cpp-analyzer parser only extracts definitions (with a body), so a function
  * implemented in a .c file has no parsed entry in its .h — we find its prototype
@@ -173,7 +203,11 @@ export async function runSelectiveCommenter(
         // def.filePath is the absolute file the parser read the body from.
         const implEdit = editsFor(def.filePath)
         const { system, user } = buildInlineCommentPrompt(def.body)
-        const commentedBody = extractCommentBlock(await callLlm(system, user, 4096))
+        // Strip any function-level brief the LLM may have prepended: the .c keeps
+        // ONLY in-body comments — the brief lives in the header.
+        const commentedBody = stripLeadingDoxygen(
+          extractCommentBlock(await callLlm(system, user, 4096))
+        )
         implEdit.ops.push({
           startLine: def.startLine - 1,
           endLineExclusive: def.endLine,

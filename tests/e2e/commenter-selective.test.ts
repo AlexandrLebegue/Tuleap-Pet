@@ -39,6 +39,21 @@ int add(int a, int b)
 \`\`\`
 `
 
+// A misbehaving model that prepends a function-level brief block before the
+// signature — it must be stripped so the .c never gets a brief above the function.
+const COMMENTED_BODY_WITH_LEAKED_BRIEF = `\
+\`\`\`cpp
+/*----------------------------------------------------------------------------*/
+/*! \\brief LEAKED brief that must not land in the .c */
+/*----------------------------------------------------------------------------*/
+int add(int a, int b)
+{
+    /*! \\brief Définition des variables */
+    return a + b;
+}
+\`\`\`
+`
+
 describe('Selective commenter (C: brief in .h, body comments in .c)', () => {
   let root: string
 
@@ -100,6 +115,32 @@ describe('Selective commenter (C: brief in .h, body comments in .c)', () => {
     expect(source).toContain('return a + b;')
     // The header brief must NOT leak into the .c.
     expect(source).not.toContain('Adds two integers.')
+  })
+
+  it('strips a function-level brief the model leaks into the body (no brief above the .c function)', async () => {
+    fs.writeFileSync(
+      path.join(root, 'math.c'),
+      ['#include "math.h"', '', 'int add(int a, int b)', '{', '    return a + b;', '}', ''].join(
+        '\n'
+      ),
+      'utf8'
+    )
+    setMockHandler(() => COMMENTED_BODY_WITH_LEAKED_BRIEF)
+
+    const targets: CommentTarget[] = [
+      { headerPath: 'math.h', name: 'add', implFile: 'math.c', implLine: 3, inHeader: false }
+    ]
+    await runSelectiveCommenter(root, targets, { commentHeader: false, commentBody: true })
+
+    const source = fs.readFileSync(path.join(root, 'math.c'), 'utf8')
+    // The leaked brief is gone; the function starts at its signature.
+    expect(source).not.toContain('LEAKED')
+    expect(source).not.toContain(
+      '/*----------------------------------------------------------------------------*/'
+    )
+    // In-body comments are kept.
+    expect(source).toContain('Définition des variables')
+    expect(source).toContain('int add(int a, int b)')
   })
 
   it('only comments the header when commentBody is off', async () => {
