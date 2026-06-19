@@ -1,4 +1,4 @@
-# Plan — Sélection des fichiers à tester (Git Explorer → Générer des tests)
+# Plan — Sélection des fichiers/fonctions à tester (Git Explorer → Générer des tests)
 
 ## 1. Analyse de la boucle de génération actuelle
 
@@ -9,109 +9,135 @@
 ### Déroulé (type `test-generator`)
 
 1. Clone de la branche dans `tempClonePath/<repo>_<jobId>`.
-2. `files = listSourceFiles(targetDir)` → **tous** les `.c/.h/.cpp/.hpp/.cxx/.hxx/.cc` (cf. `git-utils.ts` `SOURCE_GLOBS`), ou ceux du dernier commit si `onlyChangedFiles`.
-3. `testDir = findTestDirectory(targetDir)` (un seul dossier pour tout le repo).
-4. **Boucle sur chaque fichier** :
-   - skip si le basename matche `/test/i` ;
-   - `advanced` → `generateTestsGranular(content, filename, undefined, undefined, targetDir, fullPath)` ; chaque fichier de test écrit dans `outDir` ;
-   - `basic` → `generateTestsForFile()` → `test_<base>.c`.
-5. Nouvelle branche `tuleap-pet/tests-xxx`, `gitAdd` → `gitCommit` → `gitPush` → `createPullRequest`.
+2. `files = listSourceFiles(targetDir)` → **tous** les `.c/.h/.cpp/.hpp/.cxx/.hxx/.cc`, ou ceux du dernier commit si `onlyChangedFiles`.
+3. `testDir = findTestDirectory(targetDir)` (un seul dossier).
+4. **Boucle sur chaque fichier** : skip si basename matche `/test/i` ; `advanced` → `generateTestsGranular(...)` ; `basic` → `generateTestsForFile()`.
+5. Branche `tuleap-pet/tests-xxx`, `gitAdd` → `gitCommit` → `gitPush` → `createPullRequest`.
 6. `finally { cleanupDir() }` supprime le clone.
 
 ### Cas qui ne fonctionnent pas / posent problème
 
 | # | Problème | Cause | Impact |
 |---|---|---|---|
-| **A** | Génère pour **tout le repo** en aveugle | `listSourceFiles()` sans sélection ; `onlyFunctions` toujours `undefined` | Coût LLM/temps explosifs, PR énorme — **c'est le besoin à corriger** |
-| **B** | Les **headers** (`.h/.hpp/.hxx`) sont passés au générateur | `SOURCE_GLOBS` inclut les headers | Pas de corps de fonction → tests vides ou hallucinés, appels gaspillés |
-| **C** | Aucune granularité par fonction | `onlyFunctions=undefined` dans le chemin job | Tests pour toutes les fonctions de tous les fichiers |
-| **D** | **Aucune intégration CMake ni compilation** | Le job appelle `generateTestsGranular` directement, **pas** `runPipeline` | `testBuildEnabled` / `testPreset` / `testMaxRepairs` sont des **options mortes** ; tests commités non compilés/non câblés |
-| **E** | Regex de skip `/test/i` trop large | Match sur substring du basename | Skip à tort `latest.c`, `attestation.cpp`, `contest.c`… |
-| **F** | **Collisions de noms** de fichiers de test | Sortie `test_<funcName>.cpp` dans un `outDir` unique | Deux `init()` dans deux fichiers → écrasement silencieux |
-| **G** | Frameworks **incohérents** basic vs advanced | basic = C/CUnit `.c`, advanced = gtest `.cpp` | Résultat imprévisible — **basic à supprimer** |
-| **H** | Échec sur commit vide | Si tous fichiers skip/échoués → rien écrit → `gitCommit` échoue | Message d'erreur git obscur au lieu d'un message clair |
-| **I** | Échec de création de PR avalé | `catch` seulement `debugError`, job marqué `done`, `prId=null` | État « terminé » trompeur |
-| **J** | Pas de progression intra-fichier | `onProgress` de `generateTestsGranular` non transmis | Gros fichiers paraissent figés |
-| **K** | Clone supprimé en `finally` | Incompatible avec « cloner puis laisser choisir » | Le clone doit persister entre listing et génération |
+| **A** | Génère pour **tout le repo** en aveugle | `listSourceFiles()` sans sélection ; `onlyFunctions` toujours `undefined` | Coût LLM/temps explosifs, PR énorme — **le besoin à corriger** |
+| **B** | Les **headers** sont passés tels quels au générateur | `SOURCE_GLOBS` inclut les headers | Pas de corps → tests vides/hallucinés |
+| **C** | Aucune granularité par fonction | `onlyFunctions=undefined` | Tests pour toutes les fonctions |
+| **D** | **Aucune compilation ni câblage CMake** | Job appelle `generateTestsGranular`, pas `runPipeline` | `testBuildEnabled/Preset/MaxRepairs` = options **mortes** |
+| **E** | Regex de skip `/test/i` trop large | Match substring basename | Skip à tort `latest.c`, `contest.cpp`… |
+| **F** | **Collisions** de noms de fichiers de test | `test_<funcName>.cpp` dans un `outDir` unique | Écrasement silencieux |
+| **G** | Frameworks **incohérents** basic vs advanced | basic = C/CUnit, advanced = gtest | Imprévisible — **basic à supprimer** |
+| **H** | Échec sur commit vide | Tous skip/échoués → rien écrit | Erreur git obscure |
+| **I** | Échec de PR avalé | `catch` → `debugError` seulement | Job `done` trompeur (`prId=null`) |
+| **J** | Pas de progression intra-fichier | `onProgress` non transmis | Gros fichiers paraissent figés |
+| **K** | Clone supprimé en `finally` | Incompatible avec « cloner puis choisir » | Le clone doit persister |
 
 ---
 
-## 2. UX cible
+## 2. UX cible (sélection hiérarchique pilotée par les headers)
 
-Clic sur 🧪 **Générer des tests** (sur une branche) →
+Clic sur 🧪 **Générer des tests** →
 
-1. **Clone asynchrone immédiat** de la branche (spinner « Clonage… »). Réutilise `testgen:git-clone-and-list` qui clone + renvoie la liste de fichiers.
-2. À la fin du clone → **menu de sélection des fichiers** :
-   - **Barre de recherche** (filtre par chemin, insensible à la casse) ;
-   - **Sélecteur double liste (transfer list)** : à gauche « Fichiers disponibles » (sources seulement, headers exclus), à droite « À tester » ; boutons **Ajouter →** / **← Retirer** (+ double-clic). Boutons « Tout ajouter / tout retirer ».
-   - Compteur « N sélectionné(s) ».
-3. Bouton **Générer les tests (N)** actif dès 1 fichier sélectionné → lance le job sur **uniquement** les fichiers retenus, en pipeline **avancé**.
-4. Le job suit le flux existant (commit / push / PR) avec progression par fichier sélectionné.
+1. **Clone asynchrone immédiat** de la branche (état « Clonage… »), via `testgen:git-clone-and-list` (le clone est **conservé**).
+2. **Indexation** du clone (`buildProjectIndex`) → renvoie la liste des **headers** avec, pour chacun, ses **fonctions déclarées** et **où chaque fonction est implémentée** (fichier `.c/.cpp` + ligne).
+3. **Menu de sélection** :
+   - **Barre de recherche** (filtre sur chemin de header + nom de fonction) ;
+   - **Liste des headers uniquement** (`.h/.hpp/.hxx`). Clic sur un header → **sous-menu déplié** listant ses fonctions ; chaque fonction affiche **sa localisation d'implémentation** (« impl : `src/foo.c:42` » ou « header-only / inline ») ;
+   - **Cases à cocher à 3 niveaux** :
+     - **Globale** : tout sélectionner / tout désélectionner (toute la liste) ;
+     - **Par header (fichier)** : (dé)sélectionne toutes les fonctions du header (état indéterminé si partiel) ;
+     - **Par fonction** : sélection fine.
+   - Compteur « N fonction(s) dans M fichier(s) ».
+4. Bouton **Générer les tests (N)** actif dès 1 fonction cochée → lance le job sur **uniquement** ces fonctions, pipeline **avancé**, en réutilisant le clone.
 
-États du modal : `cloning → selecting → starting`. Annuler / fermer → nettoie le clone.
+États du modal : `cloning → indexing → selecting → starting`. Fermeture/annulation avant démarrage → nettoie le clone.
 
 ---
 
 ## 3. Changements back-end
 
-### 3.1 Types partagés (`src/shared/types.ts`)
-- Ajouter `selectedFiles?: string[]` (chemins relatifs au repo) aux args de `git:start-job`.
-- Ajouter `existingCloneDir?: string` aux args de job (réutiliser le clone déjà fait).
-- `CommentingOptions` : retirer `testPipelineMode` (ou figer à `'advanced'`). Conserver `testBuildEnabled/testPreset/testMaxRepairs` seulement si on câble le build (cf. 3.4).
+### 3.1 Nouvelle structure d'index (IPC)
+Ajouter `testgen:build-header-index` (ou étendre `git-clone-and-list`) : entrée `{ cloneDir }`, sortie typée :
 
-### 3.2 IPC (`src/main/ipc/git-explorer.ts`)
-- `git:start-job` : récupérer et transmettre `selectedFiles` + `existingCloneDir`.
+```ts
+type HeaderFunction = {
+  name: string
+  signature: string
+  declFile: string          // header, relatif au clone
+  declLine: number
+  implFile: string | null   // .c/.cpp avec body (relatif), null si header-only/inline
+  implLine: number | null
+  hasImpl: boolean
+}
+type HeaderEntry = { headerPath: string; functions: HeaderFunction[] }
+type HeaderIndexResult =
+  | { ok: true; cloneDir: string; headers: HeaderEntry[] }
+  | { ok: false; error: string }
+```
+
+Implémentation (réutilise `src/main/cpp-analyzer`) :
+- `buildProjectIndex(cloneDir)` ;
+- headers = `index.files.filter(isHeaderFile)` ;
+- pour chaque header, `index.byFile.get(header)` → fonctions déclarées ;
+- pour chacune, impl = `index.byName.get(name)` → le `FunctionDef` avec `hasBody && !isHeader` (préférer même basename via `findCounterpart`) → `implFile/implLine` ; sinon `header-only`.
+
+### 3.2 Args de job (`src/shared/types.ts` + `git:start-job`)
+- Remplacer le besoin « tous fichiers » par une **sélection fonctionnelle** :
+  ```ts
+  selection?: Array<{ sourceFile: string; functions: string[] }>  // sourceFile relatif au clone
+  existingCloneDir?: string
+  ```
+- Regroupement côté front : fonctions cochées → groupées par `implFile` (ou header si header-only) → `selection`.
+- `CommentingOptions` : retirer `testPipelineMode` (toujours avancé). `testBuildEnabled/Preset/MaxRepairs` deviennent inutiles côté job (décision : pas de build dans le job) → retirables.
 
 ### 3.3 `job-manager.ts` — `runJob`
-- **Réutiliser le clone** : si `existingCloneDir` fourni et valide, sauter l'étape clone et travailler dedans ; sinon clone comme aujourd'hui. La propriété du nettoyage passe au job (et au modal en cas d'annulation avant génération).
-- **Restreindre aux fichiers sélectionnés** : si `selectedFiles?.length`, `files = selectedFiles` (au lieu de `listSourceFiles`).
-- **Exclure les headers** du traitement test-gen (ne générer que pour `.c/.cpp/.cc/.cxx`) → corrige **B**.
-- **Supprimer le chemin `basic`** → toujours `generateTestsGranular` → corrige **G**.
-- **Noms anti-collision** : préfixer par le basename source, `test_<sourceBase>_<funcName>.cpp` → corrige **F**.
-- **Skip plus strict** : ne skipper que les fichiers déjà sous le dossier de tests ou matchant `^test_|_test\.` → corrige **E**.
-- **Garde commit vide** : si 0 fichier de test produit → erreur explicite (« Aucun test généré pour les fichiers sélectionnés »), pas de commit → corrige **H**.
-- **PR** : si la création échoue, remonter un événement d'avertissement plutôt que `done` silencieux → atténue **I**.
+- **Réutiliser le clone** : si `existingCloneDir` valide → travailler dedans, sauter le clone ; le nettoyage devient la responsabilité du job (et du modal si annulation avant démarrage).
+- **Itérer sur `selection`** au lieu de `listSourceFiles` : pour chaque `{ sourceFile, functions }` → `generateTestsGranular(content, sourceFile, functions, onProgress, cloneDir, fullPath)`.
+- **Supprimer le chemin `basic`** (corrige **G**) ; supprimer le skip `/test/i` (corrige **E**) ; corps de fonction garantis car on cible des fonctions implémentées (corrige **B/C**).
+- **Noms anti-collision** : `test_<sourceBase>_<funcName>.cpp` (corrige **F**).
+- **Garde commit vide** : si 0 test produit → erreur explicite, pas de commit (corrige **H**).
+- **Progression** : transmettre `onProgress` de `generateTestsGranular` → événements plus fins (corrige **J**).
+- **PR** : si échec, événement d'avertissement au lieu de `done` silencieux (atténue **I**).
 
-### 3.4 (Optionnel, hors-scope par défaut) Build/CMake dans le job
-Un repo fraîchement cloné n'a généralement pas la toolchain/deps → build non fiable côté job. **Recommandation** : laisser le build self-repair à l'onglet interactif (`runPipeline`) et garder le job sur génération + (optionnellement) câblage `CMakeLists`. Si on veut le build dans le job plus tard : factoriser `runPipeline` pour accepter une liste de fichiers + un `cloneDir`.
+### 3.4 Build/CMake dans le job
+**Décision : non.** Un repo cloné n'a pas la toolchain → le build self-repair reste sur l'onglet TestGenerator interactif (`runPipeline`). Le job fait génération seule.
 
 ---
 
 ## 4. Changements front-end
 
 ### 4.1 `GitExplorer.tsx`
-- Remplacer le `jobModal` actuel par un **modal multi-étapes** pour `test-generator` :
-  - À l'ouverture (`openModal('test-generator', branch)`) : appeler `api.testgen.gitCloneAndList({ repoUrl, branch, onlyRecentFiles })`, stocker `cloneDir` dans un ref, filtrer aux fichiers source (réutiliser `isSourceFile`).
-  - Afficher le **TestFileSelector** (cf. 4.2).
-  - « Générer » → `api.gitExplorer.startJob({ ..., type:'test-generator', selectedFiles, existingCloneDir: cloneDir })`.
-  - Fermeture/annulation → `api.testgen.cleanupCloneDir({ cloneDir })` si le job n'a pas démarré.
-- Le bouton 💬 commentateur garde son modal actuel inchangé.
+- Modal `test-generator` multi-étapes :
+  - ouverture → `gitCloneAndList({ repoUrl, branch })` puis `buildHeaderIndex({ cloneDir })` ; stocker `cloneDir` (ref) ;
+  - rendre **`<HeaderFunctionSelector>`** ;
+  - « Générer » → construire `selection` (group by implFile/header) → `api.gitExplorer.startJob({ ..., selection, existingCloneDir: cloneDir })` ;
+  - fermeture sans démarrage → `cleanupCloneDir({ cloneDir })`.
+- Le bouton 💬 commentateur reste inchangé.
 
-### 4.2 Nouveau composant `TestFileSelector` (transfer list)
-- Props : `files: string[]`, `selected: string[]`, `onChange`.
-- Barre de recherche (état local `query`).
-- Deux colonnes + boutons Ajouter/Retirer/Tout. Double-clic = transfert rapide.
-- Réutilisable aussi par l'onglet TestGenerator si besoin.
+### 4.2 Nouveau composant `HeaderFunctionSelector`
+- Props : `headers: HeaderEntry[]`, `selected: Set<string>` (clé `implFileOrHeader::name`), `onChange`.
+- **Recherche** (header path + nom de fonction).
+- **Accordéon par header** : ligne header avec checkbox tri-état (tout/partiel/rien) + chevron ; déplié → fonctions avec checkbox, signature, et badge **« impl : `path:line` »** (ou « header-only »).
+- **Checkbox globale** « Tout sélectionner / désélectionner ».
+- Compteur N fonctions / M fichiers.
 
 ### 4.3 `TestGenerator.tsx` + `SourceInputPanel`
-- Retirer le choix `pipelineMode` basic/advanced (toujours avancé). Simplifier le bloc « Pipeline » (garder build/preset/repairs).
+- Retirer le choix `pipelineMode` basic/advanced (toujours avancé) ; simplifier le bloc « Pipeline ».
 
 ### 4.4 Nettoyage « basic »
-- Supprimer l'usage de `generateTestsForFile` dans `job-manager.ts`.
-- Déprécier/retirer `src/main/jobs/test-gen-file.ts` (et son test associé si présent) si plus aucun appelant.
-- Retirer les radios « Basique » dans `GitExplorer.tsx` et `TestGenerator.tsx`, et `testPipelineMode` de `DEFAULT_OPTIONS`.
+- Retirer l'usage de `generateTestsForFile` dans `job-manager.ts` ; déprécier/supprimer `src/main/jobs/test-gen-file.ts` (+ test associé) si plus d'appelant.
+- Retirer les radios « Basique », `testPipelineMode` de `DEFAULT_OPTIONS`.
 
 ---
 
 ## 5. Tests
-- **Unit** `job-manager` : avec `selectedFiles` → ne traite que ceux-ci ; headers exclus ; commit vide → erreur claire ; noms anti-collision.
-- **Unit** réutilisation `existingCloneDir` (pas de re-clone).
-- **Composant** `TestFileSelector` : recherche filtre, add/remove, tout ajouter/retirer.
-- Vérifier `npm run typecheck` + `npm test` verts après suppression du chemin basic.
+- **Unit** index headers : header → fonctions → impl file correct (utiliser `samples/cpp-demo`).
+- **Unit** `job-manager` : `selection` respectée ; réutilise `existingCloneDir` (pas de re-clone) ; commit vide → erreur claire ; noms anti-collision.
+- **Composant** `HeaderFunctionSelector` : recherche, tri-état par header, checkbox globale, group-by impl pour la sortie.
+- `npm run typecheck` + `npm test` verts après suppression du chemin basic.
 
 ---
 
-## 6. Points de décision (à confirmer)
-1. **Réutiliser le clone** (recommandé) vs re-cloner dans le job (plus simple, clone ×2).
-2. **Build dans le job** : non par défaut (toolchain absente) — OK ?
-3. **Headers** : exclus de la génération mais affichés grisés, ou totalement masqués (recommandé : masqués) ?
+## 6. Décisions (confirmées)
+1. **Réutiliser le clone** du listing comme répertoire de travail du job. ✅
+2. **Pas de build/CMake dans le job** (génération seule ; build réservé à l'onglet interactif). ✅
+3. **Sélecteur piloté par les headers** : afficher uniquement les headers, drill-down vers les fonctions avec leur fichier d'implémentation ; checkboxes globale / par header / par fonction. ✅
