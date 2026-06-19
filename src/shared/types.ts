@@ -168,7 +168,13 @@ export type SprintReviewProgressEvent =
   | { type: 'summarizing' }
   | { type: 'slide_start'; slide: SprintReviewSlideType; index: number; total: number }
   | { type: 'slide_done'; slide: SprintReviewSlideType; index: number; total: number }
-  | { type: 'slide_error'; slide: SprintReviewSlideType; index: number; total: number; error: string }
+  | {
+      type: 'slide_error'
+      slide: SprintReviewSlideType
+      index: number
+      total: number
+      error: string
+    }
   | { type: 'assembling' }
   | { type: 'done' }
 
@@ -351,6 +357,35 @@ export interface GitSourceInput {
 
 export type JobType = 'commentateur' | 'test-generator'
 
+/** A function reachable from a header: defined inline in the header or in its paired source file. */
+export type HeaderFunctionEntry = {
+  name: string
+  signature: string
+  /** Source file where the function is implemented, relative to the clone dir. */
+  implFile: string
+  /** 1-based line where the implementation starts. */
+  implLine: number
+  /** True when the function is defined inline inside the header itself. */
+  inHeader: boolean
+}
+
+export type HeaderEntry = {
+  /** Header path relative to the clone dir. */
+  headerPath: string
+  functions: HeaderFunctionEntry[]
+}
+
+export type HeaderIndexResult =
+  | { ok: true; cloneDir: string; headers: HeaderEntry[] }
+  | { ok: false; error: string }
+
+/** A test-generation target: a source file and the subset of its functions to test. */
+export type TestGenSelection = {
+  /** Source file relative to the clone dir. */
+  sourceFile: string
+  functions: string[]
+}
+
 export type JobStatus =
   | 'queued'
   | 'cloning'
@@ -381,7 +416,13 @@ export type JobStreamEvent =
   | { type: 'queued'; job: BackgroundJob }
   | { type: 'status'; jobId: string; status: JobStatus }
   | { type: 'progress'; jobId: string; current: number; total: number; currentFile: string }
-  | { type: 'done'; jobId: string; prId: number | null; prUrl: string | null; branchCreated: string }
+  | {
+      type: 'done'
+      jobId: string
+      prId: number | null
+      prUrl: string | null
+      branchCreated: string
+    }
   | { type: 'error'; jobId: string; error: string }
   | { type: 'cancelled'; jobId: string }
 
@@ -420,7 +461,6 @@ export type JenkinsDiscoverResult =
 export type JenkinsValidateResult =
   | { ok: true; exists: boolean; kind: string | null; url: string | null }
   | { ok: false; error: string; kind: string; status?: number }
-
 
 export type JenkinsBuildSummary = {
   number: number

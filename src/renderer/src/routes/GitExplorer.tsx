@@ -1,13 +1,15 @@
 import * as React from 'react'
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { api } from '@renderer/lib/api'
 import { useSettings } from '@renderer/stores/settings.store'
 import { Button } from '@renderer/components/ui/button'
 import CommentingOptionsPanel from '@renderer/components/CommentingOptionsPanel'
+import HeaderFunctionSelector, { fnKey } from '@renderer/components/HeaderFunctionSelector'
 import type {
   GitRepository,
   GitBranch,
   GitCommit,
+  HeaderEntry,
   JenkinsBranchStatus,
   JenkinsBuildResult,
   Page,
@@ -18,17 +20,33 @@ import type {
 function jenkinsBadge(status: JenkinsBranchStatus | null | undefined): React.JSX.Element | null {
   if (!status) return null
   if (status.building) {
-    return <span title="Build en cours" className="text-xs px-1 rounded bg-yellow-100 text-yellow-700">⟳</span>
+    return (
+      <span title="Build en cours" className="text-xs px-1 rounded bg-yellow-100 text-yellow-700">
+        ⟳
+      </span>
+    )
   }
   const result: JenkinsBuildResult = status.result
   if (result === 'SUCCESS') {
-    return <span title="Build OK" className="text-xs px-1 rounded bg-green-100 text-green-700">✓</span>
+    return (
+      <span title="Build OK" className="text-xs px-1 rounded bg-green-100 text-green-700">
+        ✓
+      </span>
+    )
   }
   if (result === 'FAILURE') {
-    return <span title="Build échoué" className="text-xs px-1 rounded bg-red-100 text-red-700">✗</span>
+    return (
+      <span title="Build échoué" className="text-xs px-1 rounded bg-red-100 text-red-700">
+        ✗
+      </span>
+    )
   }
   if (result === 'UNSTABLE') {
-    return <span title="Build instable" className="text-xs px-1 rounded bg-yellow-100 text-yellow-700">!</span>
+    return (
+      <span title="Build instable" className="text-xs px-1 rounded bg-yellow-100 text-yellow-700">
+        !
+      </span>
+    )
   }
   return null
 }
@@ -42,11 +60,7 @@ const DEFAULT_OPTIONS: CommentingOptions = {
   useContextPipeline: false,
   forceAll: false,
   contextDepth: 3,
-  inlineComments: false,
-  testPipelineMode: 'basic',
-  testBuildEnabled: true,
-  testPreset: 'ci-gcc',
-  testMaxRepairs: 3
+  inlineComments: false
 }
 
 type JobModal = {
@@ -55,6 +69,19 @@ type JobModal = {
   branch: string
   options: CommentingOptions
   cloneUrlOverride: string
+}
+
+type TgStage = 'cloning' | 'selecting' | 'starting' | 'error'
+
+type TgModal = {
+  repo: GitRepository
+  branch: string
+  cloneUrl: string
+  stage: TgStage
+  cloneDir: string | null
+  headers: HeaderEntry[]
+  selected: Set<string>
+  error: string | null
 }
 
 export default function GitExplorer(): React.JSX.Element {
@@ -105,7 +132,9 @@ export default function GitExplorer(): React.JSX.Element {
       )
       if (!cancelled) setJenkinsBuildStatuses(statuses)
     })()
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+    }
   }, [selectedRepo, branches, config.jenkinsUrl, config.hasJenkinsToken])
 
   const noTempPath = !config.tempClonePath
@@ -164,6 +193,90 @@ export default function GitExplorer(): React.JSX.Element {
     [selectedRepo]
   )
 
+  // ---- Test-generator: clone async, then pick header functions ----
+  const [tg, setTg] = useState<TgModal | null>(null)
+  const tgCloneDirRef = useRef<string | null>(null)
+  const tgStartedRef = useRef(false)
+
+  const openTestGen = useCallback(
+    async (branch: string) => {
+      if (!selectedRepo) return
+      const repo = selectedRepo
+      tgStartedRef.current = false
+      tgCloneDirRef.current = null
+      setTg({
+        repo,
+        branch,
+        cloneUrl: repo.cloneUrl,
+        stage: 'cloning',
+        cloneDir: null,
+        headers: [],
+        selected: new Set(),
+        error: null
+      })
+      const clone = await api.testgen.gitCloneAndList({
+        repoUrl: repo.cloneUrl,
+        branch,
+        onlyRecentFiles: false
+      })
+      if (!clone.ok) {
+        setTg((prev) => (prev ? { ...prev, stage: 'error', error: clone.error } : prev))
+        return
+      }
+      tgCloneDirRef.current = clone.cloneDir
+      const idx = await api.testgen.buildHeaderIndex({ cloneDir: clone.cloneDir })
+      if (!idx.ok) {
+        setTg((prev) => (prev ? { ...prev, stage: 'error', error: idx.error } : prev))
+        return
+      }
+      setTg((prev) =>
+        prev ? { ...prev, stage: 'selecting', cloneDir: idx.cloneDir, headers: idx.headers } : prev
+      )
+    },
+    [selectedRepo]
+  )
+
+  const closeTg = useCallback(() => {
+    if (!tgStartedRef.current && tgCloneDirRef.current) {
+      void api.testgen.cleanupCloneDir({ cloneDir: tgCloneDirRef.current })
+    }
+    tgCloneDirRef.current = null
+    setTg(null)
+  }, [])
+
+  const startTestGen = useCallback(async () => {
+    if (!tg || !tg.cloneDir) return
+    // Group selected functions by their implementation file.
+    const byFile = new Map<string, string[]>()
+    for (const h of tg.headers) {
+      for (const f of h.functions) {
+        if (tg.selected.has(fnKey(f))) {
+          const arr = byFile.get(f.implFile) ?? []
+          arr.push(f.name)
+          byFile.set(f.implFile, arr)
+        }
+      }
+    }
+    const selection = [...byFile.entries()].map(([sourceFile, functions]) => ({
+      sourceFile,
+      functions
+    }))
+    if (selection.length === 0) return
+    setTg((prev) => (prev ? { ...prev, stage: 'starting' } : prev))
+    tgStartedRef.current = true
+    await api.gitExplorer.startJob({
+      repoId: tg.repo.id,
+      repoName: tg.repo.name,
+      cloneUrl: tg.cloneUrl,
+      branchName: tg.branch,
+      type: 'test-generator',
+      selection,
+      existingCloneDir: tg.cloneDir
+    })
+    tgCloneDirRef.current = null
+    setTg(null)
+  }, [tg])
+
   const openRnModal = useCallback(async () => {
     if (!selectedRepo) return
     setRnModal({ repoId: selectedRepo.id, cloneUrl: selectedRepo.cloneUrl })
@@ -172,13 +285,20 @@ export default function GitExplorer(): React.JSX.Element {
     setRnFrom('')
     setRnTo('')
     setRnLoading(true)
-    const tags = await window.api.releaseNotes.listRemoteTags({
-      repoId: selectedRepo.id,
-      cloneUrl: selectedRepo.cloneUrl
-    }).catch(() => [] as string[])
+    const tags = await window.api.releaseNotes
+      .listRemoteTags({
+        repoId: selectedRepo.id,
+        cloneUrl: selectedRepo.cloneUrl
+      })
+      .catch(() => [] as string[])
     setRnTags(tags)
-    if (tags.length >= 2) { setRnFrom(tags[1]!); setRnTo(tags[0]!) }
-    else if (tags.length === 1) { setRnFrom(tags[0]!); setRnTo('HEAD') }
+    if (tags.length >= 2) {
+      setRnFrom(tags[1]!)
+      setRnTo(tags[0]!)
+    } else if (tags.length === 1) {
+      setRnFrom(tags[0]!)
+      setRnTo('HEAD')
+    }
     setRnLoading(false)
   }, [selectedRepo])
 
@@ -241,12 +361,8 @@ export default function GitExplorer(): React.JSX.Element {
             Dépôts
           </div>
           <div className="flex-1 overflow-y-auto">
-            {loadingRepos && (
-              <p className="p-3 text-xs text-muted-foreground">Chargement…</p>
-            )}
-            {reposError && (
-              <p className="p-3 text-xs text-destructive">{reposError}</p>
-            )}
+            {loadingRepos && <p className="p-3 text-xs text-muted-foreground">Chargement…</p>}
+            {reposError && <p className="p-3 text-xs text-destructive">{reposError}</p>}
             {!loadingRepos && !reposError && repos.length === 0 && (
               <p className="p-3 text-xs text-muted-foreground">Aucun dépôt.</p>
             )}
@@ -305,7 +421,7 @@ export default function GitExplorer(): React.JSX.Element {
                     💬
                   </button>
                   <button
-                    onClick={() => openModal('test-generator', b.name)}
+                    onClick={() => void openTestGen(b.name)}
                     disabled={noTempPath}
                     className="text-xs px-1.5 py-0.5 rounded bg-primary/10 hover:bg-primary/20 text-primary disabled:opacity-40 disabled:cursor-not-allowed"
                     title="Générer des tests"
@@ -332,7 +448,9 @@ export default function GitExplorer(): React.JSX.Element {
             <span>Commits{selectedBranch ? ` — ${selectedBranch}` : ''}</span>
             {commitsPage && (
               <span className="font-normal normal-case">
-                {commitsPage.offset + 1}–{Math.min(commitsPage.offset + commitsPage.limit, commitsPage.total)} / {commitsPage.total}
+                {commitsPage.offset + 1}–
+                {Math.min(commitsPage.offset + commitsPage.limit, commitsPage.total)} /{' '}
+                {commitsPage.total}
               </span>
             )}
           </div>
@@ -348,7 +466,8 @@ export default function GitExplorer(): React.JSX.Element {
             )}
             {selectedBranch && !loadingCommits && commitsPage && commitsPage.items.length > 0 && (
               <p className="px-3 py-2 text-[11px] text-muted-foreground border-b bg-muted/30">
-                L'API REST Tuleap n'expose que le commit de tête de la branche. Pour parcourir l'historique complet, lance un job (Commenter / Tests / etc.) qui clone le repo.
+                L'API REST Tuleap n'expose que le commit de tête de la branche. Pour parcourir
+                l'historique complet, lance un job (Commenter / Tests / etc.) qui clone le repo.
               </p>
             )}
             {commitsPage?.items.map((c) => (
@@ -381,7 +500,9 @@ export default function GitExplorer(): React.JSX.Element {
               <Button
                 variant="outline"
                 size="sm"
-                disabled={commitsPage.offset + commitsPage.limit >= commitsPage.total || loadingCommits}
+                disabled={
+                  commitsPage.offset + commitsPage.limit >= commitsPage.total || loadingCommits
+                }
                 onClick={() => selectBranch(selectedBranch!, commitsOffset + 30)}
               >
                 Suivant →
@@ -413,7 +534,11 @@ export default function GitExplorer(): React.JSX.Element {
                     onChange={(e) => setRnFrom(e.target.value)}
                   >
                     <option value="">— choisir —</option>
-                    {rnTags.map((t) => <option key={t} value={t}>{t}</option>)}
+                    {rnTags.map((t) => (
+                      <option key={t} value={t}>
+                        {t}
+                      </option>
+                    ))}
                   </select>
                 )}
               </div>
@@ -427,7 +552,11 @@ export default function GitExplorer(): React.JSX.Element {
                   onChange={(e) => setRnTo(e.target.value)}
                 >
                   <option value="HEAD">HEAD (branche courante)</option>
-                  {rnTags.map((t) => <option key={t} value={t}>{t}</option>)}
+                  {rnTags.map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
                 </select>
               </div>
             </div>
@@ -435,7 +564,9 @@ export default function GitExplorer(): React.JSX.Element {
             {rnResult && (
               <div>
                 <div className="flex items-center justify-between mb-1">
-                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Résultat</p>
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                    Résultat
+                  </p>
                   <button
                     className="text-xs text-primary hover:underline"
                     onClick={() => navigator.clipboard.writeText(rnResult)}
@@ -449,7 +580,15 @@ export default function GitExplorer(): React.JSX.Element {
               </div>
             )}
             <div className="flex gap-2 justify-end pt-2">
-              <Button variant="outline" onClick={() => { setRnModal(null); setRnResult(null); setRnError(null) }} disabled={rnLoading}>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setRnModal(null)
+                  setRnResult(null)
+                  setRnError(null)
+                }}
+                disabled={rnLoading}
+              >
                 Fermer
               </Button>
               <Button
@@ -467,9 +606,7 @@ export default function GitExplorer(): React.JSX.Element {
       {jobModal && (
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
           <div className="bg-card rounded-lg border shadow-xl w-full max-w-md p-6 space-y-4">
-            <h2 className="text-lg font-semibold">
-              {jobModal.type === 'commentateur' ? '💬 Lancer le commentateur' : '🧪 Générer des tests'}
-            </h2>
+            <h2 className="text-lg font-semibold">💬 Lancer le commentateur</h2>
 
             <div className="text-sm space-y-2">
               <div className="flex gap-2 text-muted-foreground">
@@ -495,7 +632,9 @@ export default function GitExplorer(): React.JSX.Element {
                 type="text"
                 value={jobModal.cloneUrlOverride}
                 onChange={(e) =>
-                  setJobModal((prev) => prev ? { ...prev, cloneUrlOverride: e.target.value } : prev)
+                  setJobModal((prev) =>
+                    prev ? { ...prev, cloneUrlOverride: e.target.value } : prev
+                  )
                 }
                 placeholder="https://tuleap.example.com/plugins/git/project/repo.git"
                 spellCheck={false}
@@ -508,63 +647,14 @@ export default function GitExplorer(): React.JSX.Element {
               )}
             </div>
 
-            {jobModal.type === 'commentateur' ? (
-              <CommentingOptionsPanel
-                options={jobModal.options}
-                onChange={(opts) => setJobModal((prev) => prev ? { ...prev, options: opts } : prev)}
-                showOnlyChangedFiles={true}
-                showContextPipeline={true}
-                projectReady={true}
-                compact={true}
-              />
-            ) : (
-              <div className="border rounded-md p-3 space-y-3">
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                  Pipeline de génération
-                </p>
-                <label className="flex items-start gap-2 cursor-pointer select-none">
-                  <input
-                    type="radio"
-                    name="test-pipeline"
-                    checked={jobModal.options.testPipelineMode !== 'advanced'}
-                    onChange={() => setJobModal((prev) => prev ? { ...prev, options: { ...prev.options, testPipelineMode: 'basic' } } : prev)}
-                    className="mt-0.5 h-4 w-4 accent-primary"
-                  />
-                  <div>
-                    <div className="text-sm font-medium">Basique</div>
-                    <div className="text-xs text-muted-foreground">
-                      Un appel LLM par fichier — rapide, sans analyse de call-graph.
-                    </div>
-                  </div>
-                </label>
-                <label className="flex items-start gap-2 cursor-pointer select-none">
-                  <input
-                    type="radio"
-                    name="test-pipeline"
-                    checked={jobModal.options.testPipelineMode === 'advanced'}
-                    onChange={() => setJobModal((prev) => prev ? { ...prev, options: { ...prev.options, testPipelineMode: 'advanced' } } : prev)}
-                    className="mt-0.5 h-4 w-4 accent-primary"
-                  />
-                  <div>
-                    <div className="text-sm font-medium">Avancée — call-graph contextuel</div>
-                    <div className="text-xs text-muted-foreground">
-                      Analyse les appelants/appelés (BFS prof. 3) pour chaque fonction avant de générer les tests.
-                    </div>
-                  </div>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer select-none">
-                  <input
-                    type="checkbox"
-                    checked={!!jobModal.options.onlyChangedFiles}
-                    onChange={() => setJobModal((prev) => prev
-                      ? { ...prev, options: { ...prev.options, onlyChangedFiles: !prev.options.onlyChangedFiles } }
-                      : prev)}
-                    className="h-4 w-4 accent-primary"
-                  />
-                  <span className="text-sm">Fichiers modifiés uniquement (dernier commit)</span>
-                </label>
-              </div>
-            )}
+            <CommentingOptionsPanel
+              options={jobModal.options}
+              onChange={(opts) => setJobModal((prev) => (prev ? { ...prev, options: opts } : prev))}
+              showOnlyChangedFiles={true}
+              showContextPipeline={true}
+              projectReady={true}
+              compact={true}
+            />
 
             <div className="flex gap-2 justify-end pt-2">
               <Button variant="outline" onClick={() => setJobModal(null)} disabled={starting}>
@@ -575,6 +665,56 @@ export default function GitExplorer(): React.JSX.Element {
                 disabled={starting || !jobModal.cloneUrlOverride.trim()}
               >
                 {starting ? 'Démarrage…' : 'Lancer le job'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Test-generator: clone + header/function selection modal */}
+      {tg && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+          <div className="bg-card rounded-lg border shadow-xl w-full max-w-2xl p-6 flex flex-col gap-4 max-h-[85vh]">
+            <div>
+              <h2 className="text-lg font-semibold">🧪 Générer des tests</h2>
+              <p className="text-sm text-muted-foreground">
+                {tg.repo.name} · branche <code className="text-xs">{tg.branch}</code>
+              </p>
+            </div>
+
+            {tg.stage === 'cloning' && (
+              <p className="text-sm text-muted-foreground py-8 text-center">
+                Clonage et analyse du dépôt en cours…
+              </p>
+            )}
+
+            {tg.stage === 'error' && (
+              <p className="text-sm text-destructive">{tg.error ?? 'Erreur inconnue.'}</p>
+            )}
+
+            {(tg.stage === 'selecting' || tg.stage === 'starting') && (
+              <>
+                <p className="text-xs text-muted-foreground">
+                  Sélectionnez les fonctions à tester. Cliquez un header pour voir ses fonctions et
+                  le fichier qui les implémente.
+                </p>
+                <HeaderFunctionSelector
+                  headers={tg.headers}
+                  selected={tg.selected}
+                  onChange={(next) => setTg((prev) => (prev ? { ...prev, selected: next } : prev))}
+                />
+              </>
+            )}
+
+            <div className="flex gap-2 justify-end pt-2 border-t">
+              <Button variant="outline" onClick={closeTg} disabled={tg.stage === 'starting'}>
+                Annuler
+              </Button>
+              <Button
+                onClick={() => void startTestGen()}
+                disabled={tg.stage !== 'selecting' || tg.selected.size === 0}
+              >
+                {tg.stage === 'starting' ? 'Démarrage…' : `Générer les tests (${tg.selected.size})`}
               </Button>
             </div>
           </div>

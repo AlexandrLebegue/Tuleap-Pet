@@ -6,6 +6,7 @@ import { parseFile } from '../cpp-analyzer/parser'
 import { functionDefToParsed, buildFileInfoFromDefs } from '../test-generator/fn-adapter'
 import { runPipeline } from '../test-generator/pipeline'
 import type { PipelineProgress } from '../test-generator/pipeline'
+import { buildHeaderIndex } from '../test-generator/header-index'
 import { getCppProjectRoot, getConfig } from '../store/config'
 import { audit } from '../store/db'
 import { debugError } from '../logger'
@@ -47,7 +48,12 @@ export function registerTestGeneratorHandlers(): void {
     try {
       const root = getCppProjectRoot() ?? undefined
       const result = await generateTestsGranular(
-        content, filename, onlyFunctions, undefined, root, sourceFilePath
+        content,
+        filename,
+        onlyFunctions,
+        undefined,
+        root,
+        sourceFilePath
       )
       return {
         testFiles: result.testFiles,
@@ -165,7 +171,10 @@ export function registerTestGeneratorHandlers(): void {
     }
     const { tempClonePath } = getConfig()
     if (!tempClonePath) {
-      return { ok: false as const, error: 'Chemin de clonage temporaire non configuré dans les Paramètres.' }
+      return {
+        ok: false as const,
+        error: 'Chemin de clonage temporaire non configuré dans les Paramètres.'
+      }
     }
 
     const cloneDir = path.join(tempClonePath, `testgen-clone-${Date.now()}`)
@@ -183,14 +192,40 @@ export function registerTestGeneratorHandlers(): void {
 
       return { ok: true as const, cloneDir, files }
     } catch (err) {
-      try { fs.rmSync(cloneDir, { recursive: true, force: true }) } catch { /* ignore */ }
+      try {
+        fs.rmSync(cloneDir, { recursive: true, force: true })
+      } catch {
+        /* ignore */
+      }
+      return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
+    }
+  })
+
+  ipcMain.handle('testgen:build-header-index', async (_event, args: unknown) => {
+    const { cloneDir } = args as { cloneDir: string }
+    if (!cloneDir || !fs.existsSync(cloneDir)) {
+      return { ok: false as const, error: 'Dossier de clonage introuvable.' }
+    }
+    audit('testgen.build-header-index', cloneDir)
+    try {
+      const headers = buildHeaderIndex(cloneDir)
+      return { ok: true as const, cloneDir, headers }
+    } catch (err) {
+      debugError(
+        '[testgen] header-index error: %s',
+        err instanceof Error ? err.message : String(err)
+      )
       return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
     }
   })
 
   ipcMain.handle('testgen:cleanup-clone-dir', async (_event, args: unknown) => {
     const { cloneDir } = args as { cloneDir: string }
-    try { fs.rmSync(cloneDir, { recursive: true, force: true }) } catch { /* ignore */ }
+    try {
+      fs.rmSync(cloneDir, { recursive: true, force: true })
+    } catch {
+      /* ignore */
+    }
   })
 
   ipcMain.handle('testgen:read-file-from-dir', async (_event, args: unknown) => {
@@ -235,7 +270,14 @@ function walkForBasename(root: string, target: string, out: string[], limit: num
     if (out.length >= limit) break
     const full = path.join(root, e.name)
     if (e.isDirectory()) {
-      if (e.name === 'build' || e.name === 'node_modules' || e.name.startsWith('.git') || e.name === '_deps' || e.name === 'CMakeFiles') continue
+      if (
+        e.name === 'build' ||
+        e.name === 'node_modules' ||
+        e.name.startsWith('.git') ||
+        e.name === '_deps' ||
+        e.name === 'CMakeFiles'
+      )
+        continue
       walkForBasename(full, target, out, limit)
     } else if (e.isFile() && e.name === target) {
       out.push(full)
@@ -255,7 +297,14 @@ function walkForCppFiles(root: string, current: string, out: string[], limit: nu
     if (out.length >= limit) break
     const full = path.join(current, e.name)
     if (e.isDirectory()) {
-      if (e.name === 'build' || e.name === 'node_modules' || e.name.startsWith('.git') || e.name === '_deps' || e.name === 'CMakeFiles') continue
+      if (
+        e.name === 'build' ||
+        e.name === 'node_modules' ||
+        e.name.startsWith('.git') ||
+        e.name === '_deps' ||
+        e.name === 'CMakeFiles'
+      )
+        continue
       walkForCppFiles(root, full, out, limit)
     } else if (e.isFile() && CPP_EXTS.has(path.extname(e.name).toLowerCase())) {
       out.push(path.relative(root, full))

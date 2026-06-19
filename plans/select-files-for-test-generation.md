@@ -1,5 +1,10 @@
 # Plan — Sélection des fichiers/fonctions à tester (Git Explorer → Générer des tests)
 
+> **Statut : implémenté.** Index headers→fonctions→impl (`testgen:build-header-index`),
+> sélection hiérarchique (`HeaderFunctionSelector`), job piloté par `selection` avec
+> réutilisation du clone, suppression du pipeline basic. Voir commits sur la branche.
+
+
 ## 1. Analyse de la boucle de génération actuelle
 
 ### Où elle vit

@@ -17,11 +17,17 @@ import {
   gitPush,
   findTestDirectory
 } from '../commenter/git-utils'
-import { generateTestsForFile, testOutputFilename } from './test-gen-file'
 import { generateTestsGranular } from '../test-generator/test-generator'
 import { injectGitCredentials, explainGitAuthFailure } from './git-credentials'
 import { debugError } from '../logger'
-import type { BackgroundJob, JobStatus, JobStreamEvent, JobType, CommentingOptions } from '@shared/types'
+import type {
+  BackgroundJob,
+  JobStatus,
+  JobStreamEvent,
+  JobType,
+  CommentingOptions,
+  TestGenSelection
+} from '@shared/types'
 
 function makeJobId(): string {
   return randomBytes(4).toString('hex')
@@ -45,6 +51,10 @@ type JobStartArgs = {
   branchName: string
   type: JobType
   options?: CommentingOptions
+  /** Test-generator only: source files + the functions to test. */
+  selection?: TestGenSelection[]
+  /** Reuse an already-cloned working dir (e.g. from the file-selection step) instead of cloning again. */
+  existingCloneDir?: string
 }
 
 type ActiveJob = { abort: AbortController }
@@ -95,163 +105,78 @@ async function runJob(
 ): Promise<void> {
   const { tempClonePath } = getConfig()
   if (!tempClonePath) {
-    emit(win, { type: 'error', jobId, error: "Aucun dossier temporaire configuré dans les réglages." })
+    emit(win, {
+      type: 'error',
+      jobId,
+      error: 'Aucun dossier temporaire configuré dans les réglages.'
+    })
     return
   }
 
-  const targetDir = path.join(tempClonePath, `${args.repoName}_${jobId}`)
+  const reuseClone = !!args.existingCloneDir && fs.existsSync(args.existingCloneDir)
+  const targetDir = reuseClone
+    ? args.existingCloneDir!
+    : path.join(tempClonePath, `${args.repoName}_${jobId}`)
   const cleanupDir = (): void => {
     try {
       if (fs.existsSync(targetDir)) {
         fs.rmSync(targetDir, { recursive: true, force: true })
       }
-    } catch { /* ignore cleanup errors */ }
+    } catch {
+      /* ignore cleanup errors */
+    }
   }
 
   try {
-    if (signal.aborted) { emit(win, { type: 'cancelled', jobId }); return }
-
-    // 1. Clone the specific branch directly (avoids a separate checkout step)
-    updateStatus(win, jobId, 'cloning')
-    const credUrl = await injectGitCredentials(args.cloneUrl)
-    try {
-      await cloneRepo(credUrl, targetDir, args.branchName)
-    } catch (cloneErr) {
-      const raw = cloneErr instanceof Error ? cloneErr.message : String(cloneErr)
-      const hint = explainGitAuthFailure(raw)
-      throw new Error(hint ?? raw)
+    if (signal.aborted) {
+      emit(win, { type: 'cancelled', jobId })
+      return
     }
 
-    // 3. List source files
-    const commentOptions: CommentingOptions = args.options ?? {
-      preserveExisting: true,
-      addFileHeader: true,
-      detailedComments: true,
-      applyCodingRules: false,
-      onlyChangedFiles: false
-    }
-
-    let files = await listSourceFiles(targetDir)
-    if (commentOptions.onlyChangedFiles) {
-      const changed = new Set(await listChangedFiles(targetDir))
-      files = files.filter((f) => changed.has(f))
-      if (files.length === 0) {
-        throw new Error('Aucun fichier C/C++ modifié trouvé dans le dernier commit.')
-      }
-    } else if (files.length === 0) {
-      throw new Error(
-        `Aucun fichier C/C++ trouvé dans la branche "${args.branchName}" du dépôt "${args.repoName}". ` +
-          `Vérifie que la branche contient bien des fichiers .c/.h/.cpp/.hpp (et qu'ils sont commités).`
-      )
-    }
-
-    // 4. Find test directory (for test-generator only)
-    let testDir = ''
-    if (args.type === 'test-generator') {
-      testDir = await findTestDirectory(targetDir)
-    }
-
-    // 5. Process each file
-    updateStatus(win, jobId, 'processing')
-    let skipped = 0
-
-    for (let i = 0; i < files.length; i++) {
-      if (signal.aborted) { cleanupDir(); emit(win, { type: 'cancelled', jobId }); return }
-
-      const filename = files[i]!
-      emit(win, { type: 'progress', jobId, current: i + 1, total: files.length, currentFile: filename })
-
-      // Skip test files when generating tests — no point testing the tests
-      if (args.type === 'test-generator' && /test/i.test(path.basename(filename))) {
-        skipped++
-        continue
-      }
-
-      if (args.type !== 'commentateur') {
-        try {
-          const fullPath = path.join(targetDir, filename)
-          const content = fs.readFileSync(fullPath, 'utf8')
-          const outDir = testDir ? path.join(targetDir, testDir) : targetDir
-          fs.mkdirSync(outDir, { recursive: true })
-
-          if (commentOptions.testPipelineMode === 'advanced') {
-            const result = await generateTestsGranular(
-              content, filename, undefined, undefined, targetDir, fullPath
-            )
-            for (const tf of result.testFiles) {
-              fs.writeFileSync(path.join(outDir, tf.name), tf.content, 'utf8')
-            }
-          } else {
-            const testCode = await generateTestsForFile(content, filename)
-            const outName = testOutputFilename(filename)
-            fs.writeFileSync(path.join(outDir, outName), testCode, 'utf8')
-          }
-        } catch (fileErr) {
-          skipped++
-          debugError('[job-manager] skipped %s: %s', filename, fileErr instanceof Error ? fileErr.message : String(fileErr))
-        }
-        continue
-      }
-
-      if (!commentOptions.useContextPipeline) {
-        try {
-          const fullPath = path.join(targetDir, filename)
-          const content = fs.readFileSync(fullPath, 'utf8')
-          const commented = await processSingleFile(content, filename, commentOptions)
-          fs.writeFileSync(fullPath, commented, 'utf8')
-        } catch (fileErr) {
-          skipped++
-          debugError('[job-manager] skipped %s: %s', filename, fileErr instanceof Error ? fileErr.message : String(fileErr))
-        }
-      }
-    }
-
-    // Contextual pipeline: process all commenter files in batch after the loop
-    if (args.type === 'commentateur' && commentOptions.useContextPipeline) {
-      const absolutePaths = files.map((f) => path.join(targetDir, f))
-      const emitCtx = (ev: ContextCommenterProgress): void => {
-        win?.webContents.send('commenter:context-progress', ev)
-      }
+    // 1. Clone the specific branch directly — unless a working clone was provided
+    //    (e.g. from the test-generator file-selection step).
+    if (!reuseClone) {
+      updateStatus(win, jobId, 'cloning')
+      const credUrl = await injectGitCredentials(args.cloneUrl)
       try {
-        const ctxResult = await runContextCommenter(
-          {
-            projectRoot: targetDir,
-            filePaths: absolutePaths,
-            forceAll: commentOptions.forceAll,
-            depth: commentOptions.contextDepth,
-            tokenBudget: commentOptions.contextTokenBudget,
-            inlineComments: commentOptions.inlineComments
-          },
-          emitCtx
-        )
-        for (const f of ctxResult.files) {
-          fs.writeFileSync(f.filePath, f.newContent, 'utf8')
-        }
-        skipped = files.length - ctxResult.files.length
-      } catch (ctxErr) {
-        debugError('[job-manager] context pipeline error: %s', ctxErr instanceof Error ? ctxErr.message : String(ctxErr))
-        throw ctxErr
+        await cloneRepo(credUrl, targetDir, args.branchName)
+      } catch (cloneErr) {
+        const raw = cloneErr instanceof Error ? cloneErr.message : String(cloneErr)
+        const hint = explainGitAuthFailure(raw)
+        throw new Error(hint ?? raw)
       }
+    }
+
+    let processedLabel: string
+
+    if (args.type === 'test-generator') {
+      processedLabel = await runTestGeneration(win, jobId, args, targetDir, signal, cleanupDir)
+      if (processedLabel === '__cancelled__') return
+    } else {
+      processedLabel = await runCommenting(win, jobId, args, targetDir, signal, cleanupDir)
+      if (processedLabel === '__cancelled__') return
     }
 
     // 6. Commit
-    if (signal.aborted) { cleanupDir(); emit(win, { type: 'cancelled', jobId }); return }
+    if (signal.aborted) {
+      cleanupDir()
+      emit(win, { type: 'cancelled', jobId })
+      return
+    }
     updateStatus(win, jobId, 'committing')
 
     const branchKind = args.type === 'commentateur' ? 'comments' : 'tests'
     const newBranch = `tuleap-pet/${branchKind}-${randomBytes(3).toString('hex')}`
     await createBranch(targetDir, newBranch)
     await gitAdd(targetDir)
-
-    const processed = files.length - skipped
-    const msg =
-      args.type === 'commentateur'
-        ? `[AI] Commentaires Doxygen — ${processed} fichier(s)${skipped > 0 ? `, ${skipped} ignoré(s)` : ''}`
-        : `[AI] Tests unitaires — ${processed} fichier(s)${skipped > 0 ? `, ${skipped} ignoré(s)` : ''}`
-    await gitCommit(targetDir, msg)
+    await gitCommit(targetDir, processedLabel)
 
     // 7. Push
-    if (signal.aborted) { cleanupDir(); emit(win, { type: 'cancelled', jobId }); return }
+    if (signal.aborted) {
+      cleanupDir()
+      emit(win, { type: 'cancelled', jobId })
+      return
+    }
     updateStatus(win, jobId, 'pushing')
     await gitPush(targetDir, newBranch)
 
@@ -269,11 +194,13 @@ async function runJob(
       prId = pr.id
       prUrl = pr.htmlUrl || null
     } catch (prErr) {
-      debugError('[job-manager] PR creation failed: %s', prErr instanceof Error ? prErr.message : String(prErr))
+      debugError(
+        '[job-manager] PR creation failed: %s',
+        prErr instanceof Error ? prErr.message : String(prErr)
+      )
     }
 
     emit(win, { type: 'done', jobId, prId, prUrl, branchCreated: newBranch })
-
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     debugError('[job-manager] job %s error: %s', jobId, message)
@@ -281,4 +208,187 @@ async function runJob(
   } finally {
     cleanupDir()
   }
+}
+
+/** Sentinel returned by the per-type handlers when the job was cancelled mid-flight. */
+const CANCELLED = '__cancelled__'
+
+/**
+ * Generate tests for an explicit selection of source files + functions
+ * (granular call-graph pipeline only). Returns the commit message, or
+ * {@link CANCELLED} if aborted.
+ */
+async function runTestGeneration(
+  win: BrowserWindow | null,
+  jobId: string,
+  args: JobStartArgs,
+  targetDir: string,
+  signal: AbortSignal,
+  cleanupDir: () => void
+): Promise<string> {
+  const selection = args.selection ?? []
+  if (selection.length === 0) {
+    throw new Error('Aucune fonction sélectionnée pour la génération de tests.')
+  }
+
+  const testDir = await findTestDirectory(targetDir)
+  const outDir = testDir ? path.join(targetDir, testDir) : targetDir
+  fs.mkdirSync(outDir, { recursive: true })
+
+  updateStatus(win, jobId, 'processing')
+  let produced = 0
+  let failed = 0
+
+  for (let i = 0; i < selection.length; i++) {
+    if (signal.aborted) {
+      cleanupDir()
+      emit(win, { type: 'cancelled', jobId })
+      return CANCELLED
+    }
+    const entry = selection[i]!
+    emit(win, {
+      type: 'progress',
+      jobId,
+      current: i + 1,
+      total: selection.length,
+      currentFile: entry.sourceFile
+    })
+
+    try {
+      const fullPath = path.join(targetDir, entry.sourceFile)
+      const content = fs.readFileSync(fullPath, 'utf8')
+      const result = await generateTestsGranular(
+        content,
+        path.basename(entry.sourceFile),
+        entry.functions.length > 0 ? entry.functions : undefined,
+        undefined,
+        targetDir,
+        fullPath
+      )
+      // Prefix output names with the source basename to avoid collisions between
+      // same-named functions in different files (e.g. two `init`).
+      const sourceBase = path.basename(entry.sourceFile, path.extname(entry.sourceFile))
+      for (const tf of result.testFiles) {
+        const outName = `test_${sourceBase}_${tf.name.replace(/^test_/, '')}`
+        fs.writeFileSync(path.join(outDir, outName), tf.content, 'utf8')
+        produced++
+      }
+    } catch (fileErr) {
+      failed++
+      debugError(
+        '[job-manager] test-gen failed for %s: %s',
+        entry.sourceFile,
+        fileErr instanceof Error ? fileErr.message : String(fileErr)
+      )
+    }
+  }
+
+  if (produced === 0) {
+    throw new Error(
+      'Aucun fichier de test généré pour la sélection (toutes les générations ont échoué).'
+    )
+  }
+
+  return `[AI] Tests unitaires — ${produced} fichier(s)${failed > 0 ? `, ${failed} source(s) en échec` : ''}`
+}
+
+/**
+ * Comment every (or only changed) source file in the clone. Returns the commit
+ * message, or {@link CANCELLED} if aborted.
+ */
+async function runCommenting(
+  win: BrowserWindow | null,
+  jobId: string,
+  args: JobStartArgs,
+  targetDir: string,
+  signal: AbortSignal,
+  cleanupDir: () => void
+): Promise<string> {
+  const commentOptions: CommentingOptions = args.options ?? {
+    preserveExisting: true,
+    addFileHeader: true,
+    detailedComments: true,
+    applyCodingRules: false,
+    onlyChangedFiles: false
+  }
+
+  let files = await listSourceFiles(targetDir)
+  if (commentOptions.onlyChangedFiles) {
+    const changed = new Set(await listChangedFiles(targetDir))
+    files = files.filter((f) => changed.has(f))
+    if (files.length === 0) {
+      throw new Error('Aucun fichier C/C++ modifié trouvé dans le dernier commit.')
+    }
+  } else if (files.length === 0) {
+    throw new Error(
+      `Aucun fichier C/C++ trouvé dans la branche "${args.branchName}" du dépôt "${args.repoName}". ` +
+        `Vérifie que la branche contient bien des fichiers .c/.h/.cpp/.hpp (et qu'ils sont commités).`
+    )
+  }
+
+  updateStatus(win, jobId, 'processing')
+  let skipped = 0
+
+  if (!commentOptions.useContextPipeline) {
+    for (let i = 0; i < files.length; i++) {
+      if (signal.aborted) {
+        cleanupDir()
+        emit(win, { type: 'cancelled', jobId })
+        return CANCELLED
+      }
+      const filename = files[i]!
+      emit(win, {
+        type: 'progress',
+        jobId,
+        current: i + 1,
+        total: files.length,
+        currentFile: filename
+      })
+      try {
+        const fullPath = path.join(targetDir, filename)
+        const content = fs.readFileSync(fullPath, 'utf8')
+        const commented = await processSingleFile(content, filename, commentOptions)
+        fs.writeFileSync(fullPath, commented, 'utf8')
+      } catch (fileErr) {
+        skipped++
+        debugError(
+          '[job-manager] skipped %s: %s',
+          filename,
+          fileErr instanceof Error ? fileErr.message : String(fileErr)
+        )
+      }
+    }
+  } else {
+    // Contextual pipeline: process all files in batch.
+    const absolutePaths = files.map((f) => path.join(targetDir, f))
+    const emitCtx = (ev: ContextCommenterProgress): void => {
+      win?.webContents.send('commenter:context-progress', ev)
+    }
+    try {
+      const ctxResult = await runContextCommenter(
+        {
+          projectRoot: targetDir,
+          filePaths: absolutePaths,
+          forceAll: commentOptions.forceAll,
+          depth: commentOptions.contextDepth,
+          tokenBudget: commentOptions.contextTokenBudget,
+          inlineComments: commentOptions.inlineComments
+        },
+        emitCtx
+      )
+      for (const f of ctxResult.files) {
+        fs.writeFileSync(f.filePath, f.newContent, 'utf8')
+      }
+      skipped = files.length - ctxResult.files.length
+    } catch (ctxErr) {
+      debugError(
+        '[job-manager] context pipeline error: %s',
+        ctxErr instanceof Error ? ctxErr.message : String(ctxErr)
+      )
+      throw ctxErr
+    }
+  }
+
+  const processed = files.length - skipped
+  return `[AI] Commentaires Doxygen — ${processed} fichier(s)${skipped > 0 ? `, ${skipped} ignoré(s)` : ''}`
 }

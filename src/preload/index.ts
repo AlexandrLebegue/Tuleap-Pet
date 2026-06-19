@@ -16,6 +16,7 @@ import type {
   GitBranch,
   GitCommit,
   GitRepository,
+  HeaderIndexResult,
   JenkinsBranchStatus,
   JenkinsBranchTestReport,
   JenkinsBuildDetail,
@@ -39,6 +40,7 @@ import type {
   Page,
   ProjectSummary,
   SprintContent,
+  TestGenSelection,
   SprintReviewProgressEvent,
   SprintReviewSlideType,
   TrackerFields,
@@ -114,9 +116,13 @@ const settings = {
   setChatbotJenkinsToolsEnabled: (value: boolean): Promise<SettingsState> =>
     ipcRenderer.invoke('settings:set-chatbot-jenkins-tools-enabled', value),
   reset: (): Promise<SettingsState> => ipcRenderer.invoke('settings:reset'),
-  setTempClonePath: (path: string | null): Promise<{ tempClonePath: string | null; gitCloneSsh: boolean }> =>
+  setTempClonePath: (
+    path: string | null
+  ): Promise<{ tempClonePath: string | null; gitCloneSsh: boolean }> =>
     ipcRenderer.invoke('settings:set-temp-clone-path', path),
-  setGitCloneSsh: (value: boolean): Promise<{ tempClonePath: string | null; gitCloneSsh: boolean }> =>
+  setGitCloneSsh: (
+    value: boolean
+  ): Promise<{ tempClonePath: string | null; gitCloneSsh: boolean }> =>
     ipcRenderer.invoke('settings:set-git-clone-ssh', value),
   chooseTempDir: (): Promise<{ ok: true; path: string } | { ok: false; cancelled: true }> =>
     ipcRenderer.invoke('settings:choose-temp-dir'),
@@ -147,7 +153,8 @@ const tuleap = {
     limit?: number
     offset?: number
   }): Promise<Page<ArtifactSummary>> => ipcRenderer.invoke('tuleap:list-artifacts', args),
-  getArtifact: (id: number): Promise<ArtifactDetail> => ipcRenderer.invoke('tuleap:get-artifact', id),
+  getArtifact: (id: number): Promise<ArtifactDetail> =>
+    ipcRenderer.invoke('tuleap:get-artifact', id),
   getTrackerFields: (trackerId: number): Promise<TrackerFields> =>
     ipcRenderer.invoke('tuleap:get-tracker-fields', { trackerId }),
   createArtifact: (args: {
@@ -177,7 +184,14 @@ const tuleap = {
 
 type LlmTestResult =
   | { ok: true; model: string; sample: string; provider: string }
-  | { ok: false; error: string; kind: string; provider?: string; attemptedModel?: string; status?: number }
+  | {
+      ok: false
+      error: string
+      kind: string
+      provider?: string
+      attemptedModel?: string
+      status?: number
+    }
 
 type GenerationResult = {
   markdown: string
@@ -223,7 +237,8 @@ type ChatSendResult =
   | { ok: false; error: string; kind: string; assistantMessageId: number }
 
 const chat = {
-  listConversations: (): Promise<ChatConversation[]> => ipcRenderer.invoke('chat:list-conversations'),
+  listConversations: (): Promise<ChatConversation[]> =>
+    ipcRenderer.invoke('chat:list-conversations'),
   getConversation: (
     id: number
   ): Promise<{ conversation: ChatConversation; messages: ChatMessage[] }> =>
@@ -260,8 +275,10 @@ type StartOAuthResult =
 const auth = {
   setMode: (mode: 'token' | 'oauth2'): Promise<{ ok: true }> =>
     ipcRenderer.invoke('auth:set-mode', mode),
-  setOAuthClient: (args: { clientId: string | null; scope: string | null }): Promise<{ ok: true }> =>
-    ipcRenderer.invoke('auth:set-oauth-client', args),
+  setOAuthClient: (args: {
+    clientId: string | null
+    scope: string | null
+  }): Promise<{ ok: true }> => ipcRenderer.invoke('auth:set-oauth-client', args),
   startOAuth: (): Promise<StartOAuthResult> => ipcRenderer.invoke('auth:start-oauth'),
   clearOAuth: (): Promise<{ ok: true }> => ipcRenderer.invoke('auth:clear-oauth'),
   hasOAuth: (): Promise<{ hasOAuth: boolean }> => ipcRenderer.invoke('auth:has-oauth')
@@ -318,7 +335,10 @@ const admin = {
 
 export type CommenterFile = { name: string; content: string }
 export type CommenterOptions = CommentingOptions
-export type CommenterResult = { results: CommenterFile[]; errors: { name: string; error: string }[] }
+export type CommenterResult = {
+  results: CommenterFile[]
+  errors: { name: string; error: string }[]
+}
 
 export type CommenterContextProgress =
   | { type: 'index'; root: string }
@@ -346,18 +366,22 @@ export type CommenterContextResult = {
 }
 
 const commenter = {
-  process: (args: { files: CommenterFile[]; options: CommenterOptions }): Promise<CommenterResult> =>
-    ipcRenderer.invoke('commenter:process', args),
+  process: (args: {
+    files: CommenterFile[]
+    options: CommenterOptions
+  }): Promise<CommenterResult> => ipcRenderer.invoke('commenter:process', args),
   saveFile: (args: { filename: string; content: string }): Promise<{ ok: boolean }> =>
     ipcRenderer.invoke('commenter:save-file', args),
   saveAll: (args: { files: CommenterFile[] }): Promise<{ ok: boolean; savedCount: number }> =>
     ipcRenderer.invoke('commenter:save-all', args),
-  resolveSources: (args: { filenames: string[] }): Promise<
-    { ok: true; resolved: Record<string, string[]> } | { ok: false; reason: string }
-  > => ipcRenderer.invoke('commenter:resolve-sources', args),
-  scanFolder: (args: { folderPath: string }): Promise<
-    { ok: true; filePaths: string[]; count: number } | { ok: false; reason: string }
-  > => ipcRenderer.invoke('commenter:scan-folder', args),
+  resolveSources: (args: {
+    filenames: string[]
+  }): Promise<{ ok: true; resolved: Record<string, string[]> } | { ok: false; reason: string }> =>
+    ipcRenderer.invoke('commenter:resolve-sources', args),
+  scanFolder: (args: {
+    folderPath: string
+  }): Promise<{ ok: true; filePaths: string[]; count: number } | { ok: false; reason: string }> =>
+    ipcRenderer.invoke('commenter:scan-folder', args),
   runContext: (args: {
     filePaths: string[]
     forceAll?: boolean
@@ -443,25 +467,32 @@ export type TestgenPipelineResult = {
 }
 
 const testgen = {
-  extractFunctions: (args: { filename: string; content: string }): Promise<{ functions: ParsedFunction[]; fileInfo: Record<string, unknown> }> =>
+  extractFunctions: (args: {
+    filename: string
+    content: string
+  }): Promise<{ functions: ParsedFunction[]; fileInfo: Record<string, unknown> }> =>
     ipcRenderer.invoke('testgen:extract-functions', args),
-  generateAll: (args: { filename: string; content: string; onlyFunctions?: string[]; sourceFilePath?: string }): Promise<TestGenResult> =>
-    ipcRenderer.invoke('testgen:generate-all', args),
+  generateAll: (args: {
+    filename: string
+    content: string
+    onlyFunctions?: string[]
+    sourceFilePath?: string
+  }): Promise<TestGenResult> => ipcRenderer.invoke('testgen:generate-all', args),
   saveFile: (args: { filename: string; content: string }): Promise<{ ok: boolean }> =>
     ipcRenderer.invoke('testgen:save-file', args),
   saveAll: (args: { files: CommenterFile[] }): Promise<{ ok: boolean; savedCount: number }> =>
     ipcRenderer.invoke('testgen:save-all', args),
-  resolveSource: (args: { filename: string }): Promise<
-    { ok: true; candidates: string[] } | { ok: false; reason: string }
-  > => ipcRenderer.invoke('testgen:resolve-source', args),
+  resolveSource: (args: {
+    filename: string
+  }): Promise<{ ok: true; candidates: string[] } | { ok: false; reason: string }> =>
+    ipcRenderer.invoke('testgen:resolve-source', args),
   runPipeline: (args: {
     sourceFilePath: string
     onlyFunctions?: string[]
     buildEnabled: boolean
     preset?: string
     maxRepairs?: number
-  }): Promise<TestgenPipelineResult> =>
-    ipcRenderer.invoke('testgen:run-pipeline', args),
+  }): Promise<TestgenPipelineResult> => ipcRenderer.invoke('testgen:run-pipeline', args),
   subscribePipeline: (handler: (event: TestgenPipelineProgress) => void): (() => void) => {
     const wrapped = (_e: unknown, payload: TestgenPipelineProgress): void => handler(payload)
     ipcRenderer.on('testgen:pipeline-progress', wrapped)
@@ -475,6 +506,9 @@ const testgen = {
     onlyRecentFiles: boolean
   }): Promise<{ ok: true; cloneDir: string; files: string[] } | { ok: false; error: string }> =>
     ipcRenderer.invoke('testgen:git-clone-and-list', args),
+
+  buildHeaderIndex: (args: { cloneDir: string }): Promise<HeaderIndexResult> =>
+    ipcRenderer.invoke('testgen:build-header-index', args),
 
   cleanupCloneDir: (args: { cloneDir: string }): Promise<void> =>
     ipcRenderer.invoke('testgen:cleanup-clone-dir', args),
@@ -491,14 +525,12 @@ const testgen = {
   }): Promise<{ ok: true; files: string[] } | { ok: false; error: string }> =>
     ipcRenderer.invoke('testgen:list-folder-files', args),
 
-  chooseFolderForSource: (): Promise<
-    { ok: true; path: string } | { ok: false; cancelled: true }
-  > => ipcRenderer.invoke('testgen:choose-folder-for-source')
+  chooseFolderForSource: (): Promise<{ ok: true; path: string } | { ok: false; cancelled: true }> =>
+    ipcRenderer.invoke('testgen:choose-folder-for-source')
 }
 
 const commenterPr = {
-  listRepos: (): Promise<GitRepository[]> =>
-    ipcRenderer.invoke('commenter-pr:list-repos'),
+  listRepos: (): Promise<GitRepository[]> => ipcRenderer.invoke('commenter-pr:list-repos'),
 
   listBranches: (repoId: number): Promise<GitBranch[]> =>
     ipcRenderer.invoke('commenter-pr:list-branches', repoId),
@@ -511,8 +543,13 @@ const commenterPr = {
     repoId: number
     branch: string
     options: CommentingOptions
-  }): Promise<{ ok: boolean; branchName?: string; prId?: number; prUrl?: string; error?: string }> =>
-    ipcRenderer.invoke('commenter-pr:start', args),
+  }): Promise<{
+    ok: boolean
+    branchName?: string
+    prId?: number
+    prUrl?: string
+    error?: string
+  }> => ipcRenderer.invoke('commenter-pr:start', args),
 
   subscribe: (handler: (event: CommenterPRProgress) => void): (() => void) => {
     const wrapped = (_e: unknown, payload: CommenterPRProgress): void => handler(payload)
@@ -522,8 +559,7 @@ const commenterPr = {
 }
 
 const gitExplorer = {
-  listRepos: (): Promise<GitRepository[]> =>
-    ipcRenderer.invoke('git:list-repos'),
+  listRepos: (): Promise<GitRepository[]> => ipcRenderer.invoke('git:list-repos'),
 
   listBranches: (repoId: number): Promise<GitBranch[]> =>
     ipcRenderer.invoke('git:list-branches', repoId),
@@ -532,8 +568,7 @@ const gitExplorer = {
     repoId: number
     branchName: string
     offset?: number
-  }): Promise<Page<GitCommit>> =>
-    ipcRenderer.invoke('git:list-commits', args),
+  }): Promise<Page<GitCommit>> => ipcRenderer.invoke('git:list-commits', args),
 
   startJob: (args: {
     repoId: number
@@ -542,11 +577,11 @@ const gitExplorer = {
     branchName: string
     type: JobType
     options?: CommentingOptions
-  }): Promise<{ jobId: string }> =>
-    ipcRenderer.invoke('git:start-job', args),
+    selection?: TestGenSelection[]
+    existingCloneDir?: string
+  }): Promise<{ jobId: string }> => ipcRenderer.invoke('git:start-job', args),
 
-  cancelJob: (jobId: string): Promise<void> =>
-    ipcRenderer.invoke('git:cancel-job', jobId),
+  cancelJob: (jobId: string): Promise<void> => ipcRenderer.invoke('git:cancel-job', jobId),
 
   subscribe: (handler: (event: JobStreamEvent) => void): (() => void) => {
     const wrapped = (_e: unknown, payload: JobStreamEvent): void => handler(payload)
@@ -575,7 +610,12 @@ export type PendingWriteAction =
   | { kind: 'add_comment'; artifactId: number; comment: string; format?: 'text' | 'html' }
   | { kind: 'transition_status'; artifactId: number; newStatus: string }
   | { kind: 'create_artifact'; trackerId: number; title: string; description: string | null }
-  | { kind: 'move_to_sprint'; artifactIds: number[]; milestoneId: number | null; fromMilestoneId?: number | null }
+  | {
+      kind: 'move_to_sprint'
+      artifactIds: number[]
+      milestoneId: number | null
+      fromMilestoneId?: number | null
+    }
   | { kind: 'link_artifacts'; parentId: number; childIds: number[] }
 
 const tuleapWrite = {
@@ -595,22 +635,29 @@ const sprintBoard = {
     backlogItems: ArtifactSummary[]
     workflow: string[]
   }> => ipcRenderer.invoke('sprint:get-board', args),
-  scanRisks: (
-    args: { items: ArtifactSummary[] }
-  ): Promise<{ ok: true; risks: Array<{ id: number; level: 'low' | 'medium' | 'high'; reason: string }> }> =>
-    ipcRenderer.invoke('sprint:scan-risks', args),
+  scanRisks: (args: {
+    items: ArtifactSummary[]
+  }): Promise<{
+    ok: true
+    risks: Array<{ id: number; level: 'low' | 'medium' | 'high'; reason: string }>
+  }> => ipcRenderer.invoke('sprint:scan-risks', args),
   moveItem: (args: {
     artifactId: number
     trackerId: number
     targetStatus: string
-  }): Promise<{ ok: boolean; error?: string }> =>
-    ipcRenderer.invoke('sprint:move-item', args)
+  }): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('sprint:move-item', args)
 }
 
 const ticketBranch = {
   preview: (args: { artifactId: number }) =>
     ipcRenderer.invoke('ticket-branch:preview', args) as Promise<
-      | { ok: true; branchName: string; commitMessage: string; prBody: string; contextMarkdown: string }
+      | {
+          ok: true
+          branchName: string
+          commitMessage: string
+          prBody: string
+          contextMarkdown: string
+        }
       | { ok: false; error: string }
     >,
   execute: (args: {
@@ -626,18 +673,29 @@ const ticketBranch = {
     ipcRenderer.invoke('ticket-branch:choose-repo'),
   makeTempDir: (): Promise<{ ok: true; path: string }> =>
     ipcRenderer.invoke('ticket-branch:make-tempdir'),
-  searchArtifacts: (query: string): Promise<Array<{ id: number; title: string; trackerId: number | null }>> =>
+  searchArtifacts: (
+    query: string
+  ): Promise<Array<{ id: number; title: string; trackerId: number | null }>> =>
     ipcRenderer.invoke('ticket-branch:search-artifacts', { query }),
-  cloneRepo: (args: { repoName: string; cloneUrl: string }): Promise<{ ok: true; path: string } | { ok: false; error: string }> =>
+  cloneRepo: (args: {
+    repoName: string
+    cloneUrl: string
+  }): Promise<{ ok: true; path: string } | { ok: false; error: string }> =>
     ipcRenderer.invoke('ticket-branch:clone-repo', args)
 }
 
 const prReviewer = {
-  listRepos: (): Promise<GitRepository[]> =>
-    ipcRenderer.invoke('pr-reviewer:list-repos'),
+  listRepos: (): Promise<GitRepository[]> => ipcRenderer.invoke('pr-reviewer:list-repos'),
   listPrs: (args: { repoId: number }) =>
     ipcRenderer.invoke('pr-reviewer:list-prs', args) as Promise<
-      Array<{ id: number; title: string; branchSrc: string; branchDest: string; status: string; htmlUrl: string }>
+      Array<{
+        id: number
+        title: string
+        branchSrc: string
+        branchDest: string
+        status: string
+        htmlUrl: string
+      }>
     >,
   analyze: (args: {
     prId: number
@@ -645,7 +703,12 @@ const prReviewer = {
     cloneUrl: string
     branchSrc: string
     branchDest: string
-    sections: { overview: boolean; codingRules: boolean; tests: boolean; acceptanceCriteria: boolean }
+    sections: {
+      overview: boolean
+      codingRules: boolean
+      tests: boolean
+      acceptanceCriteria: boolean
+    }
     artifactIdHint?: number | null
   }) => ipcRenderer.invoke('pr-reviewer:analyze', args)
 }
@@ -653,8 +716,11 @@ const prReviewer = {
 const rag = {
   index: () => ipcRenderer.invoke('rag:index'),
   search: (args: { query: string; limit?: number }) => ipcRenderer.invoke('rag:search', args),
-  subscribeProgress: (handler: (payload: { done: number; total: number }) => void): (() => void) => {
-    const wrapped = (_e: unknown, payload: { done: number; total: number }): void => handler(payload)
+  subscribeProgress: (
+    handler: (payload: { done: number; total: number }) => void
+  ): (() => void) => {
+    const wrapped = (_e: unknown, payload: { done: number; total: number }): void =>
+      handler(payload)
     ipcRenderer.on('rag:progress', wrapped)
     return () => ipcRenderer.removeListener('rag:progress', wrapped)
   }
@@ -691,9 +757,7 @@ const traceability = {
     ipcRenderer.invoke('trace:file-history', args)
 }
 
-type JenkinsInvestigateResult =
-  | JenkinsFailureAnalysis
-  | { ok: false; error: string; kind: string }
+type JenkinsInvestigateResult = JenkinsFailureAnalysis | { ok: false; error: string; kind: string }
 
 const jenkins = {
   testConnection: (): Promise<JenkinsConnectionTestResult> =>
@@ -707,38 +771,32 @@ const jenkins = {
   getBranchStatus: (args: {
     jobName: string
     branchName: string
-  }): Promise<JenkinsBranchStatus | null> =>
-    ipcRenderer.invoke('jenkins:get-branch-status', args),
-  getBuildHistory: (args: {
-    jobName: string
-    limit?: number
-  }): Promise<JenkinsBuildSummary[]> =>
+  }): Promise<JenkinsBranchStatus | null> => ipcRenderer.invoke('jenkins:get-branch-status', args),
+  getBuildHistory: (args: { jobName: string; limit?: number }): Promise<JenkinsBuildSummary[]> =>
     ipcRenderer.invoke('jenkins:get-build-history', args),
-  getBuildDetail: (args: {
-    jobName: string
-    buildNumber: number
-  }): Promise<JenkinsBuildDetail> =>
+  getBuildDetail: (args: { jobName: string; buildNumber: number }): Promise<JenkinsBuildDetail> =>
     ipcRenderer.invoke('jenkins:get-build-detail', args),
-  getConsoleText: (args: {
-    jobName: string
-    buildNumber: number
-  }): Promise<string> =>
+  getConsoleText: (args: { jobName: string; buildNumber: number }): Promise<string> =>
     ipcRenderer.invoke('jenkins:get-console-text', args),
   investigateFailure: (args: {
     jobName: string
     buildNumber: number
-  }): Promise<JenkinsInvestigateResult> =>
-    ipcRenderer.invoke('jenkins:investigate-failure', args),
-  getQueue: (): Promise<JenkinsQueueItem[]> =>
-    ipcRenderer.invoke('jenkins:get-queue'),
-  getNodes: (): Promise<JenkinsNode[]> =>
-    ipcRenderer.invoke('jenkins:get-nodes'),
-  getBranchTestReport: (args: { jobName: string; branchName: string }): Promise<JenkinsBranchTestReport> =>
+  }): Promise<JenkinsInvestigateResult> => ipcRenderer.invoke('jenkins:investigate-failure', args),
+  getQueue: (): Promise<JenkinsQueueItem[]> => ipcRenderer.invoke('jenkins:get-queue'),
+  getNodes: (): Promise<JenkinsNode[]> => ipcRenderer.invoke('jenkins:get-nodes'),
+  getBranchTestReport: (args: {
+    jobName: string
+    branchName: string
+  }): Promise<JenkinsBranchTestReport> =>
     ipcRenderer.invoke('jenkins:get-branch-test-report', args),
-  getBranchWarnings: (args: { jobName: string; branchName: string }): Promise<JenkinsWarningsReport> =>
-    ipcRenderer.invoke('jenkins:get-branch-warnings', args),
-  getBranchCoverage: (args: { jobName: string; branchName: string }): Promise<JenkinsCoverageReport> =>
-    ipcRenderer.invoke('jenkins:get-branch-coverage', args)
+  getBranchWarnings: (args: {
+    jobName: string
+    branchName: string
+  }): Promise<JenkinsWarningsReport> => ipcRenderer.invoke('jenkins:get-branch-warnings', args),
+  getBranchCoverage: (args: {
+    jobName: string
+    branchName: string
+  }): Promise<JenkinsCoverageReport> => ipcRenderer.invoke('jenkins:get-branch-coverage', args)
 }
 
 type TtmExportApiResult =
@@ -761,10 +819,32 @@ const jenkinsTtm = {
 }
 
 const api = {
-  settings, tuleap, generation, marp, chat, auth, coder, admin, debug, commenter, corrector, testgen, commenterPr, gitExplorer,
+  settings,
+  tuleap,
+  generation,
+  marp,
+  chat,
+  auth,
+  coder,
+  admin,
+  debug,
+  commenter,
+  corrector,
+  testgen,
+  commenterPr,
+  gitExplorer,
   projectRoot,
-  tuleapWrite, sprintBoard, ticketBranch, prReviewer, rag, releaseNotes, sprintPlanning, bugRepro, traceability,
-  jenkins, jenkinsTtm
+  tuleapWrite,
+  sprintBoard,
+  ticketBranch,
+  prReviewer,
+  rag,
+  releaseNotes,
+  sprintPlanning,
+  bugRepro,
+  traceability,
+  jenkins,
+  jenkinsTtm
 }
 
 if (process.contextIsolated) {

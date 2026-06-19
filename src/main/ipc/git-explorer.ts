@@ -3,7 +3,15 @@ import { buildTuleapClient, mapGitCommit } from '../tuleap'
 import { getConfig, setTempClonePath, setGitCloneSsh } from '../store/config'
 import { startJob, cancelJob } from '../jobs/job-manager'
 import { resolveCloneUrl } from '../tuleap/clone-url'
-import type { GitBranch, GitRepository, Page, GitCommit, JobType, CommentingOptions } from '@shared/types'
+import type {
+  GitBranch,
+  GitRepository,
+  Page,
+  GitCommit,
+  JobType,
+  CommentingOptions,
+  TestGenSelection
+} from '@shared/types'
 
 function buildSettingsState() {
   const config = getConfig()
@@ -13,7 +21,7 @@ function buildSettingsState() {
 export function registerGitExplorerHandlers(): void {
   ipcMain.handle('git:list-repos', async (): Promise<GitRepository[]> => {
     const { projectId, tuleapUrl, gitCloneSsh } = getConfig()
-    if (!projectId) throw new Error("Aucun projet sélectionné dans les réglages.")
+    if (!projectId) throw new Error('Aucun projet sélectionné dans les réglages.')
     const client = await buildTuleapClient()
     const all: GitRepository[] = []
     let offset = 0
@@ -48,40 +56,49 @@ export function registerGitExplorerHandlers(): void {
     return all
   })
 
-  ipcMain.handle(
-    'git:list-commits',
-    async (_event, args: unknown): Promise<Page<GitCommit>> => {
-      const { repoId, branchName, offset } = args as {
-        repoId: number
-        branchName: string
-        offset?: number
-      }
-      const client = await buildTuleapClient()
-      const page = await client.listCommits(repoId, {
-        refName: branchName,
-        limit: 30,
-        offset: offset ?? 0
-      })
-      return {
-        items: page.items.map(mapGitCommit),
-        total: page.total,
-        limit: page.limit,
-        offset: page.offset
-      }
+  ipcMain.handle('git:list-commits', async (_event, args: unknown): Promise<Page<GitCommit>> => {
+    const { repoId, branchName, offset } = args as {
+      repoId: number
+      branchName: string
+      offset?: number
     }
-  )
+    const client = await buildTuleapClient()
+    const page = await client.listCommits(repoId, {
+      refName: branchName,
+      limit: 30,
+      offset: offset ?? 0
+    })
+    return {
+      items: page.items.map(mapGitCommit),
+      total: page.total,
+      limit: page.limit,
+      offset: page.offset
+    }
+  })
 
   ipcMain.handle('git:start-job', async (event, args: unknown): Promise<{ jobId: string }> => {
-    const { repoId, repoName, cloneUrl, branchName, type, options } = args as {
-      repoId: number
-      repoName: string
-      cloneUrl: string
-      branchName: string
-      type: JobType
-      options?: CommentingOptions
-    }
+    const { repoId, repoName, cloneUrl, branchName, type, options, selection, existingCloneDir } =
+      args as {
+        repoId: number
+        repoName: string
+        cloneUrl: string
+        branchName: string
+        type: JobType
+        options?: CommentingOptions
+        selection?: TestGenSelection[]
+        existingCloneDir?: string
+      }
     const win = BrowserWindow.fromWebContents(event.sender)
-    const jobId = startJob(win, { repoId, repoName, cloneUrl, branchName, type, options })
+    const jobId = startJob(win, {
+      repoId,
+      repoName,
+      cloneUrl,
+      branchName,
+      type,
+      options,
+      selection,
+      existingCloneDir
+    })
     return { jobId }
   })
 
