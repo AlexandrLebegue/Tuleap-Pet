@@ -4,6 +4,7 @@ import { api } from '@renderer/lib/api'
 import { useSettings } from '@renderer/stores/settings.store'
 import { Button } from '@renderer/components/ui/button'
 import CommentingOptionsPanel from '@renderer/components/CommentingOptionsPanel'
+import JobFilePicker from '@renderer/components/JobFilePicker'
 import type {
   GitRepository,
   GitBranch,
@@ -43,7 +44,7 @@ const DEFAULT_OPTIONS: CommentingOptions = {
   forceAll: false,
   contextDepth: 3,
   inlineComments: false,
-  testPipelineMode: 'basic',
+  testPipelineMode: 'advanced',
   testBuildEnabled: true,
   testPreset: 'ci-gcc',
   testMaxRepairs: 3
@@ -55,6 +56,12 @@ type JobModal = {
   branch: string
   options: CommentingOptions
   cloneUrlOverride: string
+  phase: 'preparing' | 'ready' | 'error'
+  prepId?: string
+  files: string[]
+  changedFiles: string[]
+  selected: Set<string>
+  error?: string
 }
 
 export default function GitExplorer(): React.JSX.Element {
@@ -150,6 +157,38 @@ export default function GitExplorer(): React.JSX.Element {
     [selectedRepo]
   )
 
+  // Clone le dépôt en asynchrone puis remplit la liste de fichiers du sélecteur.
+  const prepare = useCallback(
+    async (repo: GitRepository, branch: string, cloneUrl: string) => {
+      setJobModal((prev) => prev ? { ...prev, phase: 'preparing', error: undefined } : prev)
+      try {
+        const { prepId, files, changedFiles } = await api.gitExplorer.prepareJob({
+          repoName: repo.name,
+          cloneUrl: cloneUrl.trim(),
+          branchName: branch
+        })
+        setJobModal((prev) =>
+          prev
+            ? {
+                ...prev,
+                phase: 'ready',
+                prepId,
+                files,
+                changedFiles,
+                // Pré-sélection : tous les fichiers source.
+                selected: new Set(files)
+              }
+            : prev
+        )
+      } catch (e) {
+        setJobModal((prev) =>
+          prev ? { ...prev, phase: 'error', error: e instanceof Error ? e.message : String(e) } : prev
+        )
+      }
+    },
+    []
+  )
+
   const openModal = useCallback(
     (type: JobType, branch: string) => {
       if (!selectedRepo) return
@@ -158,11 +197,23 @@ export default function GitExplorer(): React.JSX.Element {
         repo: selectedRepo,
         branch,
         options: { ...DEFAULT_OPTIONS },
-        cloneUrlOverride: selectedRepo.cloneUrl
+        cloneUrlOverride: selectedRepo.cloneUrl,
+        phase: 'preparing',
+        files: [],
+        changedFiles: [],
+        selected: new Set()
       })
+      void prepare(selectedRepo, branch, selectedRepo.cloneUrl)
     },
-    [selectedRepo]
+    [selectedRepo, prepare]
   )
+
+  const closeJobModal = useCallback(() => {
+    setJobModal((prev) => {
+      if (prev?.prepId) void api.gitExplorer.discardPrepared(prev.prepId)
+      return null
+    })
+  }, [])
 
   const openRnModal = useCallback(async () => {
     if (!selectedRepo) return
@@ -206,7 +257,7 @@ export default function GitExplorer(): React.JSX.Element {
   const startJobFromModal = useCallback(async () => {
     if (!jobModal) return
     const cloneUrl = jobModal.cloneUrlOverride.trim()
-    if (!cloneUrl) return
+    if (!cloneUrl || jobModal.phase !== 'ready' || jobModal.selected.size === 0) return
     setStarting(true)
     try {
       await api.gitExplorer.startJob({
@@ -215,8 +266,11 @@ export default function GitExplorer(): React.JSX.Element {
         cloneUrl,
         branchName: jobModal.branch,
         type: jobModal.type,
-        options: jobModal.options
+        options: jobModal.options,
+        prepId: jobModal.prepId,
+        selectedFiles: [...jobModal.selected]
       })
+      // Le job réutilise le clone préparé : ne pas le supprimer ici.
       setJobModal(null)
     } finally {
       setStarting(false)
@@ -466,7 +520,7 @@ export default function GitExplorer(): React.JSX.Element {
       {/* Job launch modal */}
       {jobModal && (
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-          <div className="bg-card rounded-lg border shadow-xl w-full max-w-md p-6 space-y-4">
+          <div className="bg-card rounded-lg border shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto p-6 space-y-4">
             <h2 className="text-lg font-semibold">
               {jobModal.type === 'commentateur' ? '💬 Lancer le commentateur' : '🧪 Générer des tests'}
             </h2>
@@ -480,101 +534,92 @@ export default function GitExplorer(): React.JSX.Element {
                 <span className="font-medium text-foreground shrink-0">Branche:</span>
                 <span>{jobModal.branch}</span>
               </div>
-              <div className="flex gap-2 text-muted-foreground">
-                <span className="font-medium text-foreground shrink-0">Dossier temp:</span>
-                <code className="text-xs truncate">{config.tempClonePath}</code>
-              </div>
             </div>
 
-            {/* Clone URL — editable so user can fix it if auto-resolution failed */}
-            <div className="space-y-1">
-              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                URL de clonage HTTPS
-              </label>
-              <input
-                type="text"
-                value={jobModal.cloneUrlOverride}
-                onChange={(e) =>
-                  setJobModal((prev) => prev ? { ...prev, cloneUrlOverride: e.target.value } : prev)
-                }
-                placeholder="https://tuleap.example.com/plugins/git/project/repo.git"
-                spellCheck={false}
-                className="w-full rounded-md border border-input bg-transparent px-3 py-1.5 text-xs font-mono shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              />
-              {!jobModal.cloneUrlOverride.trim() && (
-                <p className="text-xs text-destructive">
-                  URL introuvable automatiquement — saisissez l'URL HTTPS du dépôt.
-                </p>
-              )}
-            </div>
-
-            {jobModal.type === 'commentateur' ? (
-              <CommentingOptionsPanel
-                options={jobModal.options}
-                onChange={(opts) => setJobModal((prev) => prev ? { ...prev, options: opts } : prev)}
-                showOnlyChangedFiles={true}
-                showContextPipeline={true}
-                projectReady={true}
-                compact={true}
-              />
-            ) : (
-              <div className="border rounded-md p-3 space-y-3">
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                  Pipeline de génération
-                </p>
-                <label className="flex items-start gap-2 cursor-pointer select-none">
-                  <input
-                    type="radio"
-                    name="test-pipeline"
-                    checked={jobModal.options.testPipelineMode !== 'advanced'}
-                    onChange={() => setJobModal((prev) => prev ? { ...prev, options: { ...prev.options, testPipelineMode: 'basic' } } : prev)}
-                    className="mt-0.5 h-4 w-4 accent-primary"
-                  />
-                  <div>
-                    <div className="text-sm font-medium">Basique</div>
-                    <div className="text-xs text-muted-foreground">
-                      Un appel LLM par fichier — rapide, sans analyse de call-graph.
-                    </div>
-                  </div>
-                </label>
-                <label className="flex items-start gap-2 cursor-pointer select-none">
-                  <input
-                    type="radio"
-                    name="test-pipeline"
-                    checked={jobModal.options.testPipelineMode === 'advanced'}
-                    onChange={() => setJobModal((prev) => prev ? { ...prev, options: { ...prev.options, testPipelineMode: 'advanced' } } : prev)}
-                    className="mt-0.5 h-4 w-4 accent-primary"
-                  />
-                  <div>
-                    <div className="text-sm font-medium">Avancée — call-graph contextuel</div>
-                    <div className="text-xs text-muted-foreground">
-                      Analyse les appelants/appelés (BFS prof. 3) pour chaque fonction avant de générer les tests.
-                    </div>
-                  </div>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer select-none">
-                  <input
-                    type="checkbox"
-                    checked={!!jobModal.options.onlyChangedFiles}
-                    onChange={() => setJobModal((prev) => prev
-                      ? { ...prev, options: { ...prev.options, onlyChangedFiles: !prev.options.onlyChangedFiles } }
-                      : prev)}
-                    className="h-4 w-4 accent-primary"
-                  />
-                  <span className="text-sm">Fichiers modifiés uniquement (dernier commit)</span>
-                </label>
+            {/* Phase 1 — clone en cours */}
+            {jobModal.phase === 'preparing' && (
+              <div className="flex items-center gap-3 rounded-md border bg-muted/30 px-4 py-6 text-sm text-muted-foreground">
+                <span className="inline-block size-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                Clonage du dépôt en cours…
               </div>
             )}
 
+            {/* Phase erreur — URL éditable + réessayer */}
+            {jobModal.phase === 'error' && (
+              <div className="space-y-2">
+                <p className="text-sm text-destructive">{jobModal.error}</p>
+                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                  URL de clonage HTTPS
+                </label>
+                <input
+                  type="text"
+                  value={jobModal.cloneUrlOverride}
+                  onChange={(e) =>
+                    setJobModal((prev) => prev ? { ...prev, cloneUrlOverride: e.target.value } : prev)
+                  }
+                  placeholder="https://tuleap.example.com/plugins/git/project/repo.git"
+                  spellCheck={false}
+                  className="w-full rounded-md border border-input bg-transparent px-3 py-1.5 text-xs font-mono shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                />
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={!jobModal.cloneUrlOverride.trim()}
+                  onClick={() => void prepare(jobModal.repo, jobModal.branch, jobModal.cloneUrlOverride)}
+                >
+                  Réessayer le clonage
+                </Button>
+              </div>
+            )}
+
+            {/* Phase 2 — sélection des fichiers + options */}
+            {jobModal.phase === 'ready' && (
+              <>
+                <div>
+                  <p className="mb-1 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                    Fichiers à {jobModal.type === 'commentateur' ? 'commenter' : 'tester'}
+                  </p>
+                  <JobFilePicker
+                    files={jobModal.files}
+                    changedFiles={jobModal.changedFiles}
+                    selected={jobModal.selected}
+                    onChange={(next) => setJobModal((prev) => prev ? { ...prev, selected: next } : prev)}
+                    disabled={starting}
+                  />
+                </div>
+
+                {jobModal.type === 'commentateur' ? (
+                  <CommentingOptionsPanel
+                    options={jobModal.options}
+                    onChange={(opts) => setJobModal((prev) => prev ? { ...prev, options: opts } : prev)}
+                    showOnlyChangedFiles={false}
+                    showContextPipeline={true}
+                    showCommentScope={true}
+                    projectReady={true}
+                    compact={true}
+                  />
+                ) : (
+                  <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+                    Pipeline avancée (call-graph contextuel) : analyse les appelants/appelés
+                    de chaque fonction avant de générer les tests.
+                  </div>
+                )}
+              </>
+            )}
+
             <div className="flex gap-2 justify-end pt-2">
-              <Button variant="outline" onClick={() => setJobModal(null)} disabled={starting}>
+              <Button variant="outline" onClick={closeJobModal} disabled={starting}>
                 Annuler
               </Button>
               <Button
                 onClick={() => void startJobFromModal()}
-                disabled={starting || !jobModal.cloneUrlOverride.trim()}
+                disabled={starting || jobModal.phase !== 'ready' || jobModal.selected.size === 0}
               >
-                {starting ? 'Démarrage…' : 'Lancer le job'}
+                {starting
+                  ? 'Démarrage…'
+                  : jobModal.phase === 'ready'
+                    ? `Lancer sur ${jobModal.selected.size} fichier(s)`
+                    : 'Lancer le job'}
               </Button>
             </div>
           </div>

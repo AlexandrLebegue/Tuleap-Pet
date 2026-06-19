@@ -1,5 +1,11 @@
 # Plan — Sélection de fichiers dans la boucle Git Explorer (Commentateur / Tests)
 
+> **Statut : implémenté.** Clone asynchrone (`prepareJob`) + sélecteur de fichiers
+> (recherche, cases à cocher, tout cocher/décocher), suppression de la pipeline de
+> tests « Basique », correction du commit vide. **Ajout :** option de portée des
+> commentaires — *en-tête de fonction uniquement* vs *commentaires dans le corps
+> des fonctions* (champ `inlineComments`, appliqué aux deux pipelines).
+
 ## 1. Résumé du besoin
 
 Dans **Git Explorer** (« git tree »), quand l'utilisateur lance le **Commentateur** (💬)

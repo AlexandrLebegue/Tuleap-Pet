@@ -17,7 +17,6 @@ import {
   gitPush,
   findTestDirectory
 } from '../commenter/git-utils'
-import { generateTestsForFile, testOutputFilename } from './test-gen-file'
 import { generateTestsGranular } from '../test-generator/test-generator'
 import { injectGitCredentials, explainGitAuthFailure } from './git-credentials'
 import { debugError } from '../logger'
@@ -45,11 +44,81 @@ type JobStartArgs = {
   branchName: string
   type: JobType
   options?: CommentingOptions
+  /** Réutilise un clone déjà préparé via prepareJob (évite un second clone). */
+  prepId?: string
+  /** Sous-ensemble de fichiers à traiter (chemins relatifs au dépôt). */
+  selectedFiles?: string[]
 }
 
 type ActiveJob = { abort: AbortController }
 
 const activeJobs = new Map<string, ActiveJob>()
+
+type PreparedJob = {
+  prepId: string
+  dir: string
+  files: string[]
+  changedFiles: string[]
+  createdAt: number
+}
+
+const preparedJobs = new Map<string, PreparedJob>()
+
+// Dossiers préparés mais jamais lancés : nettoyés après ce délai (évite les orphelins).
+const PREPARED_TTL_MS = 30 * 60 * 1000
+
+function cleanupStalePreparedJobs(): void {
+  const now = Date.now()
+  for (const [id, p] of preparedJobs) {
+    if (now - p.createdAt > PREPARED_TTL_MS) {
+      try {
+        if (fs.existsSync(p.dir)) fs.rmSync(p.dir, { recursive: true, force: true })
+      } catch { /* ignore */ }
+      preparedJobs.delete(id)
+    }
+  }
+}
+
+/**
+ * Clone la branche de façon asynchrone et liste les fichiers source — sans lancer
+ * le traitement. Permet d'afficher un sélecteur de fichiers avant le job.
+ */
+export async function prepareJob(args: {
+  repoName: string
+  cloneUrl: string
+  branchName: string
+}): Promise<{ prepId: string; files: string[]; changedFiles: string[] }> {
+  cleanupStalePreparedJobs()
+  const { tempClonePath } = getConfig()
+  if (!tempClonePath) {
+    throw new Error('Aucun dossier temporaire configuré dans les réglages.')
+  }
+  const prepId = makeJobId()
+  const dir = path.join(tempClonePath, `${args.repoName}_prep_${prepId}`)
+  const credUrl = await injectGitCredentials(args.cloneUrl)
+  try {
+    await cloneRepo(credUrl, dir, args.branchName)
+  } catch (cloneErr) {
+    try { if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true }) } catch { /* ignore */ }
+    const raw = cloneErr instanceof Error ? cloneErr.message : String(cloneErr)
+    throw new Error(explainGitAuthFailure(raw) ?? raw)
+  }
+  const files = await listSourceFiles(dir)
+  const changed = new Set(await listChangedFiles(dir))
+  const changedFiles = files.filter((f) => changed.has(f))
+  preparedJobs.set(prepId, { prepId, dir, files, changedFiles, createdAt: Date.now() })
+  return { prepId, files, changedFiles }
+}
+
+/** Supprime un clone préparé non utilisé (annulation du sélecteur). */
+export function discardPreparedJob(prepId: string): void {
+  const p = preparedJobs.get(prepId)
+  if (!p) return
+  try {
+    if (fs.existsSync(p.dir)) fs.rmSync(p.dir, { recursive: true, force: true })
+  } catch { /* ignore */ }
+  preparedJobs.delete(prepId)
+}
 
 export function cancelJob(jobId: string): void {
   const job = activeJobs.get(jobId)
@@ -99,27 +168,31 @@ async function runJob(
     return
   }
 
-  const targetDir = path.join(tempClonePath, `${args.repoName}_${jobId}`)
+  const prepared = args.prepId ? preparedJobs.get(args.prepId) : undefined
+  const targetDir = prepared?.dir ?? path.join(tempClonePath, `${args.repoName}_${jobId}`)
   const cleanupDir = (): void => {
     try {
       if (fs.existsSync(targetDir)) {
         fs.rmSync(targetDir, { recursive: true, force: true })
       }
     } catch { /* ignore cleanup errors */ }
+    if (args.prepId) preparedJobs.delete(args.prepId)
   }
 
   try {
     if (signal.aborted) { emit(win, { type: 'cancelled', jobId }); return }
 
-    // 1. Clone the specific branch directly (avoids a separate checkout step)
-    updateStatus(win, jobId, 'cloning')
-    const credUrl = await injectGitCredentials(args.cloneUrl)
-    try {
-      await cloneRepo(credUrl, targetDir, args.branchName)
-    } catch (cloneErr) {
-      const raw = cloneErr instanceof Error ? cloneErr.message : String(cloneErr)
-      const hint = explainGitAuthFailure(raw)
-      throw new Error(hint ?? raw)
+    // 1. Clone the specific branch directly — sauf si un clone préparé est réutilisé.
+    if (!prepared) {
+      updateStatus(win, jobId, 'cloning')
+      const credUrl = await injectGitCredentials(args.cloneUrl)
+      try {
+        await cloneRepo(credUrl, targetDir, args.branchName)
+      } catch (cloneErr) {
+        const raw = cloneErr instanceof Error ? cloneErr.message : String(cloneErr)
+        const hint = explainGitAuthFailure(raw)
+        throw new Error(hint ?? raw)
+      }
     }
 
     // 3. List source files
@@ -131,18 +204,24 @@ async function runJob(
       onlyChangedFiles: false
     }
 
-    let files = await listSourceFiles(targetDir)
-    if (commentOptions.onlyChangedFiles) {
-      const changed = new Set(await listChangedFiles(targetDir))
-      files = files.filter((f) => changed.has(f))
-      if (files.length === 0) {
-        throw new Error('Aucun fichier C/C++ modifié trouvé dans le dernier commit.')
+    // Sélection explicite de l'utilisateur > liste complète du dépôt.
+    let files: string[]
+    if (args.selectedFiles && args.selectedFiles.length > 0) {
+      files = args.selectedFiles
+    } else {
+      files = await listSourceFiles(targetDir)
+      if (commentOptions.onlyChangedFiles) {
+        const changed = new Set(await listChangedFiles(targetDir))
+        files = files.filter((f) => changed.has(f))
+        if (files.length === 0) {
+          throw new Error('Aucun fichier C/C++ modifié trouvé dans le dernier commit.')
+        }
+      } else if (files.length === 0) {
+        throw new Error(
+          `Aucun fichier C/C++ trouvé dans la branche "${args.branchName}" du dépôt "${args.repoName}". ` +
+            `Vérifie que la branche contient bien des fichiers .c/.h/.cpp/.hpp (et qu'ils sont commités).`
+        )
       }
-    } else if (files.length === 0) {
-      throw new Error(
-        `Aucun fichier C/C++ trouvé dans la branche "${args.branchName}" du dépôt "${args.repoName}". ` +
-          `Vérifie que la branche contient bien des fichiers .c/.h/.cpp/.hpp (et qu'ils sont commités).`
-      )
     }
 
     // 4. Find test directory (for test-generator only)
@@ -174,17 +253,12 @@ async function runJob(
           const outDir = testDir ? path.join(targetDir, testDir) : targetDir
           fs.mkdirSync(outDir, { recursive: true })
 
-          if (commentOptions.testPipelineMode === 'advanced') {
-            const result = await generateTestsGranular(
-              content, filename, undefined, undefined, targetDir, fullPath
-            )
-            for (const tf of result.testFiles) {
-              fs.writeFileSync(path.join(outDir, tf.name), tf.content, 'utf8')
-            }
-          } else {
-            const testCode = await generateTestsForFile(content, filename)
-            const outName = testOutputFilename(filename)
-            fs.writeFileSync(path.join(outDir, outName), testCode, 'utf8')
+          // Pipeline contextuelle (call-graph) — unique mode supporté.
+          const result = await generateTestsGranular(
+            content, filename, undefined, undefined, targetDir, fullPath
+          )
+          for (const tf of result.testFiles) {
+            fs.writeFileSync(path.join(outDir, tf.name), tf.content, 'utf8')
           }
         } catch (fileErr) {
           skipped++
@@ -236,6 +310,15 @@ async function runJob(
 
     // 6. Commit
     if (signal.aborted) { cleanupDir(); emit(win, { type: 'cancelled', jobId }); return }
+
+    // Évite un `git commit` vide (échoue avec « nothing to commit ») : message clair.
+    const processedCount = files.length - skipped
+    if (processedCount <= 0) {
+      throw new Error(
+        `Aucun fichier traité (${skipped} ignoré(s) sur ${files.length}). Rien à committer.`
+      )
+    }
+
     updateStatus(win, jobId, 'committing')
 
     const branchKind = args.type === 'commentateur' ? 'comments' : 'tests'
@@ -243,7 +326,7 @@ async function runJob(
     await createBranch(targetDir, newBranch)
     await gitAdd(targetDir)
 
-    const processed = files.length - skipped
+    const processed = processedCount
     const msg =
       args.type === 'commentateur'
         ? `[AI] Commentaires Doxygen — ${processed} fichier(s)${skipped > 0 ? `, ${skipped} ignoré(s)` : ''}`

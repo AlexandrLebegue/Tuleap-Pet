@@ -54,7 +54,7 @@ Ta mission est d'analyser du code C/C++ et d'ajouter une documentation complète
     */
    /*----------------------------------------------------------------------------*/
 
-2. **Documentation dans le corps des fonctions** :
+2. **Documentation dans le corps des fonctions** (UNIQUEMENT si l'option "commentaires dans le corps" est demandée dans le prompt utilisateur ; sinon, NE documente QUE l'en-tête de fonction à la section 1) :
    - Déclarer toutes les variables en début de fonction avec : /*! \\brief Définition des variables */
    - Commenter chaque bloc logique avec : /*! \\brief Description de l'action */
    - Pour les conditions, utiliser : /*! \\brief \\b SI condition */ et /*! \\brief \\b SINON */
@@ -133,6 +133,12 @@ export function buildUserPrompt(filename: string, content: string, options: Comm
   }
   if (options.detailedComments) {
     additions += '\n- Génère des commentaires très détaillés pour chaque bloc de code.'
+  }
+  // Portée des commentaires : à l'intérieur des fonctions (inline) OU en-tête de fonction uniquement.
+  if (options.inlineComments) {
+    additions += '\n- COMMENTAIRES DANS LE CORPS DES FONCTIONS : ajoute aussi des commentaires À L\'INTÉRIEUR des fonctions (déclarations de variables, blocs logiques, conditions SI/SINON, boucles POUR) comme décrit à la section 2 du format.'
+  } else {
+    additions += '\n- EN-TÊTE DE FONCTION UNIQUEMENT : documente seulement le bloc Doxygen (\\brief / \\param / \\return) AU-DESSUS de chaque fonction. N\'ajoute AUCUN commentaire à l\'intérieur du corps des fonctions (ni variables, ni blocs, ni conditions, ni boucles).'
   }
   if (options.applyCodingRules) {
     additions += '\n- APPLIQUE OBLIGATOIREMENT LES RÈGLES DE CODAGE : Change les types ET renomme toutes les variables selon les conventions.'

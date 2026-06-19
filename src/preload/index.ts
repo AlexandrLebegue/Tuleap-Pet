@@ -535,6 +535,16 @@ const gitExplorer = {
   }): Promise<Page<GitCommit>> =>
     ipcRenderer.invoke('git:list-commits', args),
 
+  prepareJob: (args: {
+    repoName: string
+    cloneUrl: string
+    branchName: string
+  }): Promise<{ prepId: string; files: string[]; changedFiles: string[] }> =>
+    ipcRenderer.invoke('git:prepare-job', args),
+
+  discardPrepared: (prepId: string): Promise<void> =>
+    ipcRenderer.invoke('git:discard-prepared', prepId),
+
   startJob: (args: {
     repoId: number
     repoName: string
@@ -542,6 +552,8 @@ const gitExplorer = {
     branchName: string
     type: JobType
     options?: CommentingOptions
+    prepId?: string
+    selectedFiles?: string[]
   }): Promise<{ jobId: string }> =>
     ipcRenderer.invoke('git:start-job', args),
 

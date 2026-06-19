@@ -1,7 +1,7 @@
 import { BrowserWindow, dialog, ipcMain } from 'electron'
 import { buildTuleapClient, mapGitCommit } from '../tuleap'
 import { getConfig, setTempClonePath, setGitCloneSsh } from '../store/config'
-import { startJob, cancelJob } from '../jobs/job-manager'
+import { startJob, cancelJob, prepareJob, discardPreparedJob } from '../jobs/job-manager'
 import { resolveCloneUrl } from '../tuleap/clone-url'
 import type { GitBranch, GitRepository, Page, GitCommit, JobType, CommentingOptions } from '@shared/types'
 
@@ -71,17 +71,37 @@ export function registerGitExplorerHandlers(): void {
     }
   )
 
+  ipcMain.handle(
+    'git:prepare-job',
+    async (_event, args: unknown): Promise<{ prepId: string; files: string[]; changedFiles: string[] }> => {
+      const { repoName, cloneUrl, branchName } = args as {
+        repoName: string
+        cloneUrl: string
+        branchName: string
+      }
+      return prepareJob({ repoName, cloneUrl, branchName })
+    }
+  )
+
+  ipcMain.handle('git:discard-prepared', (_event, prepId: unknown): void => {
+    if (typeof prepId === 'string') discardPreparedJob(prepId)
+  })
+
   ipcMain.handle('git:start-job', async (event, args: unknown): Promise<{ jobId: string }> => {
-    const { repoId, repoName, cloneUrl, branchName, type, options } = args as {
+    const { repoId, repoName, cloneUrl, branchName, type, options, prepId, selectedFiles } = args as {
       repoId: number
       repoName: string
       cloneUrl: string
       branchName: string
       type: JobType
       options?: CommentingOptions
+      prepId?: string
+      selectedFiles?: string[]
     }
     const win = BrowserWindow.fromWebContents(event.sender)
-    const jobId = startJob(win, { repoId, repoName, cloneUrl, branchName, type, options })
+    const jobId = startJob(win, {
+      repoId, repoName, cloneUrl, branchName, type, options, prepId, selectedFiles
+    })
     return { jobId }
   })
 

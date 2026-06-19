@@ -9,6 +9,8 @@ type Props = {
   disabled?: boolean
   showOnlyChangedFiles?: boolean
   showContextPipeline?: boolean
+  /** Affiche le choix de portée : en-tête de fonction uniquement vs commentaires inline. */
+  showCommentScope?: boolean
   projectReady?: boolean
   compact?: boolean
 }
@@ -26,6 +28,7 @@ export default function CommentingOptionsPanel({
   disabled = false,
   showOnlyChangedFiles = false,
   showContextPipeline = false,
+  showCommentScope = false,
   projectReady = true,
   compact = false
 }: Props): React.JSX.Element {
@@ -65,6 +68,50 @@ export default function CommentingOptionsPanel({
             </div>
           </label>
         ))}
+
+        {showCommentScope && (
+          <div className={`border rounded-md ${compact ? 'p-2' : 'p-3'} space-y-2`}>
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">
+              Portée des commentaires
+            </p>
+            <label className="flex items-start gap-2 cursor-pointer select-none">
+              <input
+                type="radio"
+                name="comment-scope"
+                checked={!options.inlineComments}
+                onChange={() => set('inlineComments', false)}
+                disabled={disabled}
+                className="mt-0.5 h-4 w-4 accent-primary"
+              />
+              <div>
+                <div className="text-sm font-medium">En-tête de fonction uniquement</div>
+                {!compact && (
+                  <div className="text-xs text-muted-foreground">
+                    Bloc Doxygen (\brief / \param / \return) au-dessus de chaque fonction, sans toucher au corps.
+                  </div>
+                )}
+              </div>
+            </label>
+            <label className="flex items-start gap-2 cursor-pointer select-none">
+              <input
+                type="radio"
+                name="comment-scope"
+                checked={!!options.inlineComments}
+                onChange={() => set('inlineComments', true)}
+                disabled={disabled}
+                className="mt-0.5 h-4 w-4 accent-primary"
+              />
+              <div>
+                <div className="text-sm font-medium">Commentaires dans le corps des fonctions</div>
+                {!compact && (
+                  <div className="text-xs text-muted-foreground">
+                    Ajoute aussi des commentaires à l'intérieur des fonctions (variables, blocs, conditions, boucles).
+                  </div>
+                )}
+              </div>
+            </label>
+          </div>
+        )}
 
         {showOnlyChangedFiles && (
           <label className="flex items-center gap-2 cursor-pointer select-none">
@@ -153,23 +200,25 @@ export default function CommentingOptionsPanel({
                   </div>
                 </label>
 
-                <label className="flex items-start gap-2 cursor-pointer select-none">
-                  <input
-                    type="checkbox"
-                    checked={!!options.inlineComments}
-                    onChange={() => toggle('inlineComments')}
-                    disabled={disabled}
-                    className="mt-0.5 h-4 w-4 accent-primary"
-                  />
-                  <div>
-                    <div className="text-sm">Commentaires inline (if / for / variables)</div>
-                    {!compact && (
-                      <div className="text-xs text-muted-foreground">
-                        Ajoute des commentaires de flux à l'intérieur du corps de chaque fonction (2e appel LLM par fonction).
-                      </div>
-                    )}
-                  </div>
-                </label>
+                {!showCommentScope && (
+                  <label className="flex items-start gap-2 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={!!options.inlineComments}
+                      onChange={() => toggle('inlineComments')}
+                      disabled={disabled}
+                      className="mt-0.5 h-4 w-4 accent-primary"
+                    />
+                    <div>
+                      <div className="text-sm">Commentaires inline (if / for / variables)</div>
+                      {!compact && (
+                        <div className="text-xs text-muted-foreground">
+                          Ajoute des commentaires de flux à l'intérieur du corps de chaque fonction (2e appel LLM par fonction).
+                        </div>
+                      )}
+                    </div>
+                  </label>
+                )}
 
                 {!compact && (
                   <div className="flex items-center gap-2 text-sm">
