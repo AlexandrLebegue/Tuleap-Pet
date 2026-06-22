@@ -42,6 +42,7 @@ import type {
   SprintContent,
   TestGenSelection,
   CommentTarget,
+  WarningCorrectorJobOptions,
   SprintReviewProgressEvent,
   SprintReviewSlideType,
   TrackerFields,
@@ -592,6 +593,7 @@ const gitExplorer = {
     selection?: TestGenSelection[]
     selectedFiles?: string[]
     commentTargets?: CommentTarget[]
+    warningOptions?: WarningCorrectorJobOptions
     existingCloneDir?: string
   }): Promise<{ jobId: string }> => ipcRenderer.invoke('git:start-job', args),
 

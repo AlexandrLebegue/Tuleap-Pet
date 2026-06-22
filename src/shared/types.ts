@@ -359,7 +359,13 @@ export interface GitSourceInput {
   onlyRecentFiles: boolean
 }
 
-export type JobType = 'commentateur' | 'test-generator'
+export type JobType = 'commentateur' | 'test-generator' | 'warning-corrector'
+
+/** Warning-corrector job options (Git-tree « Corriger les warnings »). */
+export type WarningCorrectorJobOptions = {
+  /** Recompile→correct retries allowed after the first pass (default 2). */
+  maxRetries: number
+}
 
 /** A function reachable from a header: defined inline in the header or in its paired source file. */
 export type HeaderFunctionEntry = {

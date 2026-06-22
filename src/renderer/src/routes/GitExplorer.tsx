@@ -95,6 +95,22 @@ type TgModal = {
   error: string | null
 }
 
+// Warning-corrector modal: clone async → pick functions → set retry budget → run.
+type WcStage = 'cloning' | 'selecting' | 'starting' | 'error'
+
+type WcModal = {
+  repo: GitRepository
+  branch: string
+  cloneUrl: string
+  stage: WcStage
+  cloneDir: string | null
+  headers: HeaderEntry[]
+  selected: Set<string>
+  /** Recompile→correct retries allowed after the first pass. */
+  maxRetries: number
+  error: string | null
+}
+
 export default function GitExplorer(): React.JSX.Element {
   const config = useSettings((s) => s.config)
   const [repos, setRepos] = useState<GitRepository[]>([])
@@ -122,6 +138,11 @@ export default function GitExplorer(): React.JSX.Element {
   const [tg, setTg] = useState<TgModal | null>(null)
   const tgCloneDirRef = useRef<string | null>(null)
   const tgStartedRef = useRef(false)
+
+  // Warning-corrector modal
+  const [wc, setWc] = useState<WcModal | null>(null)
+  const wcCloneDirRef = useRef<string | null>(null)
+  const wcStartedRef = useRef(false)
 
   // Release Notes modal
   const [rnModal, setRnModal] = useState<{ repoId: number; cloneUrl: string } | null>(null)
@@ -376,6 +397,87 @@ export default function GitExplorer(): React.JSX.Element {
     setTg(null)
   }, [tg])
 
+  // ─── Warning-corrector: clone async, then pick header functions ─────────────
+  const openWarningCorrector = useCallback(
+    async (branch: string) => {
+      if (!selectedRepo) return
+      const repo = selectedRepo
+      wcStartedRef.current = false
+      wcCloneDirRef.current = null
+      setWc({
+        repo,
+        branch,
+        cloneUrl: repo.cloneUrl,
+        stage: 'cloning',
+        cloneDir: null,
+        headers: [],
+        selected: new Set(),
+        maxRetries: 2,
+        error: null
+      })
+      const clone = await api.testgen.gitCloneAndList({
+        repoUrl: repo.cloneUrl,
+        branch,
+        onlyRecentFiles: false
+      })
+      if (!clone.ok) {
+        setWc((prev) => (prev ? { ...prev, stage: 'error', error: clone.error } : prev))
+        return
+      }
+      wcCloneDirRef.current = clone.cloneDir
+      const idx = await api.testgen.buildHeaderIndex({ cloneDir: clone.cloneDir })
+      if (!idx.ok) {
+        setWc((prev) => (prev ? { ...prev, stage: 'error', error: idx.error } : prev))
+        return
+      }
+      setWc((prev) =>
+        prev ? { ...prev, stage: 'selecting', cloneDir: idx.cloneDir, headers: idx.headers } : prev
+      )
+    },
+    [selectedRepo]
+  )
+
+  const closeWc = useCallback(() => {
+    if (!wcStartedRef.current && wcCloneDirRef.current) {
+      void api.testgen.cleanupCloneDir({ cloneDir: wcCloneDirRef.current })
+    }
+    wcCloneDirRef.current = null
+    setWc(null)
+  }, [])
+
+  const startWarningCorrector = useCallback(async () => {
+    if (!wc || !wc.cloneDir) return
+    const byFile = new Map<string, string[]>()
+    for (const h of wc.headers) {
+      for (const f of h.functions) {
+        if (wc.selected.has(fnKey(f))) {
+          const arr = byFile.get(f.implFile) ?? []
+          arr.push(f.name)
+          byFile.set(f.implFile, arr)
+        }
+      }
+    }
+    const selection = [...byFile.entries()].map(([sourceFile, functions]) => ({
+      sourceFile,
+      functions
+    }))
+    if (selection.length === 0) return
+    setWc((prev) => (prev ? { ...prev, stage: 'starting' } : prev))
+    wcStartedRef.current = true
+    await api.gitExplorer.startJob({
+      repoId: wc.repo.id,
+      repoName: wc.repo.name,
+      cloneUrl: wc.cloneUrl,
+      branchName: wc.branch,
+      type: 'warning-corrector',
+      selection,
+      warningOptions: { maxRetries: wc.maxRetries },
+      existingCloneDir: wc.cloneDir
+    })
+    wcCloneDirRef.current = null
+    setWc(null)
+  }, [wc])
+
   // ─── Release Notes ──────────────────────────────────────────────────────────
   const openRnModal = useCallback(async () => {
     if (!selectedRepo) return
@@ -504,6 +606,14 @@ export default function GitExplorer(): React.JSX.Element {
                     title="Générer des tests"
                   >
                     🧪
+                  </button>
+                  <button
+                    onClick={() => void openWarningCorrector(b.name)}
+                    disabled={noTempPath}
+                    className="text-xs px-1.5 py-0.5 rounded bg-primary/10 hover:bg-primary/20 text-primary disabled:opacity-40 disabled:cursor-not-allowed"
+                    title="Corriger les warnings"
+                  >
+                    ⚠️
                   </button>
                   <button
                     onClick={() => void openRnModal()}
@@ -824,6 +934,84 @@ export default function GitExplorer(): React.JSX.Element {
                 disabled={tg.stage !== 'selecting' || tg.selected.size === 0}
               >
                 {tg.stage === 'starting' ? 'Démarrage…' : `Générer les tests (${tg.selected.size})`}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Warning-corrector: clone + header/function selection modal */}
+      {wc && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+          <div className="bg-card rounded-lg border shadow-xl w-full max-w-2xl p-6 flex flex-col gap-4 max-h-[85vh]">
+            <div>
+              <h2 className="text-lg font-semibold">⚠️ Corriger les warnings</h2>
+              <p className="text-sm text-muted-foreground">
+                {wc.repo.name} · branche <code className="text-xs">{wc.branch}</code>
+              </p>
+            </div>
+
+            {wc.stage === 'cloning' && (
+              <p className="text-sm text-muted-foreground py-8 text-center">
+                Clonage et analyse du dépôt en cours…
+              </p>
+            )}
+
+            {wc.stage === 'error' && (
+              <p className="text-sm text-destructive">{wc.error ?? 'Erreur inconnue.'}</p>
+            )}
+
+            {(wc.stage === 'selecting' || wc.stage === 'starting') && (
+              <>
+                <p className="text-xs text-muted-foreground">
+                  Le script <code className="text-[11px]">ai_compil.sh</code> /{' '}
+                  <code className="text-[11px]">.bat</code> du dépôt sera exécuté pour générer{' '}
+                  <code className="text-[11px]">warning.txt</code>. Seuls les warnings des fonctions
+                  sélectionnées seront corrigés, avec le contexte de l&apos;arbre de code.
+                </p>
+
+                <div className="flex flex-wrap items-center gap-4 rounded-md border bg-muted/30 px-3 py-2">
+                  <label className="flex items-center gap-2 text-sm text-muted-foreground">
+                    Nombre de tentatives (recompilation)
+                    <input
+                      type="number"
+                      min={0}
+                      max={5}
+                      value={wc.maxRetries}
+                      onChange={(e) =>
+                        setWc((prev) =>
+                          prev
+                            ? {
+                                ...prev,
+                                maxRetries: Math.max(0, Math.min(5, parseInt(e.target.value) || 0))
+                              }
+                            : prev
+                        )
+                      }
+                      className="w-16 rounded-md border border-input bg-background px-2 py-1 text-xs"
+                    />
+                  </label>
+                </div>
+
+                <HeaderFunctionSelector
+                  headers={wc.headers}
+                  selected={wc.selected}
+                  onChange={(next) => setWc((prev) => (prev ? { ...prev, selected: next } : prev))}
+                />
+              </>
+            )}
+
+            <div className="flex gap-2 justify-end pt-2 border-t">
+              <Button variant="outline" onClick={closeWc} disabled={wc.stage === 'starting'}>
+                Annuler
+              </Button>
+              <Button
+                onClick={() => void startWarningCorrector()}
+                disabled={wc.stage !== 'selecting' || wc.selected.size === 0}
+              >
+                {wc.stage === 'starting'
+                  ? 'Démarrage…'
+                  : `Corriger les warnings (${wc.selected.size})`}
               </Button>
             </div>
           </div>

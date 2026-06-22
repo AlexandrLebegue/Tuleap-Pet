@@ -21,7 +21,14 @@ type Props = {
 }
 
 export function JobToast({ job, onDismiss, onCancel }: Props): React.ReactElement {
-  const isActive = ['queued', 'cloning', 'processing', 'committing', 'pushing', 'creating-pr'].includes(job.status)
+  const isActive = [
+    'queued',
+    'cloning',
+    'processing',
+    'committing',
+    'pushing',
+    'creating-pr'
+  ].includes(job.status)
   const isDone = job.status === 'done'
   const isError = job.status === 'error'
 
@@ -33,11 +40,18 @@ export function JobToast({ job, onDismiss, onCancel }: Props): React.ReactElemen
     return undefined
   }, [isDone, onDismiss])
 
-  const progressPct =
-    job.progress ? Math.round((job.progress.current / job.progress.total) * 100) : null
+  const progressPct = job.progress
+    ? Math.round((job.progress.current / job.progress.total) * 100)
+    : null
 
-  const typeLabel = job.type === 'commentateur' ? 'Commentateur' : 'Générateur de tests'
-  const typeIcon = job.type === 'commentateur' ? '💬' : '🧪'
+  const typeLabel =
+    job.type === 'commentateur'
+      ? 'Commentateur'
+      : job.type === 'warning-corrector'
+        ? 'Correcteur de warnings'
+        : 'Générateur de tests'
+  const typeIcon =
+    job.type === 'commentateur' ? '💬' : job.type === 'warning-corrector' ? '⚠️' : '🧪'
 
   return (
     <div
@@ -79,16 +93,29 @@ export function JobToast({ job, onDismiss, onCancel }: Props): React.ReactElemen
 
       <div className="flex items-center gap-2">
         {isActive && (
-          <svg className="animate-spin h-3 w-3 text-primary shrink-0" viewBox="0 0 24 24" fill="none">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+          <svg
+            className="animate-spin h-3 w-3 text-primary shrink-0"
+            viewBox="0 0 24 24"
+            fill="none"
+          >
+            <circle
+              className="opacity-25"
+              cx="12"
+              cy="12"
+              r="10"
+              stroke="currentColor"
+              strokeWidth="4"
+            />
             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
           </svg>
         )}
-        <span className={cn(
-          'text-xs',
-          isDone && 'text-green-600 dark:text-green-400 font-medium',
-          isError && 'text-destructive font-medium'
-        )}>
+        <span
+          className={cn(
+            'text-xs',
+            isDone && 'text-green-600 dark:text-green-400 font-medium',
+            isError && 'text-destructive font-medium'
+          )}
+        >
           {STATUS_LABELS[job.status] ?? job.status}
         </span>
       </div>
@@ -108,9 +135,7 @@ export function JobToast({ job, onDismiss, onCancel }: Props): React.ReactElemen
         </div>
       )}
 
-      {isError && job.error && (
-        <p className="text-xs text-destructive line-clamp-2">{job.error}</p>
-      )}
+      {isError && job.error && <p className="text-xs text-destructive line-clamp-2">{job.error}</p>}
 
       {isDone && job.prUrl && (
         <a
@@ -118,7 +143,10 @@ export function JobToast({ job, onDismiss, onCancel }: Props): React.ReactElemen
           target="_blank"
           rel="noreferrer"
           className="text-xs text-primary underline truncate"
-          onClick={(e) => { e.preventDefault(); window.open(job.prUrl!) }}
+          onClick={(e) => {
+            e.preventDefault()
+            window.open(job.prUrl!)
+          }}
         >
           Voir la Pull Request →
         </a>

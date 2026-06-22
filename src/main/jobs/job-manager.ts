@@ -15,6 +15,8 @@ import {
   findTestDirectory
 } from '../commenter/git-utils'
 import { generateTestsGranular } from '../test-generator/test-generator'
+import { runWarningCorrector, buildWarningPrSummary } from '../warning-corrector/warning-corrector'
+import type { WarningCorrectorProgress } from '../warning-corrector/warning-corrector'
 import { injectGitCredentials, explainGitAuthFailure } from './git-credentials'
 import { debugError } from '../logger'
 import type {
@@ -24,7 +26,8 @@ import type {
   JobType,
   CommentingOptions,
   TestGenSelection,
-  CommentTarget
+  CommentTarget,
+  WarningCorrectorJobOptions
 } from '@shared/types'
 
 function makeJobId(): string {
@@ -53,8 +56,10 @@ type JobStartArgs = {
   selectedFiles?: string[]
   /** Commenter only: functions to document (header brief + body comments). */
   commentTargets?: CommentTarget[]
-  /** Test-generator only: source files + the functions to test. */
+  /** Test-generator + warning-corrector: source files + the functions in scope. */
   selection?: TestGenSelection[]
+  /** Warning-corrector only: retry budget for the recompile→correct loop. */
+  warningOptions?: WarningCorrectorJobOptions
   /** Reuse an already-cloned working dir (e.g. from the file-selection step) instead of cloning again. */
   existingCloneDir?: string
 }
@@ -150,10 +155,16 @@ async function runJob(
     }
 
     let processedLabel: string
+    let prComment: string | null = null
 
     if (args.type === 'test-generator') {
       processedLabel = await runTestGeneration(win, jobId, args, targetDir, signal, cleanupDir)
       if (processedLabel === '__cancelled__') return
+    } else if (args.type === 'warning-corrector') {
+      const outcome = await runWarningCorrection(win, jobId, args, targetDir, signal, cleanupDir)
+      if (outcome.label === '__cancelled__') return
+      processedLabel = outcome.label
+      prComment = outcome.prComment
     } else {
       processedLabel = await runCommenting(win, jobId, args, targetDir, signal, cleanupDir)
       if (processedLabel === '__cancelled__') return
@@ -167,7 +178,12 @@ async function runJob(
     }
     updateStatus(win, jobId, 'committing')
 
-    const branchKind = args.type === 'commentateur' ? 'comments' : 'tests'
+    const branchKind =
+      args.type === 'commentateur'
+        ? 'comments'
+        : args.type === 'warning-corrector'
+          ? 'warnings'
+          : 'tests'
     const newBranch = `tuleap-pet/${branchKind}-${randomBytes(3).toString('hex')}`
     await createBranch(targetDir, newBranch)
     await gitAdd(targetDir)
@@ -195,6 +211,17 @@ async function runJob(
       })
       prId = pr.id
       prUrl = pr.htmlUrl || null
+      // Warning-corrector: post the recap of corrected warnings as a PR comment.
+      if (prComment && prId != null) {
+        try {
+          await client.postPrComment(prId, prComment)
+        } catch (commentErr) {
+          debugError(
+            '[job-manager] PR comment failed: %s',
+            commentErr instanceof Error ? commentErr.message : String(commentErr)
+          )
+        }
+      }
     } catch (prErr) {
       debugError(
         '[job-manager] PR creation failed: %s',
@@ -364,4 +391,68 @@ async function runCommenting(
   return `[AI] Commentaires Doxygen — ${result.commented} fonction(s)${
     result.failed > 0 ? `, ${result.failed} en échec` : ''
   }`
+}
+
+/**
+ * Correct compiler warnings within an explicit function selection: run the repo's
+ * `ai_compil` script, parse `warning.txt`, fix the in-scope warnings with code-tree
+ * context, recompile and retry. Returns the commit message + a PR comment recap,
+ * or {@link CANCELLED} as the label if aborted.
+ */
+async function runWarningCorrection(
+  win: BrowserWindow | null,
+  jobId: string,
+  args: JobStartArgs,
+  targetDir: string,
+  signal: AbortSignal,
+  cleanupDir: () => void
+): Promise<{ label: string; prComment: string | null }> {
+  const selection = args.selection ?? []
+  if (selection.length === 0) {
+    throw new Error('Aucune fonction sélectionnée pour la correction de warnings.')
+  }
+
+  if (signal.aborted) {
+    cleanupDir()
+    emit(win, { type: 'cancelled', jobId })
+    return { label: CANCELLED, prComment: null }
+  }
+
+  updateStatus(win, jobId, 'processing')
+
+  const emitProgress = (ev: WarningCorrectorProgress): void => {
+    if (ev.type === 'fix') {
+      emit(win, {
+        type: 'progress',
+        jobId,
+        current: ev.index,
+        total: ev.total,
+        currentFile: ev.file
+      })
+    }
+  }
+
+  const result = await runWarningCorrector(
+    targetDir,
+    selection,
+    { maxRetries: args.warningOptions?.maxRetries },
+    emitProgress
+  )
+
+  for (const w of result.warnings) {
+    debugError('[job-manager] warning-corrector: %s', w)
+  }
+
+  if (result.changedFiles.length === 0 || result.fixed.length === 0) {
+    const detail =
+      result.initialCount === 0
+        ? (result.warnings[0] ?? 'Aucun warning à corriger dans la sélection.')
+        : `0 warning corrigé sur ${result.initialCount} (${result.remaining.length} restant(s)).`
+    throw new Error(`Aucune correction de warning à committer. ${detail}`)
+  }
+
+  const label = `[AI] Correction de warnings — ${result.fixed.length}/${result.initialCount} corrigé(s)${
+    result.remaining.length > 0 ? `, ${result.remaining.length} restant(s)` : ''
+  }`
+  return { label, prComment: buildWarningPrSummary(result) }
 }
