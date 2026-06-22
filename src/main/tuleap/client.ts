@@ -652,21 +652,6 @@ export class TuleapClient {
     await this.mutate('POST', `/api/pull_requests/${prId}/comments`, { content })
   }
 
-  /**
-   * Set the pull request's description (its first/initial message). `format`
-   * controls how Tuleap renders it ('commonmark' for Markdown).
-   */
-  async updatePullRequestDescription(
-    prId: number,
-    description: string,
-    format: 'text' | 'html' | 'commonmark' = 'commonmark'
-  ): Promise<void> {
-    await this.mutate('PATCH', `/api/pull_requests/${prId}`, {
-      description,
-      description_format: format
-    })
-  }
-
   async createTtmCampaign(args: { label: string; projectId: number }): Promise<TtmCampaignRaw> {
     const response = await this.mutate('POST', '/api/v1/testmanagement_campaigns', {
       label: args.label,

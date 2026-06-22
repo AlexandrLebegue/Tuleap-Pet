@@ -211,24 +211,16 @@ async function runJob(
       })
       prId = pr.id
       prUrl = pr.htmlUrl || null
-      // Warning-corrector: put the recap of corrected warnings in the PR's first
-      // message (its description). Fall back to a comment if the API rejects it.
+      // Warning-corrector: post the recap of corrected warnings as a PR comment,
+      // exactly like the PR reviewer (POST /pull_requests/{id}/comments).
       if (prComment && prId != null) {
         try {
-          await client.updatePullRequestDescription(prId, prComment)
-        } catch (descErr) {
+          await client.postPrComment(prId, prComment)
+        } catch (commentErr) {
           debugError(
-            '[job-manager] PR description update failed, falling back to comment: %s',
-            descErr instanceof Error ? descErr.message : String(descErr)
+            '[job-manager] PR comment failed: %s',
+            commentErr instanceof Error ? commentErr.message : String(commentErr)
           )
-          try {
-            await client.postPrComment(prId, prComment)
-          } catch (commentErr) {
-            debugError(
-              '[job-manager] PR comment failed: %s',
-              commentErr instanceof Error ? commentErr.message : String(commentErr)
-            )
-          }
         }
       }
     } catch (prErr) {

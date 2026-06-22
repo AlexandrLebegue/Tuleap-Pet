@@ -167,21 +167,18 @@ describe('TuleapClient.getArtifact', () => {
   })
 })
 
-describe('TuleapClient.updatePullRequestDescription', () => {
-  it('PATCHes the PR with the description as commonmark (first message)', async () => {
+describe('TuleapClient.postPrComment', () => {
+  it('POSTs the comment content to the PR comments endpoint', async () => {
     const fetchImpl = vi.fn(async (input, init) => {
       const url = typeof input === 'string' ? input : input.toString()
-      expect(url).toBe(`${BASE_URL}/api/pull_requests/77`)
-      expect(init?.method).toBe('PATCH')
+      expect(url).toBe(`${BASE_URL}/api/pull_requests/77/comments`)
+      expect(init?.method).toBe('POST')
       const body = JSON.parse(init?.body as string)
-      expect(body).toEqual({
-        description: '## Récap\n- corrigé',
-        description_format: 'commonmark'
-      })
+      expect(body).toEqual({ content: '## Récap\n- corrigé' })
       return new Response(null, { status: 200 })
     })
     const client = makeClient(fetchImpl as unknown as typeof fetch)
-    await client.updatePullRequestDescription(77, '## Récap\n- corrigé')
+    await client.postPrComment(77, '## Récap\n- corrigé')
     expect(fetchImpl).toHaveBeenCalledOnce()
   })
 })

@@ -80,3 +80,23 @@ describe('diffWarnings', () => {
     expect(d.introduced.map((w) => w.message)).toEqual(['new one'])
   })
 })
+
+describe('buildWarningPrSummary / stripAstral', () => {
+  it('removes astral-plane characters (4-byte emoji that break Tuleap)', async () => {
+    const { stripAstral, buildWarningPrSummary } =
+      await import('../../src/main/warning-corrector/warning-corrector')
+    expect(stripAstral('a🛠️b🚀c')).toBe('a️bc') // U+FE0F (BMP) kept, astral removed
+    const ws = parseWarnings('src/a.c:3:7: warning: unused x [-Wunused-variable]')
+    const summary = buildWarningPrSummary({
+      changedFiles: ['/clone/src/a.c'],
+      fixed: ws,
+      remaining: [],
+      initialCount: 1,
+      iterations: 1,
+      warnings: []
+    })
+    // No code point outside the BMP must remain in the PR payload.
+    expect(/[\u{10000}-\u{10FFFF}]/u.test(summary)).toBe(false)
+    expect(summary).toContain('unused x')
+  })
+})

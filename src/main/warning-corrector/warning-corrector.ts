@@ -309,7 +309,7 @@ export async function runWarningCorrector(
 /** Build the Markdown recap posted as a PR comment listing the corrected warnings. */
 export function buildWarningPrSummary(result: WarningCorrectorResult): string {
   const lines: string[] = []
-  lines.push('## 🛠️ Correcteur de warnings — récapitulatif')
+  lines.push('## Correcteur de warnings — récapitulatif')
   lines.push('')
   lines.push(
     `**${result.fixed.length}/${result.initialCount}** warning(s) corrigé(s) en ` +
@@ -345,5 +345,14 @@ export function buildWarningPrSummary(result: WarningCorrectorResult): string {
 
   lines.push('')
   lines.push('_Généré automatiquement par Tuleap AI Companion._')
-  return lines.join('\n')
+  return stripAstral(lines.join('\n'))
+}
+
+/**
+ * Remove astral-plane characters (code points > U+FFFF, i.e. 4-byte UTF-8 such as
+ * 🛠 / 🚀 emoji). Tuleap rejects them with HTTP 500 when its DB columns are plain
+ * `utf8` (3-byte) instead of `utf8mb4`. BMP symbols (✅ ⚠️ …) are kept as-is.
+ */
+export function stripAstral(s: string): string {
+  return s.replace(/[\u{10000}-\u{10FFFF}]/gu, '')
 }
