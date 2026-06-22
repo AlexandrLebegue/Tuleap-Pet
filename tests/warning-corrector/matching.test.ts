@@ -40,4 +40,25 @@ describe('matchWarnings (scope to selected files/functions)', () => {
     const matched = matchWarnings(ws, selection, index, SAMPLE)
     expect(matched).toHaveLength(1)
   })
+
+  it('matches an absolute MSVC build path by path suffix (different machine root)', () => {
+    // The build ran at P:\BUILD_ROOT; the clone is elsewhere — only the suffix matches.
+    const ws = parseWarnings(
+      'P:\\BUILD_ROOT\\src\\calculator.cpp(8,3): warning C4100: foo [P:\\BUILD_ROOT\\build\\x.vcxproj]'
+    )
+    const matched = matchWarnings(ws, selection, index, SAMPLE)
+    expect(matched).toHaveLength(1)
+    expect(matched[0]!.relPath).toBe('src/calculator.cpp')
+  })
+
+  it('does not match a same-basename file in a different directory when a longer suffix wins', () => {
+    const sel = [
+      { sourceFile: 'src/calculator.cpp', functions: ['add'] },
+      { sourceFile: 'vendor/calculator.cpp', functions: ['add'] }
+    ]
+    const ws = parseWarnings('P:\\X\\vendor\\calculator.cpp(8,3): warning C4100: foo')
+    const matched = matchWarnings(ws, sel, index, SAMPLE)
+    expect(matched).toHaveLength(1)
+    expect(matched[0]!.relPath).toBe('vendor/calculator.cpp')
+  })
 })

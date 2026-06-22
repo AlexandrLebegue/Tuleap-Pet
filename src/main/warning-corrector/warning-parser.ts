@@ -11,6 +11,12 @@ export type Warning = {
   /** Warning category, e.g. `-Wunused-variable` (GCC/Clang) or `C4101` (MSVC). */
   category: string
   message: string
+  /**
+   * 0-based ordinal among warnings sharing the same (file, category, message).
+   * Used as a stable identity that survives line shifts caused by corrective
+   * edits, so several identical messages in one file are tracked separately.
+   */
+  occurrence: number
   /** Original line of text the warning was parsed from. */
   raw: string
 }
@@ -28,24 +34,38 @@ export type WarningDiff = {
 //               path:line: warning: message
 const GCC_RE = /^\s*(.+?):(\d+)(?::(\d+))?:\s*warning:\s*(.*?)\s*(?:\[([^\]]+)\])?\s*$/i
 
-// MSVC:  path(line): warning Cxxxx: message
+// MSVC:  path(line): warning Cxxxx: message      (path may contain spaces)
 //        path(line,col): warning Cxxxx: message
-const MSVC_RE = /^\s*(.+?)\((\d+)(?:,(\d+))?\)\s*:\s*warning\s+([A-Z]\d+)\s*:\s*(.*?)\s*$/i
+const MSVC_RE = /^\s*(.+?)\((\d+)(?:,(\d+))?\)\s*:\s*warning\s+([A-Z]+\d+)\s*:\s*(.*?)\s*$/i
 
 function normalizeSlashes(p: string): string {
   return p.replace(/\\/g, '/').trim()
 }
 
 /**
+ * Remove the trailing MSBuild project tag MSVC appends to each diagnostic, e.g.
+ * ` [P:\proj\build\ci-msvc\libdscom.vcxproj]`. Only stripped when it looks like a
+ * project file path so we never eat a legitimate trailing `[...]` in a message.
+ */
+function stripMsbuildProjectTag(message: string): string {
+  return message.replace(/\s*\[[^\]]*\.(?:vcx?proj|csproj|sln)\]\s*$/i, '').trimEnd()
+}
+
+/**
  * Make `filePath` relative to `cloneDir`. Absolute paths are made relative to the
  * clone; relative paths are first anchored at `baseDir` (the directory the
  * compile script ran from, e.g. a sub-module) so warnings emitted by a nested
- * `ai_compil` resolve to the right clone-relative file.
+ * `ai_compil` resolve to the right clone-relative file. Build paths that live
+ * outside the clone (e.g. an absolute `P:\…` from another machine) are returned
+ * normalized as-is; suffix matching in `matchWarnings` handles those.
  */
 function toRelPath(filePath: string, cloneDir: string, baseDir: string): string {
   const norm = normalizeSlashes(filePath)
-  if (path.isAbsolute(norm)) {
-    if (cloneDir) {
+  // Windows-style absolute paths (`P:/…`) are not detected by POSIX path.isAbsolute,
+  // so test for a drive letter explicitly too.
+  const isWinAbs = /^[a-zA-Z]:\//.test(norm)
+  if (path.isAbsolute(norm) || isWinAbs) {
+    if (cloneDir && !isWinAbs) {
       const rel = path.relative(cloneDir, norm).replace(/\\/g, '/')
       if (rel && !rel.startsWith('..')) return rel
     }
@@ -62,15 +82,26 @@ function toRelPath(filePath: string, cloneDir: string, baseDir: string): string 
 
 /**
  * Parse a `warning.txt` log into structured warnings. Supports GCC/Clang and
- * MSVC formats. Duplicate lines are collapsed. `cloneDir` resolves absolute
- * compiler paths to clone-relative ones; `baseDir` (defaults to `cloneDir`)
- * anchors relative paths to the directory the script ran from.
+ * MSVC formats.
+ *
+ * MSVC (with `/diagnostics:caret`) prints three lines per warning at the same
+ * location — the message, the offending source line, then a caret — all sharing
+ * the `(line,col): warning Cxxxx:` prefix. We collapse them by location, keeping
+ * the first (the real message). The MSBuild `NN>` node prefix and trailing
+ * ` [project.vcxproj]` tag are stripped.
+ *
+ * `cloneDir` resolves absolute compiler paths to clone-relative ones; `baseDir`
+ * (defaults to `cloneDir`) anchors relative paths to the directory the script ran
+ * from.
  */
 export function parseWarnings(text: string, cloneDir = '', baseDir = cloneDir): Warning[] {
-  const out: Warning[] = []
-  const seen = new Set<string>()
+  type Parsed = Omit<Warning, 'occurrence'>
+  const parsed: Parsed[] = []
+  const seenLoc = new Set<string>()
+
   for (const rawLine of text.split(/\r?\n/)) {
-    const line = rawLine.trimEnd()
+    // Strip the MSBuild parallel-build node prefix ("12>...") and trailing spaces.
+    const line = rawLine.replace(/^\s*\d+>/, '').replace(/\s+$/, '')
     if (!line) continue
 
     let filePath: string | null = null
@@ -93,12 +124,18 @@ export function parseWarnings(text: string, cloneDir = '', baseDir = cloneDir): 
       lineNo = Number.parseInt(m[2]!, 10)
       column = m[3] ? Number.parseInt(m[3], 10) : null
       category = m[4]!.trim()
-      message = m[5]!.trim()
+      message = stripMsbuildProjectTag(m[5]!.trim())
     }
 
     const norm = normalizeSlashes(filePath)
     const relPath = toRelPath(filePath, cloneDir, baseDir)
-    const w: Warning = {
+
+    // Collapse the caret / source-context lines MSVC prints at the same location.
+    const locKey = `${norm}|${lineNo}|${column}|${category}`
+    if (seenLoc.has(locKey)) continue
+    seenLoc.add(locKey)
+
+    parsed.push({
       filePath: norm,
       relPath,
       line: lineNo,
@@ -106,13 +143,18 @@ export function parseWarnings(text: string, cloneDir = '', baseDir = cloneDir): 
       category,
       message,
       raw: line.trim()
-    }
-    const key = `${w.relPath}|${w.category}|${w.message}`
-    if (seen.has(key)) continue
-    seen.add(key)
-    out.push(w)
+    })
   }
-  return out
+
+  // Assign a stable occurrence ordinal per (relPath, category, message) so that
+  // identical messages on different lines are kept as distinct warnings.
+  const occ = new Map<string, number>()
+  return parsed.map((p) => {
+    const base = `${p.relPath}|${p.category}|${p.message}`
+    const occurrence = occ.get(base) ?? 0
+    occ.set(base, occurrence + 1)
+    return { ...p, occurrence }
+  })
 }
 
 /** Group warnings by their clone-relative file path. */
@@ -127,12 +169,12 @@ export function groupByFile(warnings: Warning[]): Map<string, Warning[]> {
 }
 
 /**
- * Stable identity for a warning across recompilations. Deliberately excludes the
- * line/column because corrective edits shift line numbers; the file + category +
- * message triple is what we track to decide whether a warning was corrected.
+ * Stable identity for a warning across recompilations. Excludes the line/column
+ * (corrective edits shift them); identical messages in the same file are kept
+ * distinct via their occurrence ordinal.
  */
 export function warningKey(w: Warning): string {
-  return `${w.relPath}|${w.category}|${w.message}`
+  return `${w.relPath}|${w.category}|${w.message}|${w.occurrence}`
 }
 
 /** Compare two warning sets (same scope) to find what was fixed / remains / introduced. */

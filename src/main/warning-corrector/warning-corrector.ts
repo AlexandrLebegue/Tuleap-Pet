@@ -40,6 +40,41 @@ export type WarningCorrectorResult = {
 
 const norm = (p: string): string => p.replace(/\\/g, '/').replace(/^\.\//, '')
 
+/** Number of trailing path segments shared by two (already forward-slashed) paths. */
+function sharedSuffixSegments(a: string, b: string): number {
+  const sa = a.toLowerCase().split('/').filter(Boolean)
+  const sb = b.toLowerCase().split('/').filter(Boolean)
+  let i = sa.length - 1
+  let j = sb.length - 1
+  let n = 0
+  while (i >= 0 && j >= 0 && sa[i] === sb[j]) {
+    n++
+    i--
+    j--
+  }
+  return n
+}
+
+/**
+ * Find the selected source file that best matches a compiler-reported path by the
+ * longest shared trailing path segments (case-insensitive, separator/space
+ * tolerant). A single shared segment (the basename) is enough; longer overlaps win
+ * to disambiguate same-named files. Returns the selection file or null.
+ */
+export function bestSelectionMatch(warnPath: string, selectionFiles: string[]): string | null {
+  const p = norm(warnPath)
+  let best: string | null = null
+  let bestScore = 0
+  for (const f of selectionFiles) {
+    const score = sharedSuffixSegments(p, norm(f))
+    if (score > bestScore) {
+      bestScore = score
+      best = f
+    }
+  }
+  return bestScore >= 1 ? best : null
+}
+
 /**
  * Keep only the warnings whose file is part of the user's selection, refined to
  * the selected functions: a warning inside a *non-selected* function of a selected
@@ -52,32 +87,13 @@ export function matchWarnings(
   index: ProjectIndex,
   cloneDir: string
 ): Warning[] {
-  const byExact = new Set<string>()
-  const byBase = new Map<string, string[]>()
+  const selFiles = selection.map((sel) => norm(sel.sourceFile))
   const fnsByFile = new Map<string, Set<string>>()
-  for (const sel of selection) {
-    const f = norm(sel.sourceFile)
-    byExact.add(f)
-    const base = f.split('/').pop()!
-    const arr = byBase.get(base) ?? []
-    arr.push(f)
-    byBase.set(base, arr)
-    fnsByFile.set(f, new Set(sel.functions))
-  }
+  for (const sel of selection) fnsByFile.set(norm(sel.sourceFile), new Set(sel.functions))
 
   const out: Warning[] = []
   for (const w of warnings) {
-    const rel = norm(w.relPath)
-    let matched: string | null = null
-    if (byExact.has(rel)) {
-      matched = rel
-    } else {
-      const base = rel.split('/').pop()!
-      const cands = byBase.get(base) ?? []
-      if (cands.length === 1) matched = cands[0]!
-      else if (cands.length > 1)
-        matched = cands.find((c) => rel.endsWith(c) || c.endsWith(rel)) ?? null
-    }
+    const matched = bestSelectionMatch(w.relPath, selFiles)
     if (!matched) continue
 
     const selFns = fnsByFile.get(matched) ?? new Set<string>()

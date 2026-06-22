@@ -43,6 +43,45 @@ describe('parseWarnings', () => {
     const ws = parseWarnings([line, line].join('\n'))
     expect(ws).toHaveLength(1)
   })
+
+  it('parses MSVC paths with spaces and strips the MSBuild project tag', () => {
+    const log =
+      'P:\\sodern_package\\Visual Studio 16 2019\\include\\osal_socket.h(39,4): warning C4201: struct sans nom [P:\\DS_COM_Dirty\\build\\ci-msvc\\libdscom.vcxproj]'
+    const ws = parseWarnings(log)
+    expect(ws).toHaveLength(1)
+    expect(ws[0]).toMatchObject({ line: 39, column: 4, category: 'C4201' })
+    expect(ws[0]!.relPath).toBe('P:/sodern_package/Visual Studio 16 2019/include/osal_socket.h')
+    expect(ws[0]!.message).toBe('struct sans nom') // no trailing [..vcxproj]
+  })
+
+  it('strips the MSBuild "NN>" node prefix', () => {
+    const ws = parseWarnings('12>P:\\src\\a.c(7,3): warning C4100: x [P:\\b\\x.vcxproj]')
+    expect(ws).toHaveLength(1)
+    expect(ws[0]!.relPath).toBe('P:/src/a.c')
+  })
+
+  it('collapses MSVC caret/source-context lines at the same location', () => {
+    const log = [
+      'P:\\src\\a.c(422,40): warning C4100: argv non reference [P:\\b\\x.vcxproj]',
+      'P:\\src\\a.c(422,40): warning C4100: TypC32 stop_nav(int argc, const char **argv) [P:\\b\\x.vcxproj]',
+      'P:\\src\\a.c(422,40): warning C4100:    ^ [P:\\b\\x.vcxproj]'
+    ].join('\n')
+    const ws = parseWarnings(log)
+    expect(ws).toHaveLength(1)
+    expect(ws[0]!.message).toBe('argv non reference') // first line = real message
+  })
+
+  it('keeps identical messages on different lines as distinct (occurrence index)', () => {
+    const log = [
+      'P:\\src\\a.c(422,40): warning C4100: argv non reference [P:\\b\\x.vcxproj]',
+      'P:\\src\\a.c(441,43): warning C4100: argv non reference [P:\\b\\x.vcxproj]',
+      'P:\\src\\a.c(451,44): warning C4100: argv non reference [P:\\b\\x.vcxproj]'
+    ].join('\n')
+    const ws = parseWarnings(log)
+    expect(ws).toHaveLength(3)
+    expect(ws.map((w) => w.occurrence)).toEqual([0, 1, 2])
+    expect(new Set(ws.map(warningKey)).size).toBe(3)
+  })
 })
 
 describe('groupByFile', () => {
@@ -76,7 +115,7 @@ describe('diffWarnings', () => {
     )
     const d = diffWarnings(before, after)
     expect(d.fixed.map((w) => w.message)).toEqual(['unused x'])
-    expect(d.remaining.map(warningKey)).toEqual(['src/a.c|-Wsign|sign mismatch'])
+    expect(d.remaining.map(warningKey)).toEqual(['src/a.c|-Wsign|sign mismatch|0'])
     expect(d.introduced.map((w) => w.message)).toEqual(['new one'])
   })
 })
