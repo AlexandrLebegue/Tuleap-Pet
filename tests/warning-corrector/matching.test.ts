@@ -6,58 +6,61 @@ import { matchWarnings } from '../../src/main/warning-corrector/warning-correcto
 
 const SAMPLE = path.resolve(__dirname, '../../samples/cpp-demo')
 
-describe('matchWarnings (scope to selected files/functions)', () => {
-  const index = buildProjectIndex(SAMPLE)
-  const selection = [{ sourceFile: 'src/calculator.cpp', functions: ['add'] }]
+// Repo file universe = the clone's own source files (what runWarningCorrector passes).
+const repoFiles = buildProjectIndex(SAMPLE).files.map((f) =>
+  path.relative(SAMPLE, f).replace(/\\/g, '/')
+)
 
-  it('keeps a warning inside a selected function', () => {
-    // add() spans lines 7-9 in calculator.cpp.
-    const ws = parseWarnings('src/calculator.cpp:8:3: warning: foo [-Wfoo]')
-    const matched = matchWarnings(ws, selection, index, SAMPLE)
-    expect(matched).toHaveLength(1)
-    expect(matched[0]!.relPath).toBe('src/calculator.cpp')
+describe('matchWarnings (repo-wide, third-party excluded)', () => {
+  it('keeps a warning anywhere in a repo file, regardless of the function', () => {
+    // Inside add() …
+    expect(
+      matchWarnings(parseWarnings('src/calculator.cpp:8:3: warning: foo [-Wfoo]'), repoFiles)
+    ).toHaveLength(1)
+    // … and inside another function of the same file (no function-level dropping).
+    const ws = matchWarnings(
+      parseWarnings('src/calculator.cpp:12:3: warning: bar [-Wbar]'),
+      repoFiles
+    )
+    expect(ws).toHaveLength(1)
+    expect(ws[0]!.relPath).toBe('src/calculator.cpp')
   })
 
-  it('drops a warning inside a non-selected function of a selected file', () => {
-    // multiply() spans 11-13 and is not selected.
-    const ws = parseWarnings('src/calculator.cpp:12:3: warning: bar [-Wbar]')
-    expect(matchWarnings(ws, selection, index, SAMPLE)).toHaveLength(0)
-  })
-
-  it('keeps a file-scope warning (outside any function) of a selected file', () => {
-    // line 3 is the #include — not inside any function body.
+  it('keeps a file-scope warning (outside any function)', () => {
     const ws = parseWarnings('src/calculator.cpp:3:1: warning: include [-Winc]')
-    expect(matchWarnings(ws, selection, index, SAMPLE)).toHaveLength(1)
+    expect(matchWarnings(ws, repoFiles)).toHaveLength(1)
   })
 
-  it('drops warnings in non-selected files', () => {
+  it('keeps warnings in any repo file, even header-less ones the selection never surfaced', () => {
     const ws = parseWarnings('src/strutil.cpp:5:1: warning: baz [-Wbaz]')
-    expect(matchWarnings(ws, selection, index, SAMPLE)).toHaveLength(0)
+    expect(matchWarnings(ws, repoFiles)).toHaveLength(1)
   })
 
-  it('matches by basename when the compiler reports a build-relative path', () => {
-    const ws = parseWarnings('build/../src/calculator.cpp:8:3: warning: foo [-Wfoo]')
-    const matched = matchWarnings(ws, selection, index, SAMPLE)
-    expect(matched).toHaveLength(1)
+  it('excludes third-party warnings whose file lives outside the clone', () => {
+    const ws = parseWarnings(
+      'P:\\sodern_package\\Visual Studio 16 2019\\include\\osal_socket.h(39,4): warning C4201: x'
+    )
+    expect(matchWarnings(ws, repoFiles)).toHaveLength(0)
   })
 
   it('matches an absolute MSVC build path by path suffix (different machine root)', () => {
-    // The build ran at P:\BUILD_ROOT; the clone is elsewhere — only the suffix matches.
     const ws = parseWarnings(
-      'P:\\BUILD_ROOT\\src\\calculator.cpp(8,3): warning C4100: foo [P:\\BUILD_ROOT\\build\\x.vcxproj]'
+      'P:\\DS_COM_Dirty\\src\\calculator.cpp(8,3): warning C4100: foo [P:\\DS_COM_Dirty\\build\\x.vcxproj]'
     )
-    const matched = matchWarnings(ws, selection, index, SAMPLE)
+    const matched = matchWarnings(ws, repoFiles)
     expect(matched).toHaveLength(1)
     expect(matched[0]!.relPath).toBe('src/calculator.cpp')
   })
 
-  it('does not match a same-basename file in a different directory when a longer suffix wins', () => {
-    const sel = [
-      { sourceFile: 'src/calculator.cpp', functions: ['add'] },
-      { sourceFile: 'vendor/calculator.cpp', functions: ['add'] }
-    ]
+  it('matches a build-relative path', () => {
+    const ws = parseWarnings('build/../src/calculator.cpp:8:3: warning: foo [-Wfoo]')
+    expect(matchWarnings(ws, repoFiles)).toHaveLength(1)
+  })
+
+  it('disambiguates same-basename files by the longest path suffix', () => {
+    const files = ['src/calculator.cpp', 'vendor/calculator.cpp']
     const ws = parseWarnings('P:\\X\\vendor\\calculator.cpp(8,3): warning C4100: foo')
-    const matched = matchWarnings(ws, sel, index, SAMPLE)
+    const matched = matchWarnings(ws, files)
     expect(matched).toHaveLength(1)
     expect(matched[0]!.relPath).toBe('vendor/calculator.cpp')
   })

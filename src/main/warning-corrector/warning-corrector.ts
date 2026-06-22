@@ -76,34 +76,24 @@ export function bestSelectionMatch(warnPath: string, selectionFiles: string[]): 
 }
 
 /**
- * Keep only the warnings whose file is part of the user's selection, refined to
- * the selected functions: a warning inside a *non-selected* function of a selected
- * file is dropped; a file-scope warning (outside any function) is kept. The
- * returned warnings have `relPath` rewritten to the matched selection file.
+ * Keep only the warnings that belong to the **project's own source files**, given
+ * as clone-relative `repoFiles`. A warning matches when its (possibly absolute,
+ * build-machine) path shares the longest trailing segments with a repo file.
+ *
+ * This is intentionally repo-wide rather than restricted to the header-driven
+ * function selection: the selection can only surface functions declared in a
+ * paired header, so header-less `.c` files (static helpers, `main`, modules
+ * without a 1:1 `.h`) would never match and whole files would be dropped.
+ * Third-party warnings (headers living outside the clone, e.g. an SDK under
+ * `P:\sodern_package\…`) match no repo file and are excluded. Matched warnings
+ * have `relPath` rewritten to the repo file.
  */
-export function matchWarnings(
-  warnings: Warning[],
-  selection: TestGenSelection[],
-  index: ProjectIndex,
-  cloneDir: string
-): Warning[] {
-  const selFiles = selection.map((sel) => norm(sel.sourceFile))
-  const fnsByFile = new Map<string, Set<string>>()
-  for (const sel of selection) fnsByFile.set(norm(sel.sourceFile), new Set(sel.functions))
-
+export function matchWarnings(warnings: Warning[], repoFiles: string[]): Warning[] {
+  const files = repoFiles.map((f) => norm(f))
   const out: Warning[] = []
   for (const w of warnings) {
-    const matched = bestSelectionMatch(w.relPath, selFiles)
+    const matched = bestSelectionMatch(w.relPath, files)
     if (!matched) continue
-
-    const selFns = fnsByFile.get(matched) ?? new Set<string>()
-    const abs = path.resolve(cloneDir, matched)
-    const defs = index.byFile.get(abs) ?? []
-    if (selFns.size > 0 && w.line != null && defs.length > 0) {
-      const containing = defs.find((d) => w.line! >= d.startLine && w.line! <= d.endLine)
-      // Inside a function that the user did NOT select → out of scope.
-      if (containing && !selFns.has(containing.name)) continue
-    }
     out.push({ ...w, relPath: matched })
   }
   return out
@@ -225,11 +215,17 @@ export async function runWarningCorrector(
   // Resolve which compile script(s) to run: nearest to each selected file.
   const scripts = resolveScriptsForSelection(cloneDir, selection)
 
+  // The matching universe is the whole repo (all the clone's own source files),
+  // so warnings in header-less files are corrected too; third-party paths outside
+  // the clone are naturally excluded.
+  const repoFiles = buildProjectIndex(cloneDir).files.map((f) =>
+    path.relative(cloneDir, f).replace(/\\/g, '/')
+  )
+
   // ── Baseline compile + scope ──────────────────────────────────────────────
   emit({ type: 'compile', iteration: 0 })
   const baselineParsed = await compileAndParse(scripts, cloneDir)
-  let index = buildProjectIndex(cloneDir)
-  const baselineMatched = matchWarnings(baselineParsed, selection, index, cloneDir)
+  const baselineMatched = matchWarnings(baselineParsed, repoFiles)
   emit({
     type: 'analyze',
     iteration: 0,
@@ -257,7 +253,7 @@ export async function runWarningCorrector(
   let iterations = 0
   for (let i = 1; i <= 1 + maxRetries; i++) {
     iterations = i
-    index = buildProjectIndex(cloneDir)
+    const index = buildProjectIndex(cloneDir)
     const grouped = [...groupByFile(current).entries()]
 
     for (let f = 0; f < grouped.length; f++) {
@@ -301,8 +297,7 @@ export async function runWarningCorrector(
     // Recompile and re-scope.
     emit({ type: 'compile', iteration: i })
     const afterParsed = await compileAndParse(scripts, cloneDir)
-    const afterIndex = buildProjectIndex(cloneDir)
-    current = matchWarnings(afterParsed, selection, afterIndex, cloneDir)
+    current = matchWarnings(afterParsed, repoFiles)
     emit({ type: 'analyze', iteration: i, matched: current.length, total: current.length })
     if (current.length === 0) break
   }
