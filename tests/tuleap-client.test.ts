@@ -151,7 +151,12 @@ describe('TuleapClient.getArtifact', () => {
         tracker: { id: 1 },
         values: [
           { field_id: 1, type: 'string', label: 'Title', value: 'My Story' },
-          { field_id: 2, type: 'art_link', label: 'Links', links: [{ id: 1235, uri: 'artifacts/1235' }] }
+          {
+            field_id: 2,
+            type: 'art_link',
+            label: 'Links',
+            links: [{ id: 1235, uri: 'artifacts/1235' }]
+          }
         ]
       })
     )
@@ -159,5 +164,24 @@ describe('TuleapClient.getArtifact', () => {
     const artifact = await client.getArtifact(1234)
     expect(artifact.id).toBe(1234)
     expect(artifact.values).toHaveLength(2)
+  })
+})
+
+describe('TuleapClient.updatePullRequestDescription', () => {
+  it('PATCHes the PR with the description as commonmark (first message)', async () => {
+    const fetchImpl = vi.fn(async (input, init) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      expect(url).toBe(`${BASE_URL}/api/pull_requests/77`)
+      expect(init?.method).toBe('PATCH')
+      const body = JSON.parse(init?.body as string)
+      expect(body).toEqual({
+        description: '## Récap\n- corrigé',
+        description_format: 'commonmark'
+      })
+      return new Response(null, { status: 200 })
+    })
+    const client = makeClient(fetchImpl as unknown as typeof fetch)
+    await client.updatePullRequestDescription(77, '## Récap\n- corrigé')
+    expect(fetchImpl).toHaveBeenCalledOnce()
   })
 })

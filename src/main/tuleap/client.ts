@@ -319,7 +319,7 @@ export class TuleapClient {
     // Tuleap renvoie soit un array, soit { collection: [...] }.
     const itemsRaw = Array.isArray(raw)
       ? raw
-      : (raw as Record<string, unknown> | null)?.['collection'] ?? []
+      : ((raw as Record<string, unknown> | null)?.['collection'] ?? [])
     const parsed = arrayOf(artifactSummarySchema).safeParse(itemsRaw)
     if (!parsed.success) {
       throw new TuleapSchemaError(
@@ -436,7 +436,10 @@ export class TuleapClient {
       values.push({ field_id: args.titleFieldId, value: args.title })
     }
     if (args.descriptionFieldId !== null && args.description !== null) {
-      values.push({ field_id: args.descriptionFieldId, value: { content: args.description, format: 'text' } })
+      values.push({
+        field_id: args.descriptionFieldId,
+        value: { content: args.description, format: 'text' }
+      })
     }
     if (args.statusFieldId !== null && args.statusBindValueId !== null) {
       values.push({ field_id: args.statusFieldId, bind_value_ids: [args.statusBindValueId] })
@@ -464,7 +467,7 @@ export class TuleapClient {
     // Tuleap may return a plain array or wrap repos in { repositories: [...] }
     const itemsRaw = Array.isArray(raw)
       ? raw
-      : (raw as Record<string, unknown> | null)?.['repositories'] ?? []
+      : ((raw as Record<string, unknown> | null)?.['repositories'] ?? [])
     const parsed = arrayOf(gitRepositorySchema).safeParse(itemsRaw)
     if (!parsed.success) {
       throw new TuleapSchemaError(
@@ -479,10 +482,7 @@ export class TuleapClient {
     }
   }
 
-  listBranches(
-    repoId: number,
-    opts?: Pagination
-  ): Promise<PaginatedResponse<GitBranchRaw>> {
+  listBranches(repoId: number, opts?: Pagination): Promise<PaginatedResponse<GitBranchRaw>> {
     return this.paginated(gitBranchSchema, `/api/git/${repoId}/branches`, {
       limit: opts?.limit ?? DEFAULT_PAGE_LIMIT,
       offset: opts?.offset ?? 0
@@ -506,11 +506,10 @@ export class TuleapClient {
     if (!opts?.refName) {
       return { items: [], total: 0, limit, offset }
     }
-    const branches = await this.paginated(
-      gitBranchSchema,
-      `/api/git/${repoId}/branches`,
-      { limit: 50, offset: 0 }
-    )
+    const branches = await this.paginated(gitBranchSchema, `/api/git/${repoId}/branches`, {
+      limit: 50,
+      offset: 0
+    })
     const branch = branches.items.find((b) => b.name === opts.refName)
     if (!branch || !branch.commit) {
       return { items: [], total: 0, limit, offset }
@@ -553,9 +552,7 @@ export class TuleapClient {
     childIds: number[]
     nature?: string
   }): Promise<void> {
-    const links = args.childIds.map((id) =>
-      args.nature ? { id, type: args.nature } : { id }
-    )
+    const links = args.childIds.map((id) => (args.nature ? { id, type: args.nature } : { id }))
     await this.mutate('PUT', `/api/artifacts/${args.artifactId}`, {
       values: [{ field_id: args.linkFieldId, links }]
     })
@@ -636,7 +633,9 @@ export class TuleapClient {
     } catch {
       throw new TuleapSchemaError(`Réponse non-JSON pour ${path}`)
     }
-    const itemsRaw = Array.isArray(raw) ? raw : (raw as Record<string, unknown> | null)?.['collection'] ?? raw
+    const itemsRaw = Array.isArray(raw)
+      ? raw
+      : ((raw as Record<string, unknown> | null)?.['collection'] ?? raw)
     const parsed = arrayOf(pullRequestSummarySchema).safeParse(itemsRaw)
     if (!parsed.success) {
       return { items: [], total: 0, limit, offset }
@@ -653,6 +652,21 @@ export class TuleapClient {
     await this.mutate('POST', `/api/pull_requests/${prId}/comments`, { content })
   }
 
+  /**
+   * Set the pull request's description (its first/initial message). `format`
+   * controls how Tuleap renders it ('commonmark' for Markdown).
+   */
+  async updatePullRequestDescription(
+    prId: number,
+    description: string,
+    format: 'text' | 'html' | 'commonmark' = 'commonmark'
+  ): Promise<void> {
+    await this.mutate('PATCH', `/api/pull_requests/${prId}`, {
+      description,
+      description_format: format
+    })
+  }
+
   async createTtmCampaign(args: { label: string; projectId: number }): Promise<TtmCampaignRaw> {
     const response = await this.mutate('POST', '/api/v1/testmanagement_campaigns', {
       label: args.label,
@@ -666,7 +680,9 @@ export class TuleapClient {
     }
     const parsed = ttmCampaignSchema.safeParse(raw)
     if (!parsed.success) {
-      throw new TuleapSchemaError(`Réponse campagne TTM invalide: ${parsed.error.message.slice(0, 300)}`)
+      throw new TuleapSchemaError(
+        `Réponse campagne TTM invalide: ${parsed.error.message.slice(0, 300)}`
+      )
     }
     return parsed.data
   }
@@ -695,7 +711,9 @@ export class TuleapClient {
     }
     const parsed = ttmTestExecutionSchema.safeParse(raw)
     if (!parsed.success) {
-      throw new TuleapSchemaError(`Réponse exécution TTM invalide: ${parsed.error.message.slice(0, 300)}`)
+      throw new TuleapSchemaError(
+        `Réponse exécution TTM invalide: ${parsed.error.message.slice(0, 300)}`
+      )
     }
     return parsed.data
   }
