@@ -7,6 +7,7 @@ import { startJob, cancelJob } from '../jobs/job-manager'
 import { resolveCloneUrl } from '../tuleap/clone-url'
 import { cloneRepo, listSourceFiles, listChangedFiles } from '../commenter/git-utils'
 import { injectGitCredentials, explainGitAuthFailure } from '../jobs/git-credentials'
+import { findCompileScripts } from '../warning-corrector/compile-runner'
 import type {
   GitBranch,
   GitRepository,
@@ -131,6 +132,55 @@ export function registerGitExplorerHandlers(): void {
       /* ignore */
     }
   })
+
+  // Warning-corrector: detect whether the clone ships an `ai_compil` script.
+  ipcMain.handle(
+    'git:detect-compile-script',
+    (_event, args: unknown): { found: boolean; scripts: string[] } => {
+      const { cloneDir } = args as { cloneDir: string }
+      if (!cloneDir || !fs.existsSync(cloneDir)) return { found: false, scripts: [] }
+      const scripts = findCompileScripts(cloneDir).map((s) =>
+        path.relative(cloneDir, s).replace(/\\/g, '/')
+      )
+      return { found: scripts.length > 0, scripts }
+    }
+  )
+
+  // Warning-corrector: write a user-supplied `ai_compil` script at the clone root.
+  ipcMain.handle(
+    'git:write-compile-script',
+    (_event, args: unknown): { ok: true; path: string } | { ok: false; error: string } => {
+      const { cloneDir, filename, content } = args as {
+        cloneDir: string
+        filename?: string
+        content: string
+      }
+      if (!cloneDir || !fs.existsSync(cloneDir)) {
+        return { ok: false, error: 'Dossier de clonage introuvable.' }
+      }
+      const name = path.basename(filename ?? 'ai_compil.bat')
+      if (!/^ai_compil\.(bat|cmd|sh)$/i.test(name)) {
+        return { ok: false, error: 'Nom de script invalide (attendu : ai_compil.bat/.sh/.cmd).' }
+      }
+      if (typeof content !== 'string' || content.trim().length === 0) {
+        return { ok: false, error: 'Le contenu du script est vide.' }
+      }
+      try {
+        const target = path.join(cloneDir, name)
+        fs.writeFileSync(target, content, 'utf8')
+        if (name.toLowerCase().endsWith('.sh')) {
+          try {
+            fs.chmodSync(target, 0o755)
+          } catch {
+            /* ignore */
+          }
+        }
+        return { ok: true, path: name }
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) }
+      }
+    }
+  )
 
   ipcMain.handle('git:start-job', async (event, args: unknown): Promise<{ jobId: string }> => {
     const {

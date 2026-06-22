@@ -95,6 +95,23 @@ type TgModal = {
   error: string | null
 }
 
+// Default ai_compil.bat template offered when the clone ships no compile script.
+const DEFAULT_AI_COMPIL_TEMPLATE = `@echo off
+rem ai_compil.bat — Compile le projet et collecte les warnings dans warning.txt
+rem (place A COTE de ce script). Adaptez le preset / le compilateur a votre projet.
+rem Format attendu : MSVC "fichier(ligne): warning Cxxxx: msg" ou GCC/Clang.
+setlocal
+cd /d "%~dp0"
+
+rem Build via le workflow CMake MSVC, garde les lignes de warning et nettoie le
+rem prefixe MSBuild "NN>" avant d'ecrire warning.txt.
+powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+  "cmake --workflow --preset ci-msvc 2>&1 | Select-String ': warning ' | ForEach-Object { ($_.Line -replace '^\\s*\\d+>','').Trim() } | Set-Content -Encoding utf8 'warning.txt'"
+
+endlocal
+exit /b 0
+`
+
 // Warning-corrector modal: clone async → pick functions → set retry budget → run.
 type WcStage = 'cloning' | 'selecting' | 'starting' | 'error'
 
@@ -108,6 +125,10 @@ type WcModal = {
   selected: Set<string>
   /** Recompile→correct retries allowed after the first pass. */
   maxRetries: number
+  /** null = detection en cours ; true/false = présence d'un script ai_compil. */
+  scriptFound: boolean | null
+  /** Editable ai_compil content used when no script was detected. */
+  scriptTemplate: string
   error: string | null
 }
 
@@ -413,6 +434,8 @@ export default function GitExplorer(): React.JSX.Element {
         headers: [],
         selected: new Set(),
         maxRetries: 2,
+        scriptFound: null,
+        scriptTemplate: DEFAULT_AI_COMPIL_TEMPLATE,
         error: null
       })
       const clone = await api.testgen.gitCloneAndList({
@@ -430,8 +453,21 @@ export default function GitExplorer(): React.JSX.Element {
         setWc((prev) => (prev ? { ...prev, stage: 'error', error: idx.error } : prev))
         return
       }
+      // Detect whether the repo ships an ai_compil script; if not, the modal will
+      // prompt for one (editable template) before the job can run.
+      const detect = await api.gitExplorer
+        .detectCompileScript({ cloneDir: idx.cloneDir })
+        .catch(() => ({ found: false, scripts: [] as string[] }))
       setWc((prev) =>
-        prev ? { ...prev, stage: 'selecting', cloneDir: idx.cloneDir, headers: idx.headers } : prev
+        prev
+          ? {
+              ...prev,
+              stage: 'selecting',
+              cloneDir: idx.cloneDir,
+              headers: idx.headers,
+              scriptFound: detect.found
+            }
+          : prev
       )
     },
     [selectedRepo]
@@ -462,6 +498,19 @@ export default function GitExplorer(): React.JSX.Element {
       functions
     }))
     if (selection.length === 0) return
+    // No ai_compil in the repo → write the user-provided template into the clone first.
+    if (wc.scriptFound === false) {
+      if (wc.scriptTemplate.trim().length === 0) return
+      const res = await api.gitExplorer.writeCompileScript({
+        cloneDir: wc.cloneDir,
+        filename: 'ai_compil.bat',
+        content: wc.scriptTemplate
+      })
+      if (!res.ok) {
+        setWc((prev) => (prev ? { ...prev, stage: 'error', error: res.error } : prev))
+        return
+      }
+    }
     setWc((prev) => (prev ? { ...prev, stage: 'starting' } : prev))
     wcStartedRef.current = true
     await api.gitExplorer.startJob({
@@ -993,6 +1042,26 @@ export default function GitExplorer(): React.JSX.Element {
                   </label>
                 </div>
 
+                {wc.scriptFound === false && (
+                  <div className="rounded-md border border-yellow-500/50 bg-yellow-500/10 px-3 py-2 space-y-2">
+                    <p className="text-xs font-medium text-yellow-700 dark:text-yellow-400">
+                      Aucun fichier <code className="text-[11px]">ai_compil.bat</code> détecté dans
+                      le dépôt. Un script de compilation est nécessaire : éditez le template
+                      ci-dessous, il sera ajouté à la racine du projet avant la correction.
+                    </p>
+                    <textarea
+                      value={wc.scriptTemplate}
+                      onChange={(e) =>
+                        setWc((prev) => (prev ? { ...prev, scriptTemplate: e.target.value } : prev))
+                      }
+                      spellCheck={false}
+                      rows={10}
+                      className="w-full rounded-md border border-input bg-background px-3 py-2 text-xs font-mono resize-y focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      placeholder="Contenu du script ai_compil.bat…"
+                    />
+                  </div>
+                )}
+
                 <HeaderFunctionSelector
                   headers={wc.headers}
                   selected={wc.selected}
@@ -1007,11 +1076,17 @@ export default function GitExplorer(): React.JSX.Element {
               </Button>
               <Button
                 onClick={() => void startWarningCorrector()}
-                disabled={wc.stage !== 'selecting' || wc.selected.size === 0}
+                disabled={
+                  wc.stage !== 'selecting' ||
+                  wc.selected.size === 0 ||
+                  (wc.scriptFound === false && wc.scriptTemplate.trim().length === 0)
+                }
               >
                 {wc.stage === 'starting'
                   ? 'Démarrage…'
-                  : `Corriger les warnings (${wc.selected.size})`}
+                  : wc.scriptFound === false
+                    ? `Ajouter ai_compil.bat & corriger (${wc.selected.size})`
+                    : `Corriger les warnings (${wc.selected.size})`}
               </Button>
             </div>
           </div>

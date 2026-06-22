@@ -583,6 +583,18 @@ const gitExplorer = {
 
   cleanupClone: (dir: string): Promise<void> => ipcRenderer.invoke('git:cleanup-clone', dir),
 
+  detectCompileScript: (args: {
+    cloneDir: string
+  }): Promise<{ found: boolean; scripts: string[] }> =>
+    ipcRenderer.invoke('git:detect-compile-script', args),
+
+  writeCompileScript: (args: {
+    cloneDir: string
+    filename?: string
+    content: string
+  }): Promise<{ ok: true; path: string } | { ok: false; error: string }> =>
+    ipcRenderer.invoke('git:write-compile-script', args),
+
   startJob: (args: {
     repoId: number
     repoName: string

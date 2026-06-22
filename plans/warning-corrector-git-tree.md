@@ -96,6 +96,11 @@ Le script doit écrire `warning.txt` **à côté de lui** au format GCC/Clang
 - `ipc/git-explorer.ts` + `preload/index.ts` + `lib/api.ts` : passe `warningOptions`.
 - `GitExplorer.tsx` : bouton ⚠️ + modal `WcModal` (clone → `HeaderFunctionSelector` →
   champ `maxRetries` → `startJob({ type: 'warning-corrector', selection, warningOptions })`).
+- **Aucun `ai_compil` détecté** : à l'ouverture du modal, `git:detect-compile-script`
+  vérifie la présence d'un script. Si absent, le modal affiche un avertissement et une
+  **zone de texte pré-remplie d'un template** éditable ; au lancement,
+  `git:write-compile-script` écrit `ai_compil.bat` à la racine du clone avant de
+  démarrer le job (le bouton est désactivé tant que le template est vide).
 - `JobToast.tsx` : libellé/icône ⚠️ « Correcteur de warnings ».
 
 ## 5. Tests
