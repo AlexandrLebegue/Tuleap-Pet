@@ -334,7 +334,7 @@ export function buildWarningPrSummary(result: WarningCorrectorResult): string {
 
   if (result.fixed.length > 0) {
     lines.push('')
-    lines.push('### ✅ Warnings corrigés')
+    lines.push('### Warnings corrigés')
     for (const [file, ws] of groupByFile(result.fixed)) {
       lines.push('')
       lines.push(`- \`${file}\``)
@@ -347,7 +347,7 @@ export function buildWarningPrSummary(result: WarningCorrectorResult): string {
 
   if (result.remaining.length > 0) {
     lines.push('')
-    lines.push(`### ⚠️ Warnings restants (${result.remaining.length})`)
+    lines.push(`### Warnings restants (${result.remaining.length})`)
     for (const [file, ws] of groupByFile(result.remaining)) {
       lines.push('')
       lines.push(`- \`${file}\``)
@@ -366,8 +366,10 @@ export function buildWarningPrSummary(result: WarningCorrectorResult): string {
 
 /**
  * Remove astral-plane characters (code points > U+FFFF, i.e. 4-byte UTF-8 such as
- * 🛠 / 🚀 emoji). Tuleap rejects them with HTTP 500 when its DB columns are plain
- * `utf8` (3-byte) instead of `utf8mb4`. BMP symbols (✅ ⚠️ …) are kept as-is.
+ * emoji). Tuleap rejects them with HTTP 500 when its DB columns are plain `utf8`
+ * (3-byte) instead of `utf8mb4`. The PR recap itself uses no emoji; this stays as
+ * a safety net for anything echoed from compiler messages. Accented BMP text
+ * (é, à, …) is preserved.
  */
 export function stripAstral(s: string): string {
   return s.replace(/[\u{10000}-\u{10FFFF}]/gu, '')
