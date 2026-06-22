@@ -45,11 +45,40 @@ Entrées : `selection: { sourceFile, functions }[]`, `existingCloneDir`,
    puis `postPrComment(prId, summary)` — récapitulatif Markdown des warnings corrigés
    (groupés par catégorie/fichier) + nombre de restants + itérations.
 
+## 2 bis. Plusieurs scripts `ai_compil` — exécuter le plus proche
+
+Un dépôt peut contenir plusieurs `ai_compil.sh`/`.bat` (un par module). Pour chaque
+fichier de la sélection, on exécute le script **le plus proche** : le dossier
+`ai_compil` ancêtre le plus profond (`findNearestScript`). Si aucun script n'est un
+ancêtre du fichier, on retombe sur celui qui partage le plus long préfixe de chemin
+(sinon le script racine). Les scripts retenus sont dédupliqués
+(`resolveScriptsForSelection`) puis exécutés ; leurs `warning.txt` sont fusionnés,
+chaque sortie étant parsée avec le dossier de son script comme base pour que les
+chemins relatifs se résolvent correctement.
+
+### Exemple `ai_compil.sh` (voir `samples/cpp-demo/ai_compil.sh`)
+
+```sh
+#!/usr/bin/env bash
+set -u
+cd "$(dirname "$0")" || exit 1
+OUT="warning.txt"; : > "$OUT"
+CXX="${CXX:-g++}"
+$CXX -std=c++17 -Wall -Wextra -Wpedantic -fsyntax-only -Isrc src/*.cpp 2>&1 \
+  | grep -E ": warning:" >> "$OUT"
+echo "ai_compil: $(grep -c ': warning:' "$OUT") warning(s) -> $OUT"
+```
+
+Le script doit écrire `warning.txt` **à côté de lui** au format GCC/Clang
+(`fichier:ligne:col: warning: message [-Wflag]`) ou MSVC
+(`fichier(ligne): warning Cxxxx: message`). Une variante Windows est fournie dans
+`samples/cpp-demo/ai_compil.bat`.
+
 ## 3. Back-end (`src/main/warning-corrector/`)
 
-- `compile-runner.ts` — `findCompileScript(dir)`, `runCompileScript(dir)` (execa,
-  timeout, `reject:false`), lecture de `warning.txt`. Erreurs claires si script ou
-  fichier absent.
+- `compile-runner.ts` — `findCompileScripts(dir)` (tous), `findNearestScript(file, scripts)`,
+  `runCompileScript(dir, { scriptPath })` (execa, timeout, `reject:false`), lecture de
+  `warning.txt`. Erreurs claires si script ou fichier absent.
 - `warning-parser.ts` — `parseWarnings`, `groupByFile`, `warningKey`,
   `diffWarnings(before, after)`. Types `Warning`, `WarningDiff`.
 - `warning-corrector.ts` — `runWarningCorrector(cloneDir, selection, options, onProgress)`

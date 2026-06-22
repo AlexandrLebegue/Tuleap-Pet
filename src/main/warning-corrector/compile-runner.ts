@@ -22,34 +22,98 @@ function scriptCandidates(): string[] {
     : ['ai_compil.sh', 'ai_compil.bat', 'ai_compil.cmd']
 }
 
-/** Recursively (shallow, skipping heavy dirs) locate the compile script. */
-export function findCompileScript(root: string, maxDepth = 4): string | null {
-  const walk = (dir: string, depth: number): string | null => {
+/** Recursively (shallow, skipping heavy dirs) locate the first compile script. */
+export function findCompileScript(root: string, maxDepth = 6): string | null {
+  return findCompileScripts(root, maxDepth)[0] ?? null
+}
+
+/**
+ * Find every `ai_compil` script under `root` (shallow walk, skipping heavy dirs).
+ * Returns absolute paths sorted shallowest-first. When a directory holds several
+ * candidates, the platform-preferred extension wins.
+ */
+export function findCompileScripts(root: string, maxDepth = 6): string[] {
+  const found: string[] = []
+  const walk = (dir: string, depth: number): void => {
     let entries: fs.Dirent[]
     try {
       entries = fs.readdirSync(dir, { withFileTypes: true })
     } catch {
-      return null
+      return
     }
-    // Files first, honoring platform preference order.
+    // At most one script per directory, honoring platform preference order.
     for (const cand of scriptCandidates()) {
       const hit = entries.find((e) => e.isFile() && e.name.toLowerCase() === cand.toLowerCase())
-      if (hit) return path.join(dir, hit.name)
+      if (hit) {
+        found.push(path.join(dir, hit.name))
+        break
+      }
     }
-    if (depth >= maxDepth) return null
+    if (depth >= maxDepth) return
     for (const e of entries) {
       if (!e.isDirectory() || SKIP_DIRS.has(e.name) || e.name.startsWith('.')) continue
-      const found = walk(path.join(dir, e.name), depth + 1)
-      if (found) return found
+      walk(path.join(dir, e.name), depth + 1)
     }
-    return null
   }
-  return walk(root, 0)
+  walk(root, 0)
+  // Shallowest first (fewest path separators), then alphabetical for stability.
+  return found.sort((a, b) => {
+    const da = a.split(path.sep).length
+    const db = b.split(path.sep).length
+    return da !== db ? da - db : a.localeCompare(b)
+  })
+}
+
+/** Number of leading path segments shared by two absolute directories. */
+function commonSegments(a: string, b: string): number {
+  const sa = path.resolve(a).split(path.sep)
+  const sb = path.resolve(b).split(path.sep)
+  let n = 0
+  while (n < sa.length && n < sb.length && sa[n] === sb[n]) n++
+  return n
+}
+
+/**
+ * Pick the script "closest" to `fileAbs`: the deepest script directory that is an
+ * ancestor of the file. When no script is an ancestor (file lives outside every
+ * script subtree), fall back to the script sharing the longest path prefix.
+ */
+export function findNearestScript(fileAbs: string, scripts: string[]): string | null {
+  if (scripts.length === 0) return null
+  const fileDir = path.dirname(path.resolve(fileAbs))
+
+  let best: string | null = null
+  let bestDepth = -1
+  for (const s of scripts) {
+    const sDir = path.resolve(path.dirname(s))
+    const rel = path.relative(sDir, fileDir)
+    const isAncestor = rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel))
+    if (!isAncestor) continue
+    const depth = sDir.split(path.sep).length
+    if (depth > bestDepth) {
+      bestDepth = depth
+      best = s
+    }
+  }
+  if (best) return best
+
+  // No ancestor script — choose the one with the longest shared path prefix.
+  let bestCommon = -1
+  for (const s of scripts) {
+    const common = commonSegments(path.dirname(s), fileDir)
+    if (common > bestCommon) {
+      bestCommon = common
+      best = s
+    }
+  }
+  return best
 }
 
 export type CompileRunResult = {
   ok: boolean
   scriptPath: string
+  /** Directory the script was run from (its own folder). */
+  scriptDir: string
   warningFilePath: string
   /** Raw contents of the generated warning.txt. */
   warningText: string
@@ -95,9 +159,9 @@ function resolveWarningFile(scriptPath: string, cloneDir: string): string {
  */
 export async function runCompileScript(
   cloneDir: string,
-  opts: { timeoutMs?: number } = {}
+  opts: { timeoutMs?: number; scriptPath?: string } = {}
 ): Promise<CompileRunResult> {
-  const scriptPath = findCompileScript(cloneDir)
+  const scriptPath = opts.scriptPath ?? findCompileScript(cloneDir)
   if (!scriptPath) {
     throw new Error(
       "Aucun script de compilation 'ai_compil.sh'/'ai_compil.bat' trouvé dans le dépôt."
@@ -136,6 +200,7 @@ export async function runCompileScript(
   return {
     ok: res.exitCode === 0,
     scriptPath,
+    scriptDir,
     warningFilePath,
     warningText,
     exitCode: res.exitCode ?? null,

@@ -3,7 +3,7 @@ import path from 'node:path'
 import { buildProjectIndex, buildContext, renderContext } from '../cpp-analyzer'
 import type { FunctionDef, ProjectIndex } from '../cpp-analyzer/types'
 import { resolveLlmProvider } from '../llm'
-import { runCompileScript } from './compile-runner'
+import { runCompileScript, findCompileScripts, findNearestScript } from './compile-runner'
 import { parseWarnings, groupByFile, warningKey, type Warning } from './warning-parser'
 import { buildWarningFixPrompt, extractSourceBlock } from './warning-prompts'
 import type { TestGenSelection } from '@shared/types'
@@ -141,6 +141,54 @@ function clampRetries(n: number | undefined): number {
 }
 
 /**
+ * Resolve which compile scripts to run for a selection. With a single script we
+ * always use it; with several, we run the one *nearest* to each selected file
+ * (deepest ancestor `ai_compil`), deduplicated. Throws when none is found.
+ */
+export function resolveScriptsForSelection(
+  cloneDir: string,
+  selection: TestGenSelection[]
+): string[] {
+  const all = findCompileScripts(cloneDir)
+  if (all.length === 0) {
+    throw new Error(
+      "Aucun script de compilation 'ai_compil.sh'/'ai_compil.bat' trouvé dans le dépôt."
+    )
+  }
+  if (all.length === 1) return all
+
+  const chosen = new Set<string>()
+  for (const sel of selection) {
+    const fileAbs = path.resolve(cloneDir, sel.sourceFile)
+    const near = findNearestScript(fileAbs, all)
+    if (near) chosen.add(near)
+  }
+  // Fallback: the shallowest (root-most) script when nothing matched.
+  if (chosen.size === 0) chosen.add(all[0]!)
+  return [...chosen]
+}
+
+/**
+ * Run each resolved script and merge the parsed warnings. Each script's output
+ * is parsed with its own directory as the base so relative paths resolve to the
+ * correct clone-relative file. Duplicates are collapsed by warning key.
+ */
+async function compileAndParse(scripts: string[], cloneDir: string): Promise<Warning[]> {
+  const merged: Warning[] = []
+  const seen = new Set<string>()
+  for (const scriptPath of scripts) {
+    const run = await runCompileScript(cloneDir, { scriptPath })
+    for (const w of parseWarnings(run.warningText, cloneDir, run.scriptDir)) {
+      const k = warningKey(w)
+      if (seen.has(k)) continue
+      seen.add(k)
+      merged.push(w)
+    }
+  }
+  return merged
+}
+
+/**
  * Compile (via the repo's `ai_compil` script), correct the warnings that fall
  * within the user's selection using code-tree context, then recompile and retry
  * until clean or the retry budget is exhausted.
@@ -158,11 +206,13 @@ export async function runWarningCorrector(
   const fnsByFile = new Map<string, Set<string>>()
   for (const sel of selection) fnsByFile.set(norm(sel.sourceFile), new Set(sel.functions))
 
+  // Resolve which compile script(s) to run: nearest to each selected file.
+  const scripts = resolveScriptsForSelection(cloneDir, selection)
+
   // ── Baseline compile + scope ──────────────────────────────────────────────
   emit({ type: 'compile', iteration: 0 })
-  const baselineRun = await runCompileScript(cloneDir)
+  const baselineParsed = await compileAndParse(scripts, cloneDir)
   let index = buildProjectIndex(cloneDir)
-  const baselineParsed = parseWarnings(baselineRun.warningText, cloneDir)
   const baselineMatched = matchWarnings(baselineParsed, selection, index, cloneDir)
   emit({
     type: 'analyze',
@@ -234,14 +284,9 @@ export async function runWarningCorrector(
 
     // Recompile and re-scope.
     emit({ type: 'compile', iteration: i })
-    const run = await runCompileScript(cloneDir)
+    const afterParsed = await compileAndParse(scripts, cloneDir)
     const afterIndex = buildProjectIndex(cloneDir)
-    current = matchWarnings(
-      parseWarnings(run.warningText, cloneDir),
-      selection,
-      afterIndex,
-      cloneDir
-    )
+    current = matchWarnings(afterParsed, selection, afterIndex, cloneDir)
     emit({ type: 'analyze', iteration: i, matched: current.length, total: current.length })
     if (current.length === 0) break
   }

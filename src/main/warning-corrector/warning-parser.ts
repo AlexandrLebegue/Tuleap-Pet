@@ -36,23 +36,37 @@ function normalizeSlashes(p: string): string {
   return p.replace(/\\/g, '/').trim()
 }
 
-/** Make `filePath` relative to `cloneDir` when it lives under it; else keep basename-anchored. */
-function toRelPath(filePath: string, cloneDir: string): string {
+/**
+ * Make `filePath` relative to `cloneDir`. Absolute paths are made relative to the
+ * clone; relative paths are first anchored at `baseDir` (the directory the
+ * compile script ran from, e.g. a sub-module) so warnings emitted by a nested
+ * `ai_compil` resolve to the right clone-relative file.
+ */
+function toRelPath(filePath: string, cloneDir: string, baseDir: string): string {
   const norm = normalizeSlashes(filePath)
-  if (path.isAbsolute(norm) && cloneDir) {
-    const rel = path.relative(cloneDir, norm).replace(/\\/g, '/')
+  if (path.isAbsolute(norm)) {
+    if (cloneDir) {
+      const rel = path.relative(cloneDir, norm).replace(/\\/g, '/')
+      if (rel && !rel.startsWith('..')) return rel
+    }
+    return norm
+  }
+  const stripped = norm.replace(/^\.\//, '')
+  if (baseDir && cloneDir) {
+    const abs = path.resolve(baseDir, stripped)
+    const rel = path.relative(cloneDir, abs).replace(/\\/g, '/')
     if (rel && !rel.startsWith('..')) return rel
   }
-  // Already relative (possibly prefixed with ./ or a build subdir) — strip leading ./
-  return norm.replace(/^\.\//, '')
+  return stripped
 }
 
 /**
  * Parse a `warning.txt` log into structured warnings. Supports GCC/Clang and
- * MSVC formats. Duplicate lines are collapsed. `cloneDir` (optional) lets us
- * resolve absolute compiler paths to clone-relative ones for selection matching.
+ * MSVC formats. Duplicate lines are collapsed. `cloneDir` resolves absolute
+ * compiler paths to clone-relative ones; `baseDir` (defaults to `cloneDir`)
+ * anchors relative paths to the directory the script ran from.
  */
-export function parseWarnings(text: string, cloneDir = ''): Warning[] {
+export function parseWarnings(text: string, cloneDir = '', baseDir = cloneDir): Warning[] {
   const out: Warning[] = []
   const seen = new Set<string>()
   for (const rawLine of text.split(/\r?\n/)) {
@@ -83,7 +97,7 @@ export function parseWarnings(text: string, cloneDir = ''): Warning[] {
     }
 
     const norm = normalizeSlashes(filePath)
-    const relPath = toRelPath(filePath, cloneDir)
+    const relPath = toRelPath(filePath, cloneDir, baseDir)
     const w: Warning = {
       filePath: norm,
       relPath,
