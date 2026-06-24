@@ -6,6 +6,8 @@ import { getConfig, setSvnPath } from '../store/config'
 import { svnList, svnLog, execSvn, resolveSvnBinary, SvnError } from '../svn/svn-utils'
 import { buildSvnAuthArgs, explainSvnAuthFailure } from '../svn/svn-credentials'
 import { checkoutAndIndex, generateSvnPatch, cleanupWorkDir } from '../svn/patch-job'
+import { compareSvnPaths, listSvnBranchPaths } from '../compare/svn-compare'
+import type { SvnBranchPath } from '../compare/svn-compare'
 import { audit } from '../store/db'
 import { debugError } from '../logger'
 import type {
@@ -13,6 +15,7 @@ import type {
   SvnPathEntry,
   SvnCommit,
   SvnPatchResult,
+  BranchCompareResult,
   HeaderEntry,
   CommentTarget
 } from '@shared/types'
@@ -77,6 +80,54 @@ export function registerSvnExplorerHandlers(): void {
         const authArgs = await buildSvnAuthArgs(svnUrl)
         const commits = await svnLog(svnUrl, { limit: limit ?? 30, authArgs })
         return { ok: true, commits }
+      } catch (err) {
+        const raw = err instanceof SvnError ? err.stderr || err.message : String(err)
+        return {
+          ok: false,
+          error: explainSvnAuthFailure(raw) ?? (err instanceof Error ? err.message : raw)
+        }
+      }
+    }
+  )
+
+  // List the branch-like paths (trunk + branches/* + tags/*) for the compare picker.
+  ipcMain.handle(
+    'svn:list-branch-paths',
+    async (
+      _event,
+      args: unknown
+    ): Promise<{ ok: true; paths: SvnBranchPath[] } | { ok: false; error: string }> => {
+      const { repoUrl } = args as { repoUrl: string }
+      if (!repoUrl) return { ok: false, error: 'URL SVN manquante.' }
+      try {
+        return { ok: true, paths: await listSvnBranchPaths(repoUrl) }
+      } catch (err) {
+        const raw = err instanceof SvnError ? err.stderr || err.message : String(err)
+        return {
+          ok: false,
+          error: explainSvnAuthFailure(raw) ?? (err instanceof Error ? err.message : raw)
+        }
+      }
+    }
+  )
+
+  // Compare two SVN paths: diff + branch history + AI feature summary (no checkout).
+  ipcMain.handle(
+    'svn:compare-paths',
+    async (
+      _event,
+      args: unknown
+    ): Promise<{ ok: true; result: BranchCompareResult } | { ok: false; error: string }> => {
+      const { baseUrl, compareUrl, baseLabel, compareLabel } = args as {
+        baseUrl: string
+        compareUrl: string
+        baseLabel: string
+        compareLabel: string
+      }
+      audit('svn.compare', compareLabel, { baseLabel })
+      try {
+        const result = await compareSvnPaths({ baseUrl, compareUrl, baseLabel, compareLabel })
+        return { ok: true, result }
       } catch (err) {
         const raw = err instanceof SvnError ? err.stderr || err.message : String(err)
         return {

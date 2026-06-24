@@ -4,13 +4,15 @@ import { api } from '@renderer/lib/api'
 import { useSettings } from '@renderer/stores/settings.store'
 import { Button } from '@renderer/components/ui/button'
 import HeaderFunctionSelector, { fnKey } from '@renderer/components/HeaderFunctionSelector'
+import CompareResultView from '@renderer/components/CompareResultView'
 import type {
   SvnRepository,
   SvnPathEntry,
   SvnCommit,
   HeaderEntry,
   CommentTarget,
-  SvnPatchResult
+  SvnPatchResult,
+  BranchCompareResult
 } from '@shared/types'
 
 /** Keep only C headers (.h) and functions implemented in .c/.h (C only). */
@@ -68,6 +70,17 @@ export default function SvnExplorer(): React.JSX.Element {
   const [pm, setPm] = useState<PmModal | null>(null)
   const pmWorkDirRef = useRef<string | null>(null)
   const pmKeptRef = useRef(false)
+
+  // Compare modal
+  const [cmp, setCmp] = useState<{
+    compareUrl: string
+    compareLabel: string
+    baseUrl: string
+    branchPaths: { label: string; url: string }[]
+    stage: 'select' | 'loading' | 'result' | 'error'
+    result: BranchCompareResult | null
+    error: string | null
+  } | null>(null)
 
   const currentUrl = useCallback(
     (extra?: string): string => {
@@ -249,6 +262,51 @@ export default function SvnExplorer(): React.JSX.Element {
     })
   }, [pm, selectedRepo])
 
+  // ─── Compare paths ───────────────────────────────────────────────────────────
+  const openCompare = useCallback(
+    async (compareUrl: string, compareLabel: string) => {
+      if (!selectedRepo) return
+      setCmp({
+        compareUrl,
+        compareLabel,
+        baseUrl: '',
+        branchPaths: [],
+        stage: 'select',
+        result: null,
+        error: null
+      })
+      const res = await api.svnExplorer.listBranchPaths({
+        repoUrl: selectedRepo.svnUrl.replace(/\/+$/, '')
+      })
+      const paths = res.ok ? res.paths : []
+      const preferred =
+        paths.find((p) => p.label === 'trunk' && p.url !== compareUrl) ??
+        paths.find((p) => p.url !== compareUrl)
+      setCmp((p) => (p ? { ...p, branchPaths: paths, baseUrl: preferred?.url ?? '' } : p))
+    },
+    [selectedRepo]
+  )
+
+  const runCompare = useCallback(async () => {
+    if (!cmp || !cmp.baseUrl) return
+    if (cmp.baseUrl === cmp.compareUrl) {
+      setCmp((p) =>
+        p ? { ...p, stage: 'error', error: 'Choisissez deux chemins différents.' } : p
+      )
+      return
+    }
+    const baseLabel = cmp.branchPaths.find((p) => p.url === cmp.baseUrl)?.label ?? cmp.baseUrl
+    setCmp((p) => (p ? { ...p, stage: 'loading', error: null } : p))
+    const res = await api.svnExplorer.comparePaths({
+      baseUrl: cmp.baseUrl,
+      compareUrl: cmp.compareUrl,
+      baseLabel,
+      compareLabel: cmp.compareLabel
+    })
+    if (res.ok) setCmp((p) => (p ? { ...p, stage: 'result', result: res.result } : p))
+    else setCmp((p) => (p ? { ...p, stage: 'error', error: res.error } : p))
+  }, [cmp])
+
   return (
     <div className="flex h-full flex-col">
       <div className="border-b px-6 py-4">
@@ -356,14 +414,23 @@ export default function SvnExplorer(): React.JSX.Element {
                       🕑
                     </button>
                     {e.kind === 'dir' && (
-                      <button
-                        onClick={() => void openPatch(url, e.name)}
-                        disabled={noTempPath}
-                        className="text-xs px-1.5 py-0.5 rounded bg-primary/10 hover:bg-primary/20 text-primary disabled:opacity-40 disabled:cursor-not-allowed"
-                        title="Commentateur IA → générer un patch"
-                      >
-                        💬
-                      </button>
+                      <>
+                        <button
+                          onClick={() => void openPatch(url, e.name)}
+                          disabled={noTempPath}
+                          className="text-xs px-1.5 py-0.5 rounded bg-primary/10 hover:bg-primary/20 text-primary disabled:opacity-40 disabled:cursor-not-allowed"
+                          title="Commentateur IA → générer un patch"
+                        >
+                          💬
+                        </button>
+                        <button
+                          onClick={() => void openCompare(url, [...pathStack, e.name].join('/'))}
+                          className="text-xs px-1.5 py-0.5 rounded bg-primary/10 hover:bg-primary/20 text-primary"
+                          title="Comparer à un autre chemin"
+                        >
+                          🔀
+                        </button>
+                      </>
                     )}
                   </div>
                 </div>
@@ -409,6 +476,71 @@ export default function SvnExplorer(): React.JSX.Element {
           </div>
         </div>
       </div>
+
+      {/* Compare modal */}
+      {cmp && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+          <div className="bg-card rounded-lg border shadow-xl w-full max-w-3xl p-6 flex flex-col gap-4 max-h-[88vh]">
+            <div>
+              <h2 className="text-lg font-semibold">🔀 Comparer des chemins SVN</h2>
+              <p className="text-sm text-muted-foreground">
+                {selectedRepo?.name} — différences et nouvelles fonctionnalités de{' '}
+                <code className="text-xs">{cmp.compareLabel}</code>
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-end gap-3 rounded-md border bg-muted/30 px-3 py-2">
+              <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+                Chemin de base
+                <select
+                  className="rounded-md border border-input bg-background px-2 py-1 text-sm"
+                  value={cmp.baseUrl}
+                  onChange={(e) => setCmp((p) => (p ? { ...p, baseUrl: e.target.value } : p))}
+                  disabled={cmp.stage === 'loading' || cmp.branchPaths.length === 0}
+                >
+                  {cmp.branchPaths.length === 0 && <option value="">Chargement…</option>}
+                  {cmp.branchPaths.map((bp) => (
+                    <option key={bp.url} value={bp.url}>
+                      {bp.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <span className="pb-1.5 text-muted-foreground">→</span>
+              <span className="pb-1.5 text-sm">
+                <code className="rounded bg-muted px-1.5 py-0.5 text-xs">{cmp.compareLabel}</code>
+              </span>
+              <Button
+                className="ml-auto"
+                onClick={() => void runCompare()}
+                disabled={cmp.stage === 'loading' || !cmp.baseUrl || cmp.baseUrl === cmp.compareUrl}
+              >
+                {cmp.stage === 'loading' ? 'Comparaison…' : 'Comparer'}
+              </Button>
+            </div>
+
+            {cmp.stage === 'loading' && (
+              <p className="py-8 text-center text-sm text-muted-foreground">
+                Calcul du diff SVN et synthèse IA en cours…
+              </p>
+            )}
+            {cmp.stage === 'error' && (
+              <p className="text-sm text-destructive whitespace-pre-wrap">{cmp.error}</p>
+            )}
+            {cmp.stage === 'result' && cmp.result && <CompareResultView result={cmp.result} />}
+
+            <div className="flex justify-end gap-2 border-t pt-2">
+              <Button
+                variant="outline"
+                onClick={() => setCmp(null)}
+                disabled={cmp.stage === 'loading'}
+              >
+                Fermer
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Patch modal */}
       {pm && (

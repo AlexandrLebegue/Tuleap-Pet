@@ -8,7 +8,9 @@ import { resolveCloneUrl } from '../tuleap/clone-url'
 import { cloneRepo, listSourceFiles, listChangedFiles } from '../commenter/git-utils'
 import { injectGitCredentials, explainGitAuthFailure } from '../jobs/git-credentials'
 import { findCompileScripts } from '../warning-corrector/compile-runner'
+import { compareGitBranches } from '../compare/git-compare'
 import type {
+  BranchCompareResult,
   GitBranch,
   GitRepository,
   Page,
@@ -82,6 +84,29 @@ export function registerGitExplorerHandlers(): void {
       offset: page.offset
     }
   })
+
+  // Compare two branches: returns the diff, the commits unique to `compare`, and
+  // an AI summary of the new features. Clones the repo to a temp dir (cleaned up).
+  ipcMain.handle(
+    'git:compare-branches',
+    async (
+      _event,
+      args: unknown
+    ): Promise<{ ok: true; result: BranchCompareResult } | { ok: false; error: string }> => {
+      const { repoName, cloneUrl, base, compare } = args as {
+        repoName: string
+        cloneUrl: string
+        base: string
+        compare: string
+      }
+      try {
+        const result = await compareGitBranches({ repoName, cloneUrl, base, compare })
+        return { ok: true, result }
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) }
+      }
+    }
+  )
 
   // Clone a branch asynchronously and list its source files (+ files changed in
   // the last commit). Used by the commenter file picker; the returned cloneDir

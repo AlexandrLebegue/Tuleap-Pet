@@ -120,6 +120,34 @@ export type SvnPatchResult = {
   warnings: string[]
 }
 
+// ---- Branch / path comparison (Git Explorer + SVN Explorer) ----
+
+export type BranchCompareCommit = {
+  /** Commit hash (git) or revision "r123" (svn). */
+  id: string
+  title: string
+  authorName: string
+}
+
+/** Difference between a base branch/path and a compare branch/path + AI summary. */
+export type BranchCompareResult = {
+  /** Base ref/path label (what we compare against). */
+  base: string
+  /** Compare ref/path label (the branch whose new features we surface). */
+  compare: string
+  /** Unified diff, possibly truncated for display. */
+  diff: string
+  /** True when `diff` was truncated (the full diff was larger). */
+  diffTruncated: boolean
+  /** Commits present in `compare` but not in `base` (git) or the branch's own history (svn). */
+  commits: BranchCompareCommit[]
+  /** Relative paths of files that differ. */
+  filesChanged: string[]
+  stats: { files: number; additions: number; deletions: number }
+  /** AI markdown summary of the differences and new features implemented. */
+  summary: string
+}
+
 export type CommenterPRProgress =
   | { type: 'start'; totalFiles: number; estimatedSeconds: number }
   | { type: 'file'; index: number; total: number; filename: string; etaSeconds: number }

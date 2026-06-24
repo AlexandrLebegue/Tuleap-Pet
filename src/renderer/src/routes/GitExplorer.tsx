@@ -4,6 +4,7 @@ import { api } from '@renderer/lib/api'
 import { useSettings } from '@renderer/stores/settings.store'
 import { Button } from '@renderer/components/ui/button'
 import HeaderFunctionSelector, { fnKey } from '@renderer/components/HeaderFunctionSelector'
+import CompareResultView from '@renderer/components/CompareResultView'
 import type {
   GitRepository,
   GitBranch,
@@ -12,6 +13,7 @@ import type {
   CommentTarget,
   JenkinsBranchStatus,
   JenkinsBuildResult,
+  BranchCompareResult,
   Page
 } from '@shared/types'
 
@@ -173,6 +175,15 @@ export default function GitExplorer(): React.JSX.Element {
   const [rnLoading, setRnLoading] = useState(false)
   const [rnResult, setRnResult] = useState<string | null>(null)
   const [rnError, setRnError] = useState<string | null>(null)
+
+  // Compare modal
+  const [cmp, setCmp] = useState<{
+    compare: string
+    base: string
+    stage: 'select' | 'loading' | 'result' | 'error'
+    result: BranchCompareResult | null
+    error: string | null
+  } | null>(null)
 
   useEffect(() => {
     if (!selectedRepo || branches.length === 0) return
@@ -571,6 +582,41 @@ export default function GitExplorer(): React.JSX.Element {
     }
   }
 
+  // ─── Compare branches ────────────────────────────────────────────────────────
+  const openCompare = useCallback(
+    (branch: string) => {
+      const others = branches.map((b) => b.name).filter((n) => n !== branch)
+      const preferred = ['main', 'master', 'develop', 'trunk'].find((n) => others.includes(n))
+      setCmp({
+        compare: branch,
+        base: preferred ?? others[0] ?? branch,
+        stage: 'select',
+        result: null,
+        error: null
+      })
+    },
+    [branches]
+  )
+
+  const runCompare = useCallback(async () => {
+    if (!selectedRepo || !cmp) return
+    if (cmp.base === cmp.compare) {
+      setCmp((p) =>
+        p ? { ...p, stage: 'error', error: 'Choisissez deux branches différentes.' } : p
+      )
+      return
+    }
+    setCmp((p) => (p ? { ...p, stage: 'loading', error: null } : p))
+    const res = await api.gitExplorer.compareBranches({
+      repoName: selectedRepo.name,
+      cloneUrl: selectedRepo.cloneUrl,
+      base: cmp.base,
+      compare: cmp.compare
+    })
+    if (res.ok) setCmp((p) => (p ? { ...p, stage: 'result', result: res.result } : p))
+    else setCmp((p) => (p ? { ...p, stage: 'error', error: res.error } : p))
+  }, [selectedRepo, cmp])
+
   return (
     <div className="flex h-full flex-col">
       <div className="border-b px-6 py-4">
@@ -671,6 +717,14 @@ export default function GitExplorer(): React.JSX.Element {
                     title="Générer des release notes"
                   >
                     📋
+                  </button>
+                  <button
+                    onClick={() => openCompare(b.name)}
+                    disabled={noTempPath}
+                    className="text-xs px-1.5 py-0.5 rounded bg-primary/10 hover:bg-primary/20 text-primary disabled:opacity-40 disabled:cursor-not-allowed"
+                    title="Comparer à une autre branche"
+                  >
+                    🔀
                   </button>
                 </div>
               </div>
@@ -833,6 +887,82 @@ export default function GitExplorer(): React.JSX.Element {
                 disabled={rnLoading || !rnFrom || !rnTo}
               >
                 {rnLoading ? 'Génération…' : 'Générer'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Compare branches modal */}
+      {cmp && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+          <div className="bg-card rounded-lg border shadow-xl w-full max-w-3xl p-6 flex flex-col gap-4 max-h-[88vh]">
+            <div>
+              <h2 className="text-lg font-semibold">🔀 Comparer des branches</h2>
+              <p className="text-sm text-muted-foreground">
+                {selectedRepo?.name} — différences et nouvelles fonctionnalités de{' '}
+                <code className="text-xs">{cmp.compare}</code>
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-end gap-3 rounded-md border bg-muted/30 px-3 py-2">
+              <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+                Branche de base
+                <select
+                  className="rounded-md border border-input bg-background px-2 py-1 text-sm"
+                  value={cmp.base}
+                  onChange={(e) => setCmp((p) => (p ? { ...p, base: e.target.value } : p))}
+                  disabled={cmp.stage === 'loading'}
+                >
+                  {branches.map((b) => (
+                    <option key={b.name} value={b.name}>
+                      {b.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <span className="pb-1.5 text-muted-foreground">→</span>
+              <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+                Branche à comparer
+                <select
+                  className="rounded-md border border-input bg-background px-2 py-1 text-sm"
+                  value={cmp.compare}
+                  onChange={(e) => setCmp((p) => (p ? { ...p, compare: e.target.value } : p))}
+                  disabled={cmp.stage === 'loading'}
+                >
+                  {branches.map((b) => (
+                    <option key={b.name} value={b.name}>
+                      {b.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <Button
+                className="ml-auto"
+                onClick={() => void runCompare()}
+                disabled={cmp.stage === 'loading' || cmp.base === cmp.compare}
+              >
+                {cmp.stage === 'loading' ? 'Comparaison…' : 'Comparer'}
+              </Button>
+            </div>
+
+            {cmp.stage === 'loading' && (
+              <p className="py-8 text-center text-sm text-muted-foreground">
+                Clonage, calcul du diff et synthèse IA en cours…
+              </p>
+            )}
+            {cmp.stage === 'error' && (
+              <p className="text-sm text-destructive whitespace-pre-wrap">{cmp.error}</p>
+            )}
+            {cmp.stage === 'result' && cmp.result && <CompareResultView result={cmp.result} />}
+
+            <div className="flex justify-end gap-2 border-t pt-2">
+              <Button
+                variant="outline"
+                onClick={() => setCmp(null)}
+                disabled={cmp.stage === 'loading'}
+              >
+                Fermer
               </Button>
             </div>
           </div>

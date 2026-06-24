@@ -20,6 +20,7 @@ import type {
   SvnPathEntry,
   SvnCommit,
   SvnPatchResult,
+  BranchCompareResult,
   HeaderEntry,
   HeaderIndexResult,
   JenkinsBranchStatus,
@@ -621,6 +622,14 @@ const gitExplorer = {
 
   cancelJob: (jobId: string): Promise<void> => ipcRenderer.invoke('git:cancel-job', jobId),
 
+  compareBranches: (args: {
+    repoName: string
+    cloneUrl: string
+    base: string
+    compare: string
+  }): Promise<{ ok: true; result: BranchCompareResult } | { ok: false; error: string }> =>
+    ipcRenderer.invoke('git:compare-branches', args),
+
   subscribe: (handler: (event: JobStreamEvent) => void): (() => void) => {
     const wrapped = (_e: unknown, payload: JobStreamEvent): void => handler(payload)
     ipcRenderer.on('jobs:stream', wrapped)
@@ -660,6 +669,20 @@ const svnExplorer = {
     depth?: number
   }): Promise<{ ok: true; result: SvnPatchResult } | { ok: false; error: string }> =>
     ipcRenderer.invoke('svn:generate-patch', args),
+
+  listBranchPaths: (args: {
+    repoUrl: string
+  }): Promise<
+    { ok: true; paths: { label: string; url: string }[] } | { ok: false; error: string }
+  > => ipcRenderer.invoke('svn:list-branch-paths', args),
+
+  comparePaths: (args: {
+    baseUrl: string
+    compareUrl: string
+    baseLabel: string
+    compareLabel: string
+  }): Promise<{ ok: true; result: BranchCompareResult } | { ok: false; error: string }> =>
+    ipcRenderer.invoke('svn:compare-paths', args),
 
   cleanup: (args: { workDir: string }): Promise<void> => ipcRenderer.invoke('svn:cleanup', args),
 
