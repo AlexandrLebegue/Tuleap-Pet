@@ -14,6 +14,7 @@ import {
   gitBranchSchema,
   gitCommitSchema,
   gitRepositorySchema,
+  svnRepositorySchema,
   milestoneContentItemSchema,
   milestoneSchema,
   projectSchema,
@@ -29,6 +30,7 @@ import {
   type GitBranchRaw,
   type GitCommitRaw,
   type GitRepositoryRaw,
+  type SvnRepositoryRaw,
   type MilestoneContentItemRaw,
   type MilestoneRaw,
   type ProjectRaw,
@@ -469,6 +471,45 @@ export class TuleapClient {
       ? raw
       : ((raw as Record<string, unknown> | null)?.['repositories'] ?? [])
     const parsed = arrayOf(gitRepositorySchema).safeParse(itemsRaw)
+    if (!parsed.success) {
+      throw new TuleapSchemaError(
+        `Réponse Tuleap invalide pour ${path}: ${parsed.error.message.slice(0, 300)}\nPremier item brut: ${JSON.stringify(Array.isArray(itemsRaw) ? itemsRaw[0] : itemsRaw).slice(0, 500)}`
+      )
+    }
+    return {
+      items: parsed.data,
+      total: Number.isFinite(total) ? total : parsed.data.length,
+      limit,
+      offset
+    }
+  }
+
+  /**
+   * List the SVN repositories of a project (Tuleap SVN plugin). Mirrors
+   * {@link listGitRepositories}: Tuleap may return a plain array or wrap the
+   * repos in `{ repositories: [...] }`, and pagination is reported via the
+   * `X-PAGINATION-SIZE` header.
+   */
+  async listSvnRepositories(
+    projectId: number,
+    opts?: Pagination
+  ): Promise<PaginatedResponse<SvnRepositoryRaw>> {
+    const limit = opts?.limit ?? DEFAULT_PAGE_LIMIT
+    const offset = opts?.offset ?? 0
+    const path = `/api/projects/${projectId}/svn`
+    const response = await this.request(path, { limit, offset })
+    const totalHeader = response.headers.get('X-PAGINATION-SIZE')
+    const total = totalHeader ? Number.parseInt(totalHeader, 10) : Number.NaN
+    let raw: unknown
+    try {
+      raw = await response.json()
+    } catch {
+      throw new TuleapSchemaError(`Réponse non-JSON pour ${path}`)
+    }
+    const itemsRaw = Array.isArray(raw)
+      ? raw
+      : ((raw as Record<string, unknown> | null)?.['repositories'] ?? [])
+    const parsed = arrayOf(svnRepositorySchema).safeParse(itemsRaw)
     if (!parsed.success) {
       throw new TuleapSchemaError(
         `Réponse Tuleap invalide pour ${path}: ${parsed.error.message.slice(0, 300)}\nPremier item brut: ${JSON.stringify(Array.isArray(itemsRaw) ? itemsRaw[0] : itemsRaw).slice(0, 500)}`

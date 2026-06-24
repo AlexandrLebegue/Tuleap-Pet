@@ -8,6 +8,7 @@ import {
   Code2,
   FileCode2,
   GitBranch,
+  FolderGit2,
   Wrench,
   FlaskConical,
   LayoutGrid,
@@ -49,7 +50,8 @@ const groups: NavGroup[] = [
     items: [
       { to: '/sprint', label: 'Sprint Board', icon: LayoutGrid },
       { to: '/generation', label: 'Génération IA', icon: Sparkles },
-      { to: '/git', label: 'Git Explorer', icon: GitBranch }
+      { to: '/git', label: 'Git Explorer', icon: GitBranch },
+      { to: '/svn', label: 'SVN Explorer', icon: FolderGit2 }
     ]
   },
   {

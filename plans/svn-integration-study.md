@@ -1,8 +1,45 @@
 # Étude — Intégration SVN (TortoiseSVN) en complément de Git
 
-> **Statut : étude de faisabilité + plan.** Aucun code n'est encore écrit. Ce
-> document répond à la question « peut-on créer une section *SVN Explorer*
-> comparable au *Git Explorer* ? » et décrit le plan d'implémentation.
+> **Statut : workflow « générer un patch » IMPLÉMENTÉ.** Ce document part d'une
+> étude de faisabilité ; la **Phase A** (SVN Explorer consultatif) et la variante
+> **« patch »** de la Phase B sont désormais livrées (cf. §11). La décision n°1
+> (§9) a été tranchée : **mode patch uniquement** (aucun commit serveur).
+
+## 11. Ce qui est implémenté (workflow patch)
+
+Le **SVN Explorer** (onglet `/svn`, icône dédiée dans la sidebar) offre :
+
+- **Liste des dépôts SVN** du projet via `GET /projects/{id}/svn`
+  ([`client.listSvnRepositories`](../src/main/tuleap/client.ts) +
+  [`svnRepositorySchema`](../src/main/tuleap/schemas.ts) +
+  [`resolveSvnUrl`](../src/main/tuleap/svn-url.ts)).
+- **Navigation de l'arborescence** (trunk / branches / tags et plus profond) avec
+  fil d'Ariane, via `svn list --xml`.
+- **Historique** (`svn log --xml`) d'un chemin, sans checkout.
+- **Commentateur IA → patch** : checkout du chemin (`svn checkout`), sélection
+  header→fonctions (réutilise `HeaderFunctionSelector` + `buildHeaderIndex` +
+  `runSelectiveCommenter`), puis **`svn diff`** renvoyé comme **patch unifié**
+  affiché / copiable / enregistrable. **Aucun commit n'est effectué** — l'humain
+  applique le patch via TortoiseSVN.
+- **Binaire `svn`** : détection (`svn --version`) + chemin configurable dans
+  Réglages (composant optionnel TortoiseSVN), avec sondage des emplacements
+  d'installation connus.
+- **Auth Tuleap** : flags `--username/--password --non-interactive
+  --no-auth-cache` construits depuis l'identité Tuleap
+  ([`svn-credentials.ts`](../src/main/svn/svn-credentials.ts)).
+
+Fichiers clés : [`src/main/svn/`](../src/main/svn/) (`svn-xml`, `svn-utils`,
+`svn-credentials`, `patch-job`), [`ipc/svn-explorer.ts`](../src/main/ipc/svn-explorer.ts),
+[`routes/SvnExplorer.tsx`](../src/renderer/src/routes/SvnExplorer.tsx).
+Tests : [`tests/svn/`](../tests/svn/) (parsers XML, `resolveSvnUrl`, et un test
+**fonctionnel contre le vrai binaire `svn`** : list/log/info + round-trip de patch).
+
+**Reste hors-scope** (Phase C) : écriture serveur (branche `svn copy` + commit).
+Volontairement non implémenté — le mode patch couvre le besoin de revue humaine.
+
+---
+
+## 1bis. Étude de faisabilité initiale (conservée pour référence)
 
 ## 1. Question posée
 

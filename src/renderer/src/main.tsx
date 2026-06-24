@@ -13,6 +13,7 @@ import Commenter from './routes/Commenter'
 import Corrector from './routes/Corrector'
 import TestGenerator from './routes/TestGenerator'
 import GitExplorer from './routes/GitExplorer'
+import SvnExplorer from './routes/SvnExplorer'
 import SprintBoard from './routes/SprintBoard'
 import TicketBranch from './routes/TicketBranch'
 import PrReviewer from './routes/PrReviewer'
@@ -38,6 +39,7 @@ const router = createHashRouter([
       { path: 'corrector', element: <Corrector /> },
       { path: 'test-generator', element: <TestGenerator /> },
       { path: 'git', element: <GitExplorer /> },
+      { path: 'svn', element: <SvnExplorer /> },
       { path: 'sprint', element: <SprintBoard /> },
       { path: 'ticket-branch', element: <TicketBranch /> },
       { path: 'pr-reviewer', element: <PrReviewer /> },

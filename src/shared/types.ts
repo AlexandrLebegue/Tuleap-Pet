@@ -33,6 +33,8 @@ export type AppConfig = {
   tempClonePath: string | null
   /** Use SSH for git clone in background jobs (no token injection needed). */
   gitCloneSsh: boolean
+  /** Path to the `svn` CLI binary (TortoiseSVN command-line tools). Null = rely on PATH / known install dirs. */
+  svnPath: string | null
   /** Root of the C/C++ project the TestGenerator + Commenter analyze (call-graph, CMake update, build). */
   cppProjectRoot: string | null
   /** Jenkins base URL (e.g. https://jenkins.example.com). */
@@ -77,6 +79,45 @@ export type GitRepository = {
 
 export type GitBranch = {
   name: string
+}
+
+// ---- SVN Explorer ----
+
+export type SvnRepository = {
+  id: number
+  name: string
+  description: string
+  /** Base checkout URL of the repository (root of the SVN tree). */
+  svnUrl: string
+}
+
+/** A child entry (trunk / branches / tags, or any directory/file) under an SVN path. */
+export type SvnPathEntry = {
+  name: string
+  kind: 'dir' | 'file'
+  revision: number | null
+}
+
+export type SvnCommit = {
+  /** Revision number as a string (shape-compatible with GitCommit.id). */
+  id: string
+  /** "r123" short display form. */
+  shortId: string
+  title: string
+  authorName: string
+  authoredDate: string
+}
+
+/** Result of the "generate a patch" SVN job: a unified diff, never committed. */
+export type SvnPatchResult = {
+  /** Unified diff (`svn diff`) of the AI-applied changes; '' if nothing changed. */
+  patch: string
+  /** Relative paths of files the patch touches. */
+  changedFiles: string[]
+  /** Number of functions/targets for which a comment was produced. */
+  commented: number
+  failed: number
+  warnings: string[]
 }
 
 export type CommenterPRProgress =

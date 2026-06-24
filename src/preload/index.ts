@@ -16,6 +16,11 @@ import type {
   GitBranch,
   GitCommit,
   GitRepository,
+  SvnRepository,
+  SvnPathEntry,
+  SvnCommit,
+  SvnPatchResult,
+  HeaderEntry,
   HeaderIndexResult,
   JenkinsBranchStatus,
   JenkinsBranchTestReport,
@@ -76,6 +81,7 @@ export type SettingsState = {
   chatbotJenkinsToolsEnabled: boolean
   tempClonePath: string | null
   gitCloneSsh: boolean
+  svnPath: string | null
   jenkinsUrl: string | null
   jenkinsUser: string | null
   jenkinsDiscoveryFolder: string | null
@@ -128,6 +134,10 @@ const settings = {
     ipcRenderer.invoke('settings:set-git-clone-ssh', value),
   chooseTempDir: (): Promise<{ ok: true; path: string } | { ok: false; cancelled: true }> =>
     ipcRenderer.invoke('settings:choose-temp-dir'),
+  setSvnPath: (path: string | null): Promise<{ svnPath: string | null }> =>
+    ipcRenderer.invoke('settings:set-svn-path', path),
+  chooseSvnBinary: (): Promise<{ ok: true; path: string } | { ok: false; cancelled: true }> =>
+    ipcRenderer.invoke('settings:choose-svn-binary'),
   setJenkinsUrl: (url: string | null): Promise<SettingsState> =>
     ipcRenderer.invoke('settings:set-jenkins-url', url),
   setJenkinsUser: (user: string | null): Promise<SettingsState> =>
@@ -618,6 +628,57 @@ const gitExplorer = {
   }
 }
 
+export type SvnPatchProgress = { current: number; total: number; name: string }
+
+const svnExplorer = {
+  listRepos: (): Promise<SvnRepository[]> => ipcRenderer.invoke('svn:list-repos'),
+
+  listPaths: (args: {
+    svnUrl: string
+  }): Promise<{ ok: true; entries: SvnPathEntry[] } | { ok: false; error: string }> =>
+    ipcRenderer.invoke('svn:list-paths', args),
+
+  listLog: (args: {
+    svnUrl: string
+    limit?: number
+  }): Promise<{ ok: true; commits: SvnCommit[] } | { ok: false; error: string }> =>
+    ipcRenderer.invoke('svn:list-log', args),
+
+  checkoutAndIndex: (args: {
+    svnUrl: string
+    repoName: string
+  }): Promise<
+    | { ok: true; workDir: string; revision: number | null; headers: HeaderEntry[] }
+    | { ok: false; error: string }
+  > => ipcRenderer.invoke('svn:checkout-and-index', args),
+
+  generatePatch: (args: {
+    workDir: string
+    commentTargets: CommentTarget[]
+    commentHeader: boolean
+    commentBody: boolean
+    depth?: number
+  }): Promise<{ ok: true; result: SvnPatchResult } | { ok: false; error: string }> =>
+    ipcRenderer.invoke('svn:generate-patch', args),
+
+  cleanup: (args: { workDir: string }): Promise<void> => ipcRenderer.invoke('svn:cleanup', args),
+
+  savePatch: (args: {
+    patch: string
+    defaultName?: string
+  }): Promise<{ ok: true; path: string } | { ok: false; cancelled?: true; error?: string }> =>
+    ipcRenderer.invoke('svn:save-patch', args),
+
+  detectBinary: (): Promise<{ available: boolean; path: string; version: string | null }> =>
+    ipcRenderer.invoke('svn:detect-binary'),
+
+  onPatchProgress: (handler: (p: SvnPatchProgress) => void): (() => void) => {
+    const wrapped = (_e: unknown, payload: SvnPatchProgress): void => handler(payload)
+    ipcRenderer.on('svn:patch-progress', wrapped)
+    return () => ipcRenderer.removeListener('svn:patch-progress', wrapped)
+  }
+}
+
 export type CppProjectInfo = {
   path: string | null
   exists: boolean
@@ -861,6 +922,7 @@ const api = {
   testgen,
   commenterPr,
   gitExplorer,
+  svnExplorer,
   projectRoot,
   tuleapWrite,
   sprintBoard,

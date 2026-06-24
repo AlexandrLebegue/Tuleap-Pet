@@ -878,6 +878,15 @@ function Settings(): React.JSX.Element {
         <TempClonePathCard />
       </section>
 
+      {/* ── Section : SVN Explorer ─────────────────────────────────────── */}
+      <section className="space-y-4">
+        <div className="flex items-center gap-3">
+          <h3 className="text-base font-semibold">SVN Explorer</h3>
+          <div className="flex-1 h-px bg-border" />
+        </div>
+        <SvnBinaryCard />
+      </section>
+
       {/* ── Section : Jenkins ─────────────────────────────────────────── */}
       <section className="space-y-4">
         <div className="flex items-center gap-3">
@@ -897,6 +906,93 @@ function Settings(): React.JSX.Element {
         <ChatbotConfigCard />
       </section>
     </div>
+  )
+}
+
+function SvnBinaryCard(): React.JSX.Element {
+  const config = useSettings((s) => s.config)
+  const refresh = useSettings((s) => s.refresh)
+  const [draft, setDraft] = useState(config.svnPath ?? '')
+  const [detect, setDetect] = useState<{
+    available: boolean
+    path: string
+    version: string | null
+  } | null>(null)
+  const [detecting, setDetecting] = useState(false)
+
+  useEffect(() => {
+    setDraft(config.svnPath ?? '')
+  }, [config.svnPath])
+
+  const save = async (path: string | null): Promise<void> => {
+    await api.settings.setSvnPath(path)
+    await refresh()
+  }
+
+  const browse = async (): Promise<void> => {
+    const result = await api.settings.chooseSvnBinary()
+    if (result.ok) {
+      setDraft(result.path)
+      await save(result.path)
+    }
+  }
+
+  const runDetect = async (): Promise<void> => {
+    setDetecting(true)
+    try {
+      setDetect(await api.svnExplorer.detectBinary())
+    } finally {
+      setDetecting(false)
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Binaire SVN</CardTitle>
+        <CardDescription>
+          Le SVN Explorer utilise le client en ligne de commande <code>svn</code> (composant
+          optionnel de TortoiseSVN, dossier <code>bin</code>). Laissez vide pour utiliser le PATH ou
+          les emplacements d&apos;installation connus.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="space-y-2">
+          <Label>Chemin de svn.exe (optionnel)</Label>
+          <div className="flex gap-2">
+            <Input
+              placeholder="C:\\Program Files\\TortoiseSVN\\bin\\svn.exe"
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onBlur={() => void save(draft || null)}
+              spellCheck={false}
+              autoComplete="off"
+            />
+            <Button variant="secondary" onClick={() => void browse()}>
+              Parcourir…
+            </Button>
+          </div>
+        </div>
+        <div className="space-y-2 border-t pt-4">
+          <Button size="sm" variant="outline" onClick={() => void runDetect()} disabled={detecting}>
+            {detecting ? 'Détection…' : 'Tester la disponibilité de svn'}
+          </Button>
+          {detect && detect.available && (
+            <p className="text-xs text-green-600 dark:text-green-400">
+              svn {detect.version} détecté —{' '}
+              <code className="rounded bg-muted px-1 py-0.5">{detect.path}</code>
+            </p>
+          )}
+          {detect && !detect.available && (
+            <p className="text-xs text-yellow-600 dark:text-yellow-400">
+              svn introuvable (<code className="rounded bg-muted px-1 py-0.5">{detect.path}</code>).
+              Installez les « command line client tools » de TortoiseSVN ou renseignez le chemin
+              ci-dessus.
+            </p>
+          )}
+        </div>
+      </CardContent>
+    </Card>
   )
 }
 

@@ -75,6 +75,7 @@ const emptyConfig: SettingsState = {
   chatbotJenkinsToolsEnabled: true,
   tempClonePath: null,
   gitCloneSsh: true,
+  svnPath: null,
   jenkinsUrl: null,
   jenkinsUser: null,
   jenkinsDiscoveryFolder: null,

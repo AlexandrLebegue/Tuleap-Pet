@@ -83,6 +83,7 @@ export type SettingsState = {
   chatbotJenkinsToolsEnabled: boolean
   tempClonePath: string | null
   gitCloneSsh: boolean
+  svnPath: string | null
   jenkinsUrl: string | null
   jenkinsUser: string | null
   jenkinsDiscoveryFolder: string | null
@@ -120,6 +121,7 @@ function buildState(): SettingsState {
     chatbotJenkinsToolsEnabled: getChatbotJenkinsToolsEnabled(),
     tempClonePath: getTempClonePath(),
     gitCloneSsh: getGitCloneSsh(),
+    svnPath: config.svnPath,
     jenkinsUrl: config.jenkinsUrl,
     jenkinsUser: config.jenkinsUser,
     jenkinsDiscoveryFolder: getJenkinsDiscoveryFolder(),

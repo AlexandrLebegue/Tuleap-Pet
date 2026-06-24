@@ -11,6 +11,7 @@ import { registerCommenterPRHandlers } from './commenter-pr'
 import { registerCorrectorHandlers } from './corrector'
 import { registerTestGeneratorHandlers } from './test-generator'
 import { registerGitExplorerHandlers } from './git-explorer'
+import { registerSvnExplorerHandlers } from './svn-explorer'
 import { registerProjectRootHandlers } from './project-root'
 import { registerTuleapWriteHandlers } from './tuleap-write'
 import { registerSprintBoardHandlers } from './sprint-board'
@@ -38,6 +39,7 @@ export function registerIpcHandlers(): void {
   registerCorrectorHandlers()
   registerTestGeneratorHandlers()
   registerGitExplorerHandlers()
+  registerSvnExplorerHandlers()
   registerProjectRootHandlers()
   registerTuleapWriteHandlers()
   registerSprintBoardHandlers()

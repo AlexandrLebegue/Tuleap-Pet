@@ -26,6 +26,7 @@ const store = new Store<Schema>({
     chatbotJenkinsToolsEnabled: true,
     tempClonePath: null,
     gitCloneSsh: true,
+    svnPath: null,
     cppProjectRoot: null,
     jenkinsUrl: null,
     jenkinsUser: null,
@@ -80,6 +81,7 @@ export function getConfig(): AppConfig {
     chatbotJenkinsToolsEnabled: store.get('chatbotJenkinsToolsEnabled') ?? true,
     tempClonePath: store.get('tempClonePath') ?? null,
     gitCloneSsh: store.get('gitCloneSsh') ?? true,
+    svnPath: store.get('svnPath') ?? null,
     cppProjectRoot: store.get('cppProjectRoot') ?? null,
     jenkinsUrl: store.get('jenkinsUrl') ?? null,
     jenkinsUser: store.get('jenkinsUser') ?? null,
@@ -111,6 +113,14 @@ export function getGitCloneSsh(): boolean {
 
 export function setGitCloneSsh(value: boolean): void {
   store.set('gitCloneSsh', value)
+}
+
+export function getSvnPath(): string | null {
+  return store.get('svnPath') ?? null
+}
+
+export function setSvnPath(p: string | null): void {
+  store.set('svnPath', p && p.trim().length > 0 ? p.trim() : null)
 }
 
 export function getLocalDirectConnection(): boolean {

@@ -167,6 +167,31 @@ export const gitRepositorySchema = z
 
 export type GitRepositoryRaw = z.infer<typeof gitRepositorySchema>
 
+// ---- SVN repositories (Tuleap SVN plugin) ----
+
+export const svnRepositorySchema = z
+  .object({
+    id: z.number(),
+    name: z.string(),
+    description: z.string().optional().default(''),
+    // Tuleap versions differ on the checkout URL field name
+    svn_url: z.string().optional().default(''),
+    http_url: z.string().optional().default(''),
+    url: z.string().optional().default(''),
+    project: z
+      .object({
+        id: z.number().optional(),
+        label: z.string().optional(),
+        shortname: z.string().optional(),
+        uri: z.string().optional()
+      })
+      .passthrough()
+      .optional()
+  })
+  .passthrough()
+
+export type SvnRepositoryRaw = z.infer<typeof svnRepositorySchema>
+
 export const gitBranchSchema = z
   .object({
     name: z.string(),
