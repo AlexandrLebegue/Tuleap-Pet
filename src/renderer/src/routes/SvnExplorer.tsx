@@ -527,7 +527,9 @@ export default function SvnExplorer(): React.JSX.Element {
             {cmp.stage === 'error' && (
               <p className="text-sm text-destructive whitespace-pre-wrap">{cmp.error}</p>
             )}
-            {cmp.stage === 'result' && cmp.result && <CompareResultView result={cmp.result} />}
+            {cmp.stage === 'result' && cmp.result && (
+              <CompareResultView result={cmp.result} vcs="svn" />
+            )}
 
             <div className="flex justify-end gap-2 border-t pt-2">
               <Button

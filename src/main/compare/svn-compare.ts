@@ -1,7 +1,7 @@
 import { execSvn, parseSvnLog, svnList, resolveSvnBinary } from '../svn/svn-utils'
 import { buildSvnAuthArgs } from '../svn/svn-credentials'
 import { streamDiff } from './diff-stream'
-import { summarizeBranchDiff } from './feature-summary'
+import { summarizeQuick } from './feature-summary'
 import type { BranchCompareResult, BranchCompareCommit } from '@shared/types'
 
 const DISPLAY_DIFF_BUDGET = 200_000
@@ -57,12 +57,14 @@ export async function compareSvnPaths(args: {
   const authArgs = await buildSvnAuthArgs(compareUrl)
 
   // Stream the diff so a large branch divergence never overflows a fixed buffer.
-  // Stats are exact (computed over the full stream); only the display slice is capped.
-  const { diff, truncated, stats } = await streamDiff(
-    resolveSvnBinary(),
-    ['--non-interactive', 'diff', '--internal-diff', ...authArgs, baseUrl, compareUrl],
-    DISPLAY_DIFF_BUDGET
-  )
+  // Stats are exact (computed over the full stream); the display slice is capped
+  // and a denoised source/test sample is built for the AI summary.
+  const { diff, truncated, stats, sourceSample, sourceSampleTruncated, breakdown } =
+    await streamDiff(
+      resolveSvnBinary(),
+      ['--non-interactive', 'diff', '--internal-diff', ...authArgs, baseUrl, compareUrl],
+      { displayBudget: DISPLAY_DIFF_BUDGET }
+    )
 
   // The branch's own revisions (stops at the `svn copy` that created it).
   const logXml = await execSvn([
@@ -80,12 +82,16 @@ export async function compareSvnPaths(args: {
     authorName: c.authorName
   }))
 
-  const summary = await summarizeBranchDiff({
+  const statsObj = { files: stats.files, additions: stats.additions, deletions: stats.deletions }
+  const summary = await summarizeQuick({
     vcs: 'svn',
     base: baseLabel,
     compare: compareLabel,
-    diff,
-    commits
+    stats: statsObj,
+    breakdown,
+    commits,
+    sourceSample,
+    sourceSampleTruncated
   })
 
   return {
@@ -95,7 +101,10 @@ export async function compareSvnPaths(args: {
     diffTruncated: truncated,
     commits,
     filesChanged: stats.filesChanged,
-    stats: { files: stats.files, additions: stats.additions, deletions: stats.deletions },
-    summary
+    stats: statsObj,
+    summary,
+    breakdown,
+    sourceSample,
+    sourceSampleTruncated
   }
 }

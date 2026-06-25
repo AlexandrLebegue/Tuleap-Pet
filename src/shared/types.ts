@@ -129,6 +129,16 @@ export type BranchCompareCommit = {
   authorName: string
 }
 
+/** Counts of changed files per category + the most-touched directories. */
+export type DiffFileBreakdown = {
+  source: number
+  test: number
+  config: number
+  generated: number
+  other: number
+  topDirs: { dir: string; files: number }[]
+}
+
 /** Difference between a base branch/path and a compare branch/path + AI summary. */
 export type BranchCompareResult = {
   /** Base ref/path label (what we compare against). */
@@ -144,8 +154,25 @@ export type BranchCompareResult = {
   /** Relative paths of files that differ. */
   filesChanged: string[]
   stats: { files: number; additions: number; deletions: number }
-  /** AI markdown summary of the differences and new features implemented. */
+  /** Quick AI markdown summary (robust, never empty — falls back to metadata). */
   summary: string
+  /** File-category breakdown + most-touched directories. */
+  breakdown: DiffFileBreakdown
+  /** Denoised source/test diff sample, fed to the on-demand detailed summary. */
+  sourceSample: string
+  sourceSampleTruncated: boolean
+}
+
+/** Payload to compute the detailed (map-reduce) summary on demand. */
+export type DetailedSummaryRequest = {
+  vcs: 'git' | 'svn'
+  base: string
+  compare: string
+  stats: { files: number; additions: number; deletions: number }
+  breakdown: DiffFileBreakdown
+  commits: BranchCompareCommit[]
+  sourceSample: string
+  sourceSampleTruncated: boolean
 }
 
 export type CommenterPRProgress =

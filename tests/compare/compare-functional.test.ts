@@ -86,6 +86,32 @@ dGit('git compare (real binary)', () => {
     expect(r.diff).toContain('int sub(int a,int b)')
     expect(r.stats.files).toBe(2)
   })
+
+  it('streamDiff denoises: generated files excluded from the source sample', async () => {
+    // Add a noisy generated file + a real source file on a new branch.
+    git(['checkout', '-q', 'main'], work)
+    git(['checkout', '-q', '-b', 'noisy'], work)
+    // Generated MSBuild noise (like the 16M-line .vcxproj.filters case).
+    writeFileSync(
+      join(work, 'App.vcxproj.filters'),
+      '<Project>\n' + '  <X/>\n'.repeat(500) + '</Project>\n'
+    )
+    writeFileSync(join(work, 'feature.c'), 'int brand_new_feature(void){ return 7; }\n')
+    git(['add', '.'], work)
+    git(['commit', '-q', '-m', 'feat + generated'], work)
+
+    const r = await streamDiff('git', ['-C', work, 'diff', 'main...noisy'], {
+      displayBudget: 1_000_000,
+      sampleBudget: 120_000,
+      perFileBudget: 4_000
+    })
+    // Source sample contains the real code, NOT the generated XML.
+    expect(r.sourceSample).toContain('brand_new_feature')
+    expect(r.sourceSample).not.toContain('<Project>')
+    // Breakdown counts both files in the right buckets.
+    expect(r.breakdown.source).toBe(1)
+    expect(r.breakdown.generated).toBe(1)
+  })
 })
 
 dSvn('svn compare (real binary)', () => {

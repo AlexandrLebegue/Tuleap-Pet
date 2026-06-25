@@ -21,6 +21,7 @@ import type {
   SvnCommit,
   SvnPatchResult,
   BranchCompareResult,
+  DetailedSummaryRequest,
   HeaderEntry,
   HeaderIndexResult,
   JenkinsBranchStatus,
@@ -702,6 +703,13 @@ const svnExplorer = {
   }
 }
 
+const compare = {
+  detailedSummary: (
+    req: DetailedSummaryRequest
+  ): Promise<{ ok: true; summary: string } | { ok: false; error: string }> =>
+    ipcRenderer.invoke('compare:detailed-summary', req)
+}
+
 export type CppProjectInfo = {
   path: string | null
   exists: boolean
@@ -946,6 +954,7 @@ const api = {
   commenterPr,
   gitExplorer,
   svnExplorer,
+  compare,
   projectRoot,
   tuleapWrite,
   sprintBoard,

@@ -12,6 +12,7 @@ import { registerCorrectorHandlers } from './corrector'
 import { registerTestGeneratorHandlers } from './test-generator'
 import { registerGitExplorerHandlers } from './git-explorer'
 import { registerSvnExplorerHandlers } from './svn-explorer'
+import { registerCompareHandlers } from './compare'
 import { registerProjectRootHandlers } from './project-root'
 import { registerTuleapWriteHandlers } from './tuleap-write'
 import { registerSprintBoardHandlers } from './sprint-board'
@@ -40,6 +41,7 @@ export function registerIpcHandlers(): void {
   registerTestGeneratorHandlers()
   registerGitExplorerHandlers()
   registerSvnExplorerHandlers()
+  registerCompareHandlers()
   registerProjectRootHandlers()
   registerTuleapWriteHandlers()
   registerSprintBoardHandlers()

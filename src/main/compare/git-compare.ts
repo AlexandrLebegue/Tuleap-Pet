@@ -8,7 +8,7 @@ import { execGit } from '../commenter/git-utils'
 import { injectGitCredentials, explainGitAuthFailure } from '../jobs/git-credentials'
 import { parseUnifiedDiffStats } from './diff-utils'
 import { streamDiff } from './diff-stream'
-import { summarizeBranchDiff } from './feature-summary'
+import { summarizeQuick } from './feature-summary'
 import { debugError } from '../logger'
 import type { BranchCompareResult, BranchCompareCommit } from '@shared/types'
 
@@ -55,10 +55,10 @@ export async function compareGitBranches(args: {
     const diffRange = `${baseRef}...${compareRef}`
     // Stream the textual diff so a huge branch divergence never overflows a
     // fixed buffer; numstat (small) stays the authoritative source for stats.
-    const { diff, truncated } = await streamDiff(
+    const { diff, truncated, sourceSample, sourceSampleTruncated, breakdown } = await streamDiff(
       'git',
       ['-C', dir, 'diff', diffRange],
-      DISPLAY_DIFF_BUDGET
+      { displayBudget: DISPLAY_DIFF_BUDGET }
     )
     const numstat = await execGit(['diff', '--numstat', diffRange], dir)
     const logRaw = await execGit(
@@ -68,13 +68,17 @@ export async function compareGitBranches(args: {
 
     const stats = parseNumstat(numstat)
     const commits = parseGitLog(logRaw)
+    const statsObj = { files: stats.files, additions: stats.additions, deletions: stats.deletions }
 
-    const summary = await summarizeBranchDiff({
+    const summary = await summarizeQuick({
       vcs: 'git',
       base,
       compare,
-      diff,
-      commits
+      stats: statsObj,
+      breakdown,
+      commits,
+      sourceSample,
+      sourceSampleTruncated
     })
 
     return {
@@ -84,8 +88,11 @@ export async function compareGitBranches(args: {
       diffTruncated: truncated,
       commits,
       filesChanged: stats.filesChanged,
-      stats: { files: stats.files, additions: stats.additions, deletions: stats.deletions },
-      summary
+      stats: statsObj,
+      summary,
+      breakdown,
+      sourceSample,
+      sourceSampleTruncated
     }
   } finally {
     try {
