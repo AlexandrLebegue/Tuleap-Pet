@@ -6,7 +6,8 @@ import { randomBytes } from 'node:crypto'
 import { getConfig } from '../store/config'
 import { execGit } from '../commenter/git-utils'
 import { injectGitCredentials, explainGitAuthFailure } from '../jobs/git-credentials'
-import { parseUnifiedDiffStats, truncateDiff } from './diff-utils'
+import { parseUnifiedDiffStats } from './diff-utils'
+import { streamDiff } from './diff-stream'
 import { summarizeBranchDiff } from './feature-summary'
 import { debugError } from '../logger'
 import type { BranchCompareResult, BranchCompareCommit } from '@shared/types'
@@ -52,7 +53,13 @@ export async function compareGitBranches(args: {
     const compareRef = await resolveRef(dir, compare)
 
     const diffRange = `${baseRef}...${compareRef}`
-    const fullDiff = await execGit(['diff', diffRange], dir)
+    // Stream the textual diff so a huge branch divergence never overflows a
+    // fixed buffer; numstat (small) stays the authoritative source for stats.
+    const { diff, truncated } = await streamDiff(
+      'git',
+      ['-C', dir, 'diff', diffRange],
+      DISPLAY_DIFF_BUDGET
+    )
     const numstat = await execGit(['diff', '--numstat', diffRange], dir)
     const logRaw = await execGit(
       ['log', `${baseRef}..${compareRef}`, `--pretty=format:%H${UNIT_SEP}%s${UNIT_SEP}%an`],
@@ -61,13 +68,12 @@ export async function compareGitBranches(args: {
 
     const stats = parseNumstat(numstat)
     const commits = parseGitLog(logRaw)
-    const { text: diff, truncated } = truncateDiff(fullDiff, DISPLAY_DIFF_BUDGET)
 
     const summary = await summarizeBranchDiff({
       vcs: 'git',
       base,
       compare,
-      diff: fullDiff,
+      diff,
       commits
     })
 

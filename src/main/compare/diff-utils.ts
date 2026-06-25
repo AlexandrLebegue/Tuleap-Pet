@@ -11,15 +11,18 @@ export type DiffStats = {
 }
 
 /**
- * Count files / added / removed lines from a unified diff. Recognises both git
- * (`diff --git a/x b/x`) and svn (`Index: x`) file headers, and ignores the
- * `+++`/`---` hunk file markers when counting added/removed content lines.
+ * Incremental stats accumulator: feed it one diff line at a time. Used by both
+ * {@link parseUnifiedDiffStats} (whole-string) and the streaming diff reader, so
+ * the line-classification logic lives in exactly one place.
  */
-export function parseUnifiedDiffStats(diff: string): DiffStats {
+export function createDiffStatsAccumulator(): {
+  push: (line: string) => void
+  result: () => DiffStats
+} {
   const files: string[] = []
+  const seen = new Set<string>()
   let additions = 0
   let deletions = 0
-  const seen = new Set<string>()
 
   const addFile = (name: string): void => {
     const f = name.trim()
@@ -29,25 +32,39 @@ export function parseUnifiedDiffStats(diff: string): DiffStats {
     }
   }
 
-  for (const line of diff.split('\n')) {
-    // git file header: "diff --git a/path b/path"
-    const git = /^diff --git a\/(.+?) b\/(.+)$/.exec(line)
-    if (git) {
-      addFile(git[2]!)
-      continue
+  return {
+    push(line: string): void {
+      // git file header: "diff --git a/path b/path"
+      const git = /^diff --git a\/(.+?) b\/(.+)$/.exec(line)
+      if (git) {
+        addFile(git[2]!)
+        return
+      }
+      // svn file header: "Index: path"
+      const svn = /^Index:\s+(.+)$/.exec(line)
+      if (svn) {
+        addFile(svn[1]!)
+        return
+      }
+      // Content lines (but not the +++/--- file markers).
+      if (line.startsWith('+') && !line.startsWith('+++')) additions++
+      else if (line.startsWith('-') && !line.startsWith('---')) deletions++
+    },
+    result(): DiffStats {
+      return { files: files.length, additions, deletions, filesChanged: files }
     }
-    // svn file header: "Index: path"
-    const svn = /^Index:\s+(.+)$/.exec(line)
-    if (svn) {
-      addFile(svn[1]!)
-      continue
-    }
-    // Content lines (but not the +++/--- file markers).
-    if (line.startsWith('+') && !line.startsWith('+++')) additions++
-    else if (line.startsWith('-') && !line.startsWith('---')) deletions++
   }
+}
 
-  return { files: files.length, additions, deletions, filesChanged: files }
+/**
+ * Count files / added / removed lines from a unified diff. Recognises both git
+ * (`diff --git a/x b/x`) and svn (`Index: x`) file headers, and ignores the
+ * `+++`/`---` hunk file markers when counting added/removed content lines.
+ */
+export function parseUnifiedDiffStats(diff: string): DiffStats {
+  const acc = createDiffStatsAccumulator()
+  for (const line of diff.split('\n')) acc.push(line)
+  return acc.result()
 }
 
 /**

@@ -1,6 +1,6 @@
-import { execSvn, parseSvnLog, svnList } from '../svn/svn-utils'
+import { execSvn, parseSvnLog, svnList, resolveSvnBinary } from '../svn/svn-utils'
 import { buildSvnAuthArgs } from '../svn/svn-credentials'
-import { parseUnifiedDiffStats, truncateDiff } from './diff-utils'
+import { streamDiff } from './diff-stream'
 import { summarizeBranchDiff } from './feature-summary'
 import type { BranchCompareResult, BranchCompareCommit } from '@shared/types'
 
@@ -56,7 +56,13 @@ export async function compareSvnPaths(args: {
 
   const authArgs = await buildSvnAuthArgs(compareUrl)
 
-  const fullDiff = await execSvn(['diff', '--internal-diff', ...authArgs, baseUrl, compareUrl])
+  // Stream the diff so a large branch divergence never overflows a fixed buffer.
+  // Stats are exact (computed over the full stream); only the display slice is capped.
+  const { diff, truncated, stats } = await streamDiff(
+    resolveSvnBinary(),
+    ['--non-interactive', 'diff', '--internal-diff', ...authArgs, baseUrl, compareUrl],
+    DISPLAY_DIFF_BUDGET
+  )
 
   // The branch's own revisions (stops at the `svn copy` that created it).
   const logXml = await execSvn([
@@ -74,14 +80,11 @@ export async function compareSvnPaths(args: {
     authorName: c.authorName
   }))
 
-  const stats = parseUnifiedDiffStats(fullDiff)
-  const { text: diff, truncated } = truncateDiff(fullDiff, DISPLAY_DIFF_BUDGET)
-
   const summary = await summarizeBranchDiff({
     vcs: 'svn',
     base: baseLabel,
     compare: compareLabel,
-    diff: fullDiff,
+    diff,
     commits
   })
 

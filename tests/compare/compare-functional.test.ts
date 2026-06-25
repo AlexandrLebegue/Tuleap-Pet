@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { parseUnifiedDiffStats } from '../../src/main/compare/diff-utils'
+import { streamDiff } from '../../src/main/compare/diff-stream'
 import { parseSvnLog } from '../../src/main/svn/svn-xml'
 
 /**
@@ -66,6 +67,24 @@ dGit('git compare (real binary)', () => {
     const numstat = git(['diff', '--numstat', 'main...feature'], work).trim()
     const lines = numstat.split('\n').filter(Boolean)
     expect(lines.length).toBe(2) // two files changed
+  })
+
+  it('streamDiff never overflows a buffer and keeps exact stats when truncated', async () => {
+    // A tiny display budget forces truncation; stats must still be exact (computed
+    // over the FULL stream), which is the fix for "stdout maxBuffer length exceeded".
+    const r = await streamDiff('git', ['-C', work, 'diff', 'main...feature'], 40)
+    expect(r.truncated).toBe(true)
+    expect(r.diff.length).toBeLessThanOrEqual(40)
+    expect(r.stats.filesChanged.sort()).toEqual(['bar.c', 'foo.c'])
+    expect(r.stats.additions).toBe(2)
+    expect(r.stats.deletions).toBe(0)
+  })
+
+  it('streamDiff returns the full diff when under budget', async () => {
+    const r = await streamDiff('git', ['-C', work, 'diff', 'main...feature'], 1_000_000)
+    expect(r.truncated).toBe(false)
+    expect(r.diff).toContain('int sub(int a,int b)')
+    expect(r.stats.files).toBe(2)
   })
 })
 
