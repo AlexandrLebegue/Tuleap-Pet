@@ -5,6 +5,7 @@ import { useSettings } from '@renderer/stores/settings.store'
 import { Button } from '@renderer/components/ui/button'
 import HeaderFunctionSelector, { fnKey } from '@renderer/components/HeaderFunctionSelector'
 import CompareResultView from '@renderer/components/CompareResultView'
+import SvnPathPicker from '@renderer/components/SvnPathPicker'
 import type {
   SvnRepository,
   SvnPathEntry,
@@ -73,10 +74,10 @@ export default function SvnExplorer(): React.JSX.Element {
 
   // Compare modal
   const [cmp, setCmp] = useState<{
+    baseUrl: string
+    baseLabel: string
     compareUrl: string
     compareLabel: string
-    baseUrl: string
-    branchPaths: { label: string; url: string }[]
     stage: 'select' | 'loading' | 'result' | 'error'
     result: BranchCompareResult | null
     error: string | null
@@ -267,22 +268,26 @@ export default function SvnExplorer(): React.JSX.Element {
     async (compareUrl: string, compareLabel: string) => {
       if (!selectedRepo) return
       setCmp({
+        baseUrl: '',
+        baseLabel: '',
         compareUrl,
         compareLabel,
-        baseUrl: '',
-        branchPaths: [],
         stage: 'select',
         result: null,
         error: null
       })
+      // Default the base to trunk (or the first branch-like path) for convenience;
+      // the user can still navigate to any sub-folder/sub-branch in the picker.
       const res = await api.svnExplorer.listBranchPaths({
         repoUrl: selectedRepo.svnUrl.replace(/\/+$/, '')
       })
       const paths = res.ok ? res.paths : []
-      const preferred =
+      const def =
         paths.find((p) => p.label === 'trunk' && p.url !== compareUrl) ??
         paths.find((p) => p.url !== compareUrl)
-      setCmp((p) => (p ? { ...p, branchPaths: paths, baseUrl: preferred?.url ?? '' } : p))
+      if (def) {
+        setCmp((p) => (p && !p.baseUrl ? { ...p, baseUrl: def.url, baseLabel: def.label } : p))
+      }
     },
     [selectedRepo]
   )
@@ -295,12 +300,11 @@ export default function SvnExplorer(): React.JSX.Element {
       )
       return
     }
-    const baseLabel = cmp.branchPaths.find((p) => p.url === cmp.baseUrl)?.label ?? cmp.baseUrl
     setCmp((p) => (p ? { ...p, stage: 'loading', error: null } : p))
     const res = await api.svnExplorer.comparePaths({
       baseUrl: cmp.baseUrl,
       compareUrl: cmp.compareUrl,
-      baseLabel,
+      baseLabel: cmp.baseLabel || cmp.baseUrl,
       compareLabel: cmp.compareLabel
     })
     if (res.ok) setCmp((p) => (p ? { ...p, stage: 'result', result: res.result } : p))
@@ -489,35 +493,67 @@ export default function SvnExplorer(): React.JSX.Element {
               </p>
             </div>
 
-            <div className="flex flex-wrap items-end gap-3 rounded-md border bg-muted/30 px-3 py-2">
-              <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-                Chemin de base
-                <select
-                  className="rounded-md border border-input bg-background px-2 py-1 text-sm"
-                  value={cmp.baseUrl}
-                  onChange={(e) => setCmp((p) => (p ? { ...p, baseUrl: e.target.value } : p))}
-                  disabled={cmp.stage === 'loading' || cmp.branchPaths.length === 0}
-                >
-                  {cmp.branchPaths.length === 0 && <option value="">Chargement…</option>}
-                  {cmp.branchPaths.map((bp) => (
-                    <option key={bp.url} value={bp.url}>
-                      {bp.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <span className="pb-1.5 text-muted-foreground">→</span>
-              <span className="pb-1.5 text-sm">
-                <code className="rounded bg-muted px-1.5 py-0.5 text-xs">{cmp.compareLabel}</code>
-              </span>
-              <Button
-                className="ml-auto"
-                onClick={() => void runCompare()}
-                disabled={cmp.stage === 'loading' || !cmp.baseUrl || cmp.baseUrl === cmp.compareUrl}
-              >
-                {cmp.stage === 'loading' ? 'Comparaison…' : 'Comparer'}
-              </Button>
-            </div>
+            {selectedRepo && cmp.stage !== 'result' && (
+              <div className="space-y-3 rounded-md border bg-muted/30 p-3">
+                <p className="text-xs text-muted-foreground">
+                  Naviguez dans les dossiers et sélectionnez n&apos;importe quel chemin (trunk,
+                  branche, sous-branche ou sous-dossier) pour chaque côté.
+                </p>
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium">
+                      Base :{' '}
+                      <code className="rounded bg-muted px-1 text-[11px]">
+                        {cmp.baseLabel || '— à choisir —'}
+                      </code>
+                    </p>
+                    <SvnPathPicker
+                      repoUrl={selectedRepo.svnUrl}
+                      repoName={selectedRepo.name}
+                      selectedUrl={cmp.baseUrl}
+                      onSelect={(url, label) =>
+                        setCmp((p) => (p ? { ...p, baseUrl: url, baseLabel: label } : p))
+                      }
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium">
+                      Comparé :{' '}
+                      <code className="rounded bg-muted px-1 text-[11px]">
+                        {cmp.compareLabel || '— à choisir —'}
+                      </code>
+                    </p>
+                    <SvnPathPicker
+                      repoUrl={selectedRepo.svnUrl}
+                      repoName={selectedRepo.name}
+                      selectedUrl={cmp.compareUrl}
+                      highlight="amber"
+                      onSelect={(url, label) =>
+                        setCmp((p) => (p ? { ...p, compareUrl: url, compareLabel: label } : p))
+                      }
+                    />
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
+                    {cmp.baseLabel || '?'}
+                  </code>
+                  <span className="text-muted-foreground">→</span>
+                  <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
+                    {cmp.compareLabel || '?'}
+                  </code>
+                  <Button
+                    className="ml-auto"
+                    onClick={() => void runCompare()}
+                    disabled={
+                      cmp.stage === 'loading' || !cmp.baseUrl || cmp.baseUrl === cmp.compareUrl
+                    }
+                  >
+                    {cmp.stage === 'loading' ? 'Comparaison…' : 'Comparer'}
+                  </Button>
+                </div>
+              </div>
+            )}
 
             {cmp.stage === 'loading' && (
               <p className="py-8 text-center text-sm text-muted-foreground">
