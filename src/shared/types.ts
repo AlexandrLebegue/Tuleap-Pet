@@ -142,6 +142,12 @@ export type SummaryAttempt = {
   cleanChars?: number
   /** Human-readable explanation (error message, "think-only", …). */
   detail?: string
+  /** System prompt sent to the model (truncated for display). */
+  system?: string
+  /** User prompt sent to the model (truncated for display). */
+  prompt?: string
+  /** Raw model response before sanitisation (truncated for display). */
+  rawResponse?: string
 }
 
 /** Why the AI summary succeeded or fell back — surfaced to the user for debugging. */

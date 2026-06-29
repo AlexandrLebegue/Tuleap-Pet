@@ -53,6 +53,11 @@ function generateWithTimeout(
 
 const NO_THINK_HINT = ' /no_think'
 
+/** Truncate long text for the Débug IA panel, keeping it self-describing. */
+function clip(s: string, n: number): string {
+  return s.length > n ? `${s.slice(0, n)}\n… (${s.length - n} caractères tronqués)` : s
+}
+
 function newDiagnostics(): SummaryDiagnostics {
   const provider = getLlmProvider()
   return {
@@ -93,6 +98,7 @@ async function robustGenerate(
         ? user
         : `${user}\n\n[IMPORTANT] Réponds directement en Markdown, en français. N'émets AUCUN bloc <think> ni préambule. Commence par un titre de section.`) +
       NO_THINK_HINT
+    const promptInfo = { system: clip(system, 8_000), prompt: clip(userMsg, 24_000) }
     try {
       const res = await generateWithTimeout(
         provider,
@@ -114,7 +120,9 @@ async function robustGenerate(
         outcome: 'ok',
         finishReason: res.finishReason,
         rawChars: res.text.length,
-        cleanChars: text.length
+        cleanChars: text.length,
+        ...promptInfo,
+        rawResponse: clip(res.text, 8_000)
       }
       if (text.length >= MIN_USEFUL) {
         diag.attempts.push(base)
@@ -135,7 +143,7 @@ async function robustGenerate(
     } catch (err) {
       const detail = err instanceof Error ? err.message : String(err)
       debugError('[compare] %s generate failed (attempt %d): %s', phase, attempt, detail)
-      diag.attempts.push({ phase, outcome: 'error', detail })
+      diag.attempts.push({ phase, outcome: 'error', detail, ...promptInfo })
     }
   }
   return ''

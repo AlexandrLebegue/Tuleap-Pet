@@ -3,7 +3,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { api } from '@renderer/lib/api'
 import { Button } from '@renderer/components/ui/button'
 import DiffExplorer from '@renderer/components/DiffExplorer'
-import type { BranchCompareResult, SummaryDiagnostics } from '@shared/types'
+import type { BranchCompareResult, SummaryDiagnostics, SummaryAttempt } from '@shared/types'
 
 /** Render inline `**bold**` and `` `code` `` spans safely (no HTML injection). */
 function inline(text: string): React.ReactNode[] {
@@ -102,20 +102,82 @@ function diagHint(d: SummaryDiagnostics): string | null {
   return 'Synthèse IA indisponible — résumé généré à partir des métadonnées.'
 }
 
+function PromptBlock({ label, text }: { label: string; text: string }): React.JSX.Element {
+  return (
+    <div className="mt-1">
+      <div className="flex items-center justify-between">
+        <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+          {label}
+        </span>
+        <button
+          className="text-[10px] text-primary hover:underline"
+          onClick={() => void navigator.clipboard.writeText(text)}
+        >
+          Copier
+        </button>
+      </div>
+      <pre className="mt-0.5 max-h-60 overflow-auto whitespace-pre-wrap break-words rounded bg-muted p-1.5 text-[10px] leading-snug">
+        {text}
+      </pre>
+    </div>
+  )
+}
+
+function AttemptRow({ a, index }: { a: SummaryAttempt; index: number }): React.JSX.Element {
+  const [open, setOpen] = useState(false)
+  const hasPrompt = !!(a.system || a.prompt || a.rawResponse)
+  return (
+    <div className="rounded border bg-background/60 px-1.5 py-1">
+      <div className="flex items-center gap-1">
+        <span className="text-muted-foreground">#{index + 1}</span>
+        <span
+          className={
+            a.outcome === 'ok'
+              ? 'text-green-600 dark:text-green-400'
+              : 'text-red-600 dark:text-red-400'
+          }
+        >
+          {a.phase} · {a.outcome}
+        </span>
+        {a.finishReason && <span className="text-muted-foreground">· finish={a.finishReason}</span>}
+        {(a.rawChars != null || a.cleanChars != null) && (
+          <span className="text-muted-foreground">
+            · brut={a.rawChars ?? '?'}→net={a.cleanChars ?? '?'} car.
+          </span>
+        )}
+        {hasPrompt && (
+          <button
+            className="ml-auto text-[10px] text-primary hover:underline"
+            onClick={() => setOpen((o) => !o)}
+          >
+            {open ? '▾ masquer' : '📋 prompt / réponse'}
+          </button>
+        )}
+      </div>
+      {a.detail && <p className="text-muted-foreground">{a.detail}</p>}
+      {open && (
+        <div>
+          {a.system && <PromptBlock label="System" text={a.system} />}
+          {a.prompt && <PromptBlock label="Prompt envoyé" text={a.prompt} />}
+          {a.rawResponse && <PromptBlock label="Réponse brute du modèle" text={a.rawResponse} />}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function DiagnosticsPanel({ diag }: { diag: SummaryDiagnostics }): React.JSX.Element | null {
   const [open, setOpen] = useState(false)
   const hint = diagHint(diag)
-  const hasIssue = diag.usedFallback || diag.attempts.some((a) => a.outcome !== 'ok')
-  if (!hasIssue) return null
 
   return (
-    <div className="mt-2 rounded-md border border-yellow-500/40 bg-yellow-500/5 p-2">
+    <div className="mt-2 rounded-md border border-muted bg-muted/20 p-2">
       {hint && <p className="text-xs text-yellow-700 dark:text-yellow-400">⚠️ {hint}</p>}
       <button
-        className="mt-1 text-[11px] font-medium text-muted-foreground hover:text-foreground"
+        className="mt-0.5 text-[11px] font-medium text-muted-foreground hover:text-foreground"
         onClick={() => setOpen((o) => !o)}
       >
-        {open ? '▾' : '▸'} 🐞 Débug IA ({diag.attempts.length} tentative
+        {open ? '▾' : '▸'} 🐞 Débug IA — prompt &amp; réponse ({diag.attempts.length} tentative
         {diag.attempts.length > 1 ? 's' : ''})
       </button>
       {open && (
@@ -125,30 +187,10 @@ function DiagnosticsPanel({ diag }: { diag: SummaryDiagnostics }): React.JSX.Ele
             · Modèle : <code className="rounded bg-muted px-1">{diag.model ?? '—'}</code>
           </p>
           {diag.attempts.length === 0 && (
-            <p className="text-muted-foreground">Aucun appel effectué.</p>
+            <p className="text-muted-foreground">Aucun appel effectué (aucun fournisseur LLM ?).</p>
           )}
           {diag.attempts.map((a, i) => (
-            <div key={i} className="rounded border bg-background/60 px-1.5 py-1">
-              <span
-                className={
-                  a.outcome === 'ok'
-                    ? 'text-green-600 dark:text-green-400'
-                    : 'text-red-600 dark:text-red-400'
-                }
-              >
-                {a.phase} · {a.outcome}
-              </span>
-              {a.finishReason && (
-                <span className="text-muted-foreground"> · finish={a.finishReason}</span>
-              )}
-              {(a.rawChars != null || a.cleanChars != null) && (
-                <span className="text-muted-foreground">
-                  {' '}
-                  · brut={a.rawChars ?? '?'}→net={a.cleanChars ?? '?'} car.
-                </span>
-              )}
-              {a.detail && <p className="text-muted-foreground">{a.detail}</p>}
-            </div>
+            <AttemptRow key={i} a={a} index={i} />
           ))}
         </div>
       )}
