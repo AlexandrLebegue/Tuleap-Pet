@@ -22,6 +22,7 @@ import type {
   SvnPatchResult,
   BranchCompareResult,
   DetailedSummaryRequest,
+  SummaryDiagnostics,
   HeaderEntry,
   HeaderIndexResult,
   JenkinsBranchStatus,
@@ -706,8 +707,9 @@ const svnExplorer = {
 const compare = {
   detailedSummary: (
     req: DetailedSummaryRequest
-  ): Promise<{ ok: true; summary: string } | { ok: false; error: string }> =>
-    ipcRenderer.invoke('compare:detailed-summary', req)
+  ): Promise<
+    { ok: true; summary: string; diagnostics: SummaryDiagnostics } | { ok: false; error: string }
+  > => ipcRenderer.invoke('compare:detailed-summary', req)
 }
 
 export type CppProjectInfo = {

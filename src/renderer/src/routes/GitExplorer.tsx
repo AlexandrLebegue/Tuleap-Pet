@@ -905,58 +905,60 @@ export default function GitExplorer(): React.JSX.Element {
               </p>
             </div>
 
-            <div className="flex flex-wrap items-end gap-3 rounded-md border bg-muted/30 px-3 py-2">
-              <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-                Branche de base
-                <select
-                  className="rounded-md border border-input bg-background px-2 py-1 text-sm"
-                  value={cmp.base}
-                  onChange={(e) => setCmp((p) => (p ? { ...p, base: e.target.value } : p))}
-                  disabled={cmp.stage === 'loading'}
+            <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pr-1">
+              <div className="flex flex-wrap items-end gap-3 rounded-md border bg-muted/30 px-3 py-2">
+                <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+                  Branche de base
+                  <select
+                    className="rounded-md border border-input bg-background px-2 py-1 text-sm"
+                    value={cmp.base}
+                    onChange={(e) => setCmp((p) => (p ? { ...p, base: e.target.value } : p))}
+                    disabled={cmp.stage === 'loading'}
+                  >
+                    {branches.map((b) => (
+                      <option key={b.name} value={b.name}>
+                        {b.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <span className="pb-1.5 text-muted-foreground">→</span>
+                <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+                  Branche à comparer
+                  <select
+                    className="rounded-md border border-input bg-background px-2 py-1 text-sm"
+                    value={cmp.compare}
+                    onChange={(e) => setCmp((p) => (p ? { ...p, compare: e.target.value } : p))}
+                    disabled={cmp.stage === 'loading'}
+                  >
+                    {branches.map((b) => (
+                      <option key={b.name} value={b.name}>
+                        {b.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <Button
+                  className="ml-auto"
+                  onClick={() => void runCompare()}
+                  disabled={cmp.stage === 'loading' || cmp.base === cmp.compare}
                 >
-                  {branches.map((b) => (
-                    <option key={b.name} value={b.name}>
-                      {b.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <span className="pb-1.5 text-muted-foreground">→</span>
-              <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-                Branche à comparer
-                <select
-                  className="rounded-md border border-input bg-background px-2 py-1 text-sm"
-                  value={cmp.compare}
-                  onChange={(e) => setCmp((p) => (p ? { ...p, compare: e.target.value } : p))}
-                  disabled={cmp.stage === 'loading'}
-                >
-                  {branches.map((b) => (
-                    <option key={b.name} value={b.name}>
-                      {b.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <Button
-                className="ml-auto"
-                onClick={() => void runCompare()}
-                disabled={cmp.stage === 'loading' || cmp.base === cmp.compare}
-              >
-                {cmp.stage === 'loading' ? 'Comparaison…' : 'Comparer'}
-              </Button>
-            </div>
+                  {cmp.stage === 'loading' ? 'Comparaison…' : 'Comparer'}
+                </Button>
+              </div>
 
-            {cmp.stage === 'loading' && (
-              <p className="py-8 text-center text-sm text-muted-foreground">
-                Clonage, calcul du diff et synthèse IA en cours…
-              </p>
-            )}
-            {cmp.stage === 'error' && (
-              <p className="text-sm text-destructive whitespace-pre-wrap">{cmp.error}</p>
-            )}
-            {cmp.stage === 'result' && cmp.result && (
-              <CompareResultView result={cmp.result} vcs="git" />
-            )}
+              {cmp.stage === 'loading' && (
+                <p className="py-8 text-center text-sm text-muted-foreground">
+                  Clonage, calcul du diff et synthèse IA en cours…
+                </p>
+              )}
+              {cmp.stage === 'error' && (
+                <p className="text-sm text-destructive whitespace-pre-wrap">{cmp.error}</p>
+              )}
+              {cmp.stage === 'result' && cmp.result && (
+                <CompareResultView result={cmp.result} vcs="git" />
+              )}
+            </div>
 
             <div className="flex justify-end gap-2 border-t pt-2">
               <Button

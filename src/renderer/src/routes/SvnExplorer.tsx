@@ -493,79 +493,81 @@ export default function SvnExplorer(): React.JSX.Element {
               </p>
             </div>
 
-            {selectedRepo && cmp.stage !== 'result' && (
-              <div className="space-y-3 rounded-md border bg-muted/30 p-3">
-                <p className="text-xs text-muted-foreground">
-                  Naviguez dans les dossiers et sélectionnez n&apos;importe quel chemin (trunk,
-                  branche, sous-branche ou sous-dossier) pour chaque côté.
-                </p>
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                  <div className="space-y-1">
-                    <p className="text-xs font-medium">
-                      Base :{' '}
-                      <code className="rounded bg-muted px-1 text-[11px]">
-                        {cmp.baseLabel || '— à choisir —'}
-                      </code>
-                    </p>
-                    <SvnPathPicker
-                      repoUrl={selectedRepo.svnUrl}
-                      repoName={selectedRepo.name}
-                      selectedUrl={cmp.baseUrl}
-                      onSelect={(url, label) =>
-                        setCmp((p) => (p ? { ...p, baseUrl: url, baseLabel: label } : p))
-                      }
-                    />
+            <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pr-1">
+              {selectedRepo && cmp.stage !== 'result' && (
+                <div className="space-y-3 rounded-md border bg-muted/30 p-3">
+                  <p className="text-xs text-muted-foreground">
+                    Naviguez dans les dossiers et sélectionnez n&apos;importe quel chemin (trunk,
+                    branche, sous-branche ou sous-dossier) pour chaque côté.
+                  </p>
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                    <div className="space-y-1">
+                      <p className="text-xs font-medium">
+                        Base :{' '}
+                        <code className="rounded bg-muted px-1 text-[11px]">
+                          {cmp.baseLabel || '— à choisir —'}
+                        </code>
+                      </p>
+                      <SvnPathPicker
+                        repoUrl={selectedRepo.svnUrl}
+                        repoName={selectedRepo.name}
+                        selectedUrl={cmp.baseUrl}
+                        onSelect={(url, label) =>
+                          setCmp((p) => (p ? { ...p, baseUrl: url, baseLabel: label } : p))
+                        }
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-xs font-medium">
+                        Comparé :{' '}
+                        <code className="rounded bg-muted px-1 text-[11px]">
+                          {cmp.compareLabel || '— à choisir —'}
+                        </code>
+                      </p>
+                      <SvnPathPicker
+                        repoUrl={selectedRepo.svnUrl}
+                        repoName={selectedRepo.name}
+                        selectedUrl={cmp.compareUrl}
+                        highlight="amber"
+                        onSelect={(url, label) =>
+                          setCmp((p) => (p ? { ...p, compareUrl: url, compareLabel: label } : p))
+                        }
+                      />
+                    </div>
                   </div>
-                  <div className="space-y-1">
-                    <p className="text-xs font-medium">
-                      Comparé :{' '}
-                      <code className="rounded bg-muted px-1 text-[11px]">
-                        {cmp.compareLabel || '— à choisir —'}
-                      </code>
-                    </p>
-                    <SvnPathPicker
-                      repoUrl={selectedRepo.svnUrl}
-                      repoName={selectedRepo.name}
-                      selectedUrl={cmp.compareUrl}
-                      highlight="amber"
-                      onSelect={(url, label) =>
-                        setCmp((p) => (p ? { ...p, compareUrl: url, compareLabel: label } : p))
+                  <div className="flex items-center gap-2">
+                    <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
+                      {cmp.baseLabel || '?'}
+                    </code>
+                    <span className="text-muted-foreground">→</span>
+                    <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
+                      {cmp.compareLabel || '?'}
+                    </code>
+                    <Button
+                      className="ml-auto"
+                      onClick={() => void runCompare()}
+                      disabled={
+                        cmp.stage === 'loading' || !cmp.baseUrl || cmp.baseUrl === cmp.compareUrl
                       }
-                    />
+                    >
+                      {cmp.stage === 'loading' ? 'Comparaison…' : 'Comparer'}
+                    </Button>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
-                    {cmp.baseLabel || '?'}
-                  </code>
-                  <span className="text-muted-foreground">→</span>
-                  <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
-                    {cmp.compareLabel || '?'}
-                  </code>
-                  <Button
-                    className="ml-auto"
-                    onClick={() => void runCompare()}
-                    disabled={
-                      cmp.stage === 'loading' || !cmp.baseUrl || cmp.baseUrl === cmp.compareUrl
-                    }
-                  >
-                    {cmp.stage === 'loading' ? 'Comparaison…' : 'Comparer'}
-                  </Button>
-                </div>
-              </div>
-            )}
+              )}
 
-            {cmp.stage === 'loading' && (
-              <p className="py-8 text-center text-sm text-muted-foreground">
-                Calcul du diff SVN et synthèse IA en cours…
-              </p>
-            )}
-            {cmp.stage === 'error' && (
-              <p className="text-sm text-destructive whitespace-pre-wrap">{cmp.error}</p>
-            )}
-            {cmp.stage === 'result' && cmp.result && (
-              <CompareResultView result={cmp.result} vcs="svn" />
-            )}
+              {cmp.stage === 'loading' && (
+                <p className="py-8 text-center text-sm text-muted-foreground">
+                  Calcul du diff SVN et synthèse IA en cours…
+                </p>
+              )}
+              {cmp.stage === 'error' && (
+                <p className="text-sm text-destructive whitespace-pre-wrap">{cmp.error}</p>
+              )}
+              {cmp.stage === 'result' && cmp.result && (
+                <CompareResultView result={cmp.result} vcs="svn" />
+              )}
+            </div>
 
             <div className="flex justify-end gap-2 border-t pt-2">
               <Button

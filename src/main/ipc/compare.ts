@@ -3,7 +3,7 @@ import { summarizeDetailed } from '../compare/feature-summary'
 import type { SummaryInput } from '../compare/feature-summary'
 import { audit } from '../store/db'
 import { debugError } from '../logger'
-import type { DetailedSummaryRequest } from '@shared/types'
+import type { DetailedSummaryRequest, SummaryDiagnostics } from '@shared/types'
 
 export function registerCompareHandlers(): void {
   // On-demand detailed (map-reduce) summary. Runs several LLM calls, so it is
@@ -13,7 +13,9 @@ export function registerCompareHandlers(): void {
     async (
       _event,
       args: unknown
-    ): Promise<{ ok: true; summary: string } | { ok: false; error: string }> => {
+    ): Promise<
+      { ok: true; summary: string; diagnostics: SummaryDiagnostics } | { ok: false; error: string }
+    > => {
       const req = args as DetailedSummaryRequest
       if (!req || typeof req !== 'object') return { ok: false, error: 'Requête invalide.' }
       const input: SummaryInput = {
@@ -37,8 +39,8 @@ export function registerCompareHandlers(): void {
         files: input.stats.files
       })
       try {
-        const summary = await summarizeDetailed(input)
-        return { ok: true, summary }
+        const { summary, diagnostics } = await summarizeDetailed(input)
+        return { ok: true, summary, diagnostics }
       } catch (err) {
         debugError(
           '[compare] detailed-summary error: %s',

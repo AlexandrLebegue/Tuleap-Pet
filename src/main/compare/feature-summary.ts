@@ -1,4 +1,5 @@
 import { resolveLlmProvider } from '../llm'
+import { getLlmProvider, getLlmModel, getLocalModel } from '../store/config'
 import { debugError, debugLog } from '../logger'
 import {
   sanitizeLlmText,
@@ -8,12 +9,16 @@ import {
   chunkSourceSample,
   heuristicSummary,
   hasNothingToSummarize,
+  explainEmptyResponse,
   MIN_USEFUL,
   type SummaryInput
 } from './summary-utils'
+import type { SummaryDiagnostics, SummaryAttempt } from '@shared/types'
 
 export type { SummaryInput } from './summary-utils'
 export { sanitizeLlmText, heuristicSummary, chunkSourceSample } from './summary-utils'
+
+export type SummaryResult = { summary: string; diagnostics: SummaryDiagnostics }
 
 // Char budgets tuned for ~30B local models (Qwen3-class, 32K ctx): keep prompts
 // well within context while leaving room for the answer.
@@ -21,31 +26,45 @@ const QUICK_SAMPLE_CHARS = 9_000
 const DETAIL_CHUNK_CHARS = 7_000
 const MAX_DETAIL_CHUNKS = 10
 
-// ─── Robust LLM call ──────────────────────────────────────────────────────────
+// ─── Robust LLM call (with diagnostics) ───────────────────────────────────────
 
 type GenOpts = { temperature?: number; maxOutputTokens?: number; retries?: number }
 
-// Qwen3 (and several other local "hybrid reasoning" models) honour `/no_think`
-// to disable the <think> phase. Without it the model can burn its entire output
-// budget reasoning and return an empty answer — the original "_Résumé IA vide_"
-// bug. Harmless to models that don't recognise it. The sanitiser + deterministic
-// fallback remain the safety net for everything else.
 const NO_THINK_HINT = ' /no_think'
 
+function newDiagnostics(): SummaryDiagnostics {
+  const provider = getLlmProvider()
+  return {
+    provider,
+    model: provider === 'local' ? getLocalModel() : getLlmModel(),
+    usedFallback: false,
+    attempts: []
+  }
+}
+
 /**
- * Single robust generation: forces non-thinking mode, sanitises the output, and
- * retries with a firmer instruction when the model returns an empty/too-short
- * answer. Returns '' if every attempt fails (caller falls back deterministically).
+ * Single robust generation: forces non-thinking mode, sanitises the output,
+ * retries on empty/short answers, and records every attempt into `diag`.
+ * Returns '' if every attempt fails (caller falls back deterministically).
  */
-async function robustGenerate(system: string, user: string, opts: GenOpts = {}): Promise<string> {
+async function robustGenerate(
+  system: string,
+  user: string,
+  opts: GenOpts,
+  diag: SummaryDiagnostics,
+  phase: string
+): Promise<string> {
   const retries = opts.retries ?? 2
   let provider: ReturnType<typeof resolveLlmProvider>
   try {
     provider = resolveLlmProvider()
   } catch (err) {
-    debugError('[compare] no LLM provider: %s', err instanceof Error ? err.message : String(err))
+    const detail = err instanceof Error ? err.message : String(err)
+    debugError('[compare] no LLM provider: %s', detail)
+    diag.attempts.push({ phase, outcome: 'no-provider', detail })
     return ''
   }
+  diag.provider = provider.name
 
   for (let attempt = 0; attempt <= retries; attempt++) {
     const userMsg =
@@ -63,19 +82,35 @@ async function robustGenerate(system: string, user: string, opts: GenOpts = {}):
         maxOutputTokens: opts.maxOutputTokens ?? 1500,
         thinking: false
       })
+      if (res.model) diag.model = res.model
       const text = sanitizeLlmText(res.text)
-      if (text.length >= MIN_USEFUL) return text
+      const base: SummaryAttempt = {
+        phase,
+        outcome: 'ok',
+        finishReason: res.finishReason,
+        rawChars: res.text.length,
+        cleanChars: text.length
+      }
+      if (text.length >= MIN_USEFUL) {
+        diag.attempts.push(base)
+        return text
+      }
+      diag.attempts.push({
+        ...base,
+        outcome: text.length === 0 ? 'empty' : 'too-short',
+        detail: explainEmptyResponse(res.text, text, res.finishReason)
+      })
       debugLog(
-        '[compare] empty/short summary (attempt %d), finishReason=%s',
+        '[compare] %s empty/short (attempt %d), finishReason=%s rawChars=%d',
+        phase,
         attempt,
-        res.finishReason
+        res.finishReason,
+        res.text.length
       )
     } catch (err) {
-      debugError(
-        '[compare] generate failed (attempt %d): %s',
-        attempt,
-        err instanceof Error ? err.message : String(err)
-      )
+      const detail = err instanceof Error ? err.message : String(err)
+      debugError('[compare] %s generate failed (attempt %d): %s', phase, attempt, detail)
+      diag.attempts.push({ phase, outcome: 'error', detail })
     }
   }
   return ''
@@ -116,13 +151,22 @@ Refactors, corrections, configs, build.
 Si l'extrait de code est vide ou non pertinent, appuie-toi sur les messages de commit et la répartition des fichiers. N'invente rien d'non étayé. Sois factuel.`
 }
 
-export async function summarizeQuick(input: SummaryInput): Promise<string> {
-  if (hasNothingToSummarize(input)) return heuristicSummary(input)
-  const text = await robustGenerate(QUICK_SYSTEM, quickPrompt(input), {
-    temperature: 0.2,
-    maxOutputTokens: 1300
-  })
-  return text || heuristicSummary(input)
+export async function summarizeQuick(input: SummaryInput): Promise<SummaryResult> {
+  const diagnostics = newDiagnostics()
+  if (hasNothingToSummarize(input)) {
+    diagnostics.usedFallback = true
+    return { summary: heuristicSummary(input), diagnostics }
+  }
+  const text = await robustGenerate(
+    QUICK_SYSTEM,
+    quickPrompt(input),
+    { temperature: 0.2, maxOutputTokens: 1300 },
+    diagnostics,
+    'quick'
+  )
+  if (text) return { summary: text, diagnostics }
+  diagnostics.usedFallback = true
+  return { summary: heuristicSummary(input), diagnostics }
 }
 
 // ─── Detailed summary (map-reduce, scales to large infra) ──────────────────────
@@ -137,8 +181,12 @@ const REDUCE_SYSTEM =
   'la liste des commits d’une branche. Produis une synthèse détaillée, structurée ' +
   'et dédupliquée en Markdown français. Pas de bloc de réflexion.'
 
-export async function summarizeDetailed(input: SummaryInput): Promise<string> {
-  if (hasNothingToSummarize(input)) return heuristicSummary(input)
+export async function summarizeDetailed(input: SummaryInput): Promise<SummaryResult> {
+  const diagnostics = newDiagnostics()
+  if (hasNothingToSummarize(input)) {
+    diagnostics.usedFallback = true
+    return { summary: heuristicSummary(input), diagnostics }
+  }
 
   const chunks = chunkSourceSample(input.sourceSample, DETAIL_CHUNK_CHARS, MAX_DETAIL_CHUNKS)
   const totalBlocks =
@@ -151,18 +199,25 @@ export async function summarizeDetailed(input: SummaryInput): Promise<string> {
     const note = await robustGenerate(
       MAP_SYSTEM,
       `Fragment ${i + 1}/${chunks.length} du diff :\n\n\`\`\`diff\n${chunks[i]}\n\`\`\`\n\nListe les changements concrets (puces).`,
-      { temperature: 0.1, maxOutputTokens: 600, retries: 1 }
+      { temperature: 0.1, maxOutputTokens: 600, retries: 1 },
+      diagnostics,
+      'map'
     )
     if (note) partials.push(note)
   }
 
   // If mapping produced nothing usable, fall back to the quick (commits-driven) path.
   if (partials.length === 0) {
-    const quick = await robustGenerate(QUICK_SYSTEM, quickPrompt(input), {
-      temperature: 0.2,
-      maxOutputTokens: 1500
-    })
-    return quick || heuristicSummary(input)
+    const quick = await robustGenerate(
+      QUICK_SYSTEM,
+      quickPrompt(input),
+      { temperature: 0.2, maxOutputTokens: 1500 },
+      diagnostics,
+      'quick'
+    )
+    if (quick) return { summary: quick, diagnostics }
+    diagnostics.usedFallback = true
+    return { summary: heuristicSummary(input), diagnostics }
   }
 
   // Reduce: merge partial notes + commits into a structured report.
@@ -183,14 +238,19 @@ Produis une **synthèse détaillée** en Markdown, sans répétitions :
 ${chunksTruncated ? '\n> ⚠️ Couverture partielle : le diff est très volumineux, certains fichiers n’ont pas été analysés en détail.\n' : ''}
 Regroupe par thème/feature, cite les fichiers concernés, reste factuel.`
 
-  const reduced = await robustGenerate(REDUCE_SYSTEM, reducePrompt, {
-    temperature: 0.25,
-    maxOutputTokens: 2200
-  })
-  return reduced || `${partials.join('\n\n')}\n\n---\n${heuristicSummary(input)}`
+  const reduced = await robustGenerate(
+    REDUCE_SYSTEM,
+    reducePrompt,
+    { temperature: 0.25, maxOutputTokens: 2200 },
+    diagnostics,
+    'reduce'
+  )
+  if (reduced) return { summary: reduced, diagnostics }
+  // Reduce failed but we have map notes — present them rather than nothing.
+  return { summary: `${partials.join('\n\n')}\n\n---\n${heuristicSummary(input)}`, diagnostics }
 }
 
 /** Back-compat alias used by the compare backends (quick path). */
-export async function summarizeBranchDiff(input: SummaryInput): Promise<string> {
+export async function summarizeBranchDiff(input: SummaryInput): Promise<SummaryResult> {
   return summarizeQuick(input)
 }

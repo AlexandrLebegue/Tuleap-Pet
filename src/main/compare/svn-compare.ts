@@ -83,7 +83,7 @@ export async function compareSvnPaths(args: {
   }))
 
   const statsObj = { files: stats.files, additions: stats.additions, deletions: stats.deletions }
-  const summary = await summarizeQuick({
+  const { summary, diagnostics } = await summarizeQuick({
     vcs: 'svn',
     base: baseLabel,
     compare: compareLabel,
@@ -103,6 +103,7 @@ export async function compareSvnPaths(args: {
     filesChanged: stats.filesChanged,
     stats: statsObj,
     summary,
+    summaryDiagnostics: diagnostics,
     breakdown,
     sourceSample,
     sourceSampleTruncated

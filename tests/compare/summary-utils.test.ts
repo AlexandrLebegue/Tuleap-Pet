@@ -4,6 +4,7 @@ import {
   heuristicSummary,
   chunkSourceSample,
   hasNothingToSummarize,
+  explainEmptyResponse,
   type SummaryInput
 } from '../../src/main/compare/summary-utils'
 import type { DiffFileBreakdown } from '@shared/types'
@@ -76,6 +77,23 @@ describe('heuristicSummary (never-empty fallback)', () => {
 
   it('reports no differences when truly empty', () => {
     expect(heuristicSummary(input())).toBe('_Aucune différence entre les deux branches._')
+  })
+})
+
+describe('explainEmptyResponse (Débug IA diagnostics)', () => {
+  it('identifies the Qwen3 think-only token exhaustion', () => {
+    const msg = explainEmptyResponse('<think>reasoning…', '', 'length')
+    expect(msg).toMatch(/think/i)
+    expect(msg).toMatch(/budget de tokens/i)
+    expect(msg).toMatch(/finishReason=length/i)
+  })
+
+  it('reports a genuinely empty response', () => {
+    expect(explainEmptyResponse('', '', 'stop')).toMatch(/réponse vide/i)
+  })
+
+  it('reports a too-short response', () => {
+    expect(explainEmptyResponse('hi', 'hi', 'stop')).toMatch(/trop courte/i)
   })
 })
 

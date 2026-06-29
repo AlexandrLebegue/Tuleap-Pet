@@ -42,6 +42,37 @@ export function sanitizeLlmText(raw: string): string {
   return t
 }
 
+/**
+ * Human-readable explanation of an empty/short LLM answer, used by the Débug IA
+ * panel. Recognises the Qwen3 "think-only" exhaustion case and the token-budget
+ * limit (finishReason=length).
+ */
+export function explainEmptyResponse(
+  raw: string,
+  clean: string,
+  finishReason: string | null | undefined
+): string {
+  const hadThink = /<think>/i.test(raw) || /<reasoning>/i.test(raw)
+  const bits: string[] = []
+  if (clean.length === 0 && hadThink) {
+    bits.push(
+      'réponse composée uniquement d’un bloc de réflexion <think> (le modèle a épuisé son budget de tokens en raisonnant avant de répondre)'
+    )
+  } else if (clean.length === 0 && raw.trim().length === 0) {
+    bits.push('le modèle a renvoyé une réponse vide')
+  } else if (clean.length === 0) {
+    bits.push('aucun contenu exploitable après nettoyage')
+  } else {
+    bits.push(`réponse trop courte (${clean.length} caractères)`)
+  }
+  if (finishReason === 'length') {
+    bits.push(
+      'limite de tokens atteinte (finishReason=length) — augmentez max tokens ou désactivez le raisonnement'
+    )
+  }
+  return bits.join(' ; ')
+}
+
 export function statsLine(input: SummaryInput): string {
   const s = input.stats
   return `${s.files} fichier(s) modifié(s) (+${s.additions} / -${s.deletions})`

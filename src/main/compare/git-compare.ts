@@ -70,7 +70,7 @@ export async function compareGitBranches(args: {
     const commits = parseGitLog(logRaw)
     const statsObj = { files: stats.files, additions: stats.additions, deletions: stats.deletions }
 
-    const summary = await summarizeQuick({
+    const { summary, diagnostics } = await summarizeQuick({
       vcs: 'git',
       base,
       compare,
@@ -90,6 +90,7 @@ export async function compareGitBranches(args: {
       filesChanged: stats.filesChanged,
       stats: statsObj,
       summary,
+      summaryDiagnostics: diagnostics,
       breakdown,
       sourceSample,
       sourceSampleTruncated

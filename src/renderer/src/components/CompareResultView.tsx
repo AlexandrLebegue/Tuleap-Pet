@@ -2,7 +2,7 @@ import * as React from 'react'
 import { useState } from 'react'
 import { api } from '@renderer/lib/api'
 import { Button } from '@renderer/components/ui/button'
-import type { BranchCompareResult } from '@shared/types'
+import type { BranchCompareResult, SummaryDiagnostics } from '@shared/types'
 
 /** Colourise a unified diff line by its leading character. */
 function DiffLine({ line }: { line: string }): React.JSX.Element {
@@ -102,6 +102,75 @@ function Markdown({ text }: { text: string }): React.JSX.Element {
   return <div>{blocks}</div>
 }
 
+/** One-line human explanation of why the AI summary failed / fell back. */
+function diagHint(d: SummaryDiagnostics): string | null {
+  if (!d.usedFallback) return null
+  const noProvider = d.attempts.find((a) => a.outcome === 'no-provider')
+  if (noProvider || !d.provider) {
+    return `Aucun fournisseur LLM utilisable : ${noProvider?.detail ?? 'non configuré (voir Réglages)'}.`
+  }
+  const err = d.attempts.find((a) => a.outcome === 'error')
+  if (err) return `Erreur lors de l'appel au modèle : ${err.detail ?? 'inconnue'}.`
+  const empty = d.attempts.find((a) => a.outcome === 'empty' || a.outcome === 'too-short')
+  if (empty)
+    return `Le modèle n'a pas produit de réponse exploitable — ${empty.detail ?? 'réponse vide'}.`
+  return 'Synthèse IA indisponible — résumé généré à partir des métadonnées.'
+}
+
+function DiagnosticsPanel({ diag }: { diag: SummaryDiagnostics }): React.JSX.Element | null {
+  const [open, setOpen] = useState(false)
+  const hint = diagHint(diag)
+  const hasIssue = diag.usedFallback || diag.attempts.some((a) => a.outcome !== 'ok')
+  if (!hasIssue) return null
+
+  return (
+    <div className="mt-2 rounded-md border border-yellow-500/40 bg-yellow-500/5 p-2">
+      {hint && <p className="text-xs text-yellow-700 dark:text-yellow-400">⚠️ {hint}</p>}
+      <button
+        className="mt-1 text-[11px] font-medium text-muted-foreground hover:text-foreground"
+        onClick={() => setOpen((o) => !o)}
+      >
+        {open ? '▾' : '▸'} 🐞 Débug IA ({diag.attempts.length} tentative
+        {diag.attempts.length > 1 ? 's' : ''})
+      </button>
+      {open && (
+        <div className="mt-1 space-y-1 text-[11px]">
+          <p className="text-muted-foreground">
+            Fournisseur : <code className="rounded bg-muted px-1">{diag.provider ?? 'aucun'}</code>{' '}
+            · Modèle : <code className="rounded bg-muted px-1">{diag.model ?? '—'}</code>
+          </p>
+          {diag.attempts.length === 0 && (
+            <p className="text-muted-foreground">Aucun appel effectué.</p>
+          )}
+          {diag.attempts.map((a, i) => (
+            <div key={i} className="rounded border bg-background/60 px-1.5 py-1">
+              <span
+                className={
+                  a.outcome === 'ok'
+                    ? 'text-green-600 dark:text-green-400'
+                    : 'text-red-600 dark:text-red-400'
+                }
+              >
+                {a.phase} · {a.outcome}
+              </span>
+              {a.finishReason && (
+                <span className="text-muted-foreground"> · finish={a.finishReason}</span>
+              )}
+              {(a.rawChars != null || a.cleanChars != null) && (
+                <span className="text-muted-foreground">
+                  {' '}
+                  · brut={a.rawChars ?? '?'}→net={a.cleanChars ?? '?'} car.
+                </span>
+              )}
+              {a.detail && <p className="text-muted-foreground">{a.detail}</p>}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function BreakdownChips({ b }: { b: BranchCompareResult['breakdown'] }): React.JSX.Element {
   const chip = (label: string, n: number, cls: string): React.JSX.Element | null =>
     n > 0 ? (
@@ -122,7 +191,7 @@ function BreakdownChips({ b }: { b: BranchCompareResult['breakdown'] }): React.J
 
 /**
  * Renders a branch/path comparison: AI feature summary (with an on-demand detailed
- * report), file breakdown, the commits unique to the branch, and the diff.
+ * report + AI diagnostics), file breakdown, the commits, and the diff.
  */
 export default function CompareResultView({
   result,
@@ -133,6 +202,7 @@ export default function CompareResultView({
 }): React.JSX.Element {
   const [showDiff, setShowDiff] = useState(false)
   const [detail, setDetail] = useState<string | null>(null)
+  const [detailDiag, setDetailDiag] = useState<SummaryDiagnostics | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
   const [detailError, setDetailError] = useState<string | null>(null)
   const lines = result.diff ? result.diff.split('\n') : []
@@ -151,8 +221,10 @@ export default function CompareResultView({
         sourceSample: result.sourceSample,
         sourceSampleTruncated: result.sourceSampleTruncated
       })
-      if (res.ok) setDetail(res.summary)
-      else setDetailError(res.error)
+      if (res.ok) {
+        setDetail(res.summary)
+        setDetailDiag(res.diagnostics)
+      } else setDetailError(res.error)
     } catch (e) {
       setDetailError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -161,7 +233,7 @@ export default function CompareResultView({
   }
 
   return (
-    <div className="flex flex-col gap-4 overflow-hidden">
+    <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center gap-2 text-sm">
         <code className="rounded bg-muted px-1.5 py-0.5 text-xs">{result.base}</code>
         <span className="text-muted-foreground">→</span>
@@ -192,9 +264,8 @@ export default function CompareResultView({
             </Button>
           )}
         </div>
-        <div className="max-h-72 overflow-y-auto">
-          <Markdown text={result.summary} />
-        </div>
+        <Markdown text={result.summary} />
+        <DiagnosticsPanel diag={result.summaryDiagnostics} />
         {detailError && <p className="mt-1 text-xs text-destructive">{detailError}</p>}
       </div>
 
@@ -204,9 +275,8 @@ export default function CompareResultView({
           <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             🔬 Synthèse détaillée
           </p>
-          <div className="max-h-96 overflow-y-auto">
-            <Markdown text={detail} />
-          </div>
+          <Markdown text={detail} />
+          {detailDiag && <DiagnosticsPanel diag={detailDiag} />}
         </div>
       )}
 

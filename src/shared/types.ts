@@ -129,6 +129,30 @@ export type BranchCompareCommit = {
   authorName: string
 }
 
+/** One LLM call attempt, recorded for the "Débug IA" panel. */
+export type SummaryAttempt = {
+  /** Which phase produced it: 'quick' | 'map' | 'reduce'. */
+  phase: string
+  /** ok = usable answer; empty/too-short = unusable; error/no-provider = call failed. */
+  outcome: 'ok' | 'empty' | 'too-short' | 'error' | 'no-provider'
+  finishReason?: string | null
+  /** Raw response length (chars) before sanitisation. */
+  rawChars?: number
+  /** Length after stripping <think>/fences. */
+  cleanChars?: number
+  /** Human-readable explanation (error message, "think-only", …). */
+  detail?: string
+}
+
+/** Why the AI summary succeeded or fell back — surfaced to the user for debugging. */
+export type SummaryDiagnostics = {
+  provider: string | null
+  model: string | null
+  /** True when no usable LLM answer was produced and the metadata fallback was used. */
+  usedFallback: boolean
+  attempts: SummaryAttempt[]
+}
+
 /** Counts of changed files per category + the most-touched directories. */
 export type DiffFileBreakdown = {
   source: number
@@ -156,6 +180,8 @@ export type BranchCompareResult = {
   stats: { files: number; additions: number; deletions: number }
   /** Quick AI markdown summary (robust, never empty — falls back to metadata). */
   summary: string
+  /** Why the quick summary succeeded / fell back (for the Débug IA panel). */
+  summaryDiagnostics: SummaryDiagnostics
   /** File-category breakdown + most-touched directories. */
   breakdown: DiffFileBreakdown
   /** Denoised source/test diff sample, fed to the on-demand detailed summary. */
