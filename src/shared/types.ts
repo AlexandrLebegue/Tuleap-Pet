@@ -191,10 +191,6 @@ export type BranchCompareResult = {
   /** Relative paths of files that differ. */
   filesChanged: string[]
   stats: { files: number; additions: number; deletions: number }
-  /** Quick AI markdown summary (robust, never empty — falls back to metadata). */
-  summary: string
-  /** Why the quick summary succeeded / fell back (for the Débug IA panel). */
-  summaryDiagnostics: SummaryDiagnostics
   /** File-category breakdown + most-touched directories. */
   breakdown: DiffFileBreakdown
   /** Denoised source/test diff sample, fed to the on-demand detailed summary. */

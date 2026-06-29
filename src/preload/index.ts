@@ -705,6 +705,11 @@ const svnExplorer = {
 }
 
 const compare = {
+  quickSummary: (
+    req: DetailedSummaryRequest
+  ): Promise<
+    { ok: true; summary: string; diagnostics: SummaryDiagnostics } | { ok: false; error: string }
+  > => ipcRenderer.invoke('compare:quick-summary', req),
   detailedSummary: (
     req: DetailedSummaryRequest
   ): Promise<

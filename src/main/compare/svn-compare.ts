@@ -1,7 +1,6 @@
 import { execSvn, parseSvnLog, svnList, resolveSvnBinary } from '../svn/svn-utils'
 import { buildSvnAuthArgs } from '../svn/svn-credentials'
 import { streamDiff } from './diff-stream'
-import { summarizeQuick } from './feature-summary'
 import type { BranchCompareResult, BranchCompareCommit } from '@shared/types'
 
 const DISPLAY_DIFF_BUDGET = 200_000
@@ -91,17 +90,9 @@ export async function compareSvnPaths(args: {
   }))
 
   const statsObj = { files: stats.files, additions: stats.additions, deletions: stats.deletions }
-  const { summary, diagnostics } = await summarizeQuick({
-    vcs: 'svn',
-    base: baseLabel,
-    compare: compareLabel,
-    stats: statsObj,
-    breakdown,
-    commits,
-    sourceSample,
-    sourceSampleTruncated
-  })
 
+  // The AI summary is fetched on demand by the renderer (compare:quick-summary)
+  // so the diff is shown immediately and never blocks on a slow/down LLM.
   return {
     base: baseLabel,
     compare: compareLabel,
@@ -110,8 +101,6 @@ export async function compareSvnPaths(args: {
     commits,
     filesChanged: stats.filesChanged,
     stats: statsObj,
-    summary,
-    summaryDiagnostics: diagnostics,
     breakdown,
     sourceSample,
     sourceSampleTruncated,

@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { useState } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { api } from '@renderer/lib/api'
 import { Button } from '@renderer/components/ui/button'
 import DiffExplorer from '@renderer/components/DiffExplorer'
@@ -185,25 +185,64 @@ export default function CompareResultView({
   result: BranchCompareResult
   vcs: 'git' | 'svn'
 }): React.JSX.Element {
+  const [quick, setQuick] = useState<string | null>(null)
+  const [quickDiag, setQuickDiag] = useState<SummaryDiagnostics | null>(null)
+  const [quickLoading, setQuickLoading] = useState(true)
+  const [quickError, setQuickError] = useState<string | null>(null)
+
   const [detail, setDetail] = useState<string | null>(null)
   const [detailDiag, setDetailDiag] = useState<SummaryDiagnostics | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
   const [detailError, setDetailError] = useState<string | null>(null)
 
+  const req = useMemo(
+    () => ({
+      vcs,
+      base: result.base,
+      compare: result.compare,
+      stats: result.stats,
+      breakdown: result.breakdown,
+      commits: result.commits,
+      sourceSample: result.sourceSample,
+      sourceSampleTruncated: result.sourceSampleTruncated
+    }),
+    [vcs, result]
+  )
+
+  // Fetch the quick summary after the diff is shown — it never blocks the diff,
+  // and a slow/down LLM only affects this panel (with a clear error + diagnostics).
+  useEffect(() => {
+    let cancelled = false
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setQuickLoading(true)
+    setQuickError(null)
+    setQuick(null)
+    setQuickDiag(null)
+    api.compare
+      .quickSummary(req)
+      .then((res) => {
+        if (cancelled) return
+        if (res.ok) {
+          setQuick(res.summary)
+          setQuickDiag(res.diagnostics)
+        } else setQuickError(res.error)
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) setQuickError(e instanceof Error ? e.message : String(e))
+      })
+      .finally(() => {
+        if (!cancelled) setQuickLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [req])
+
   const runDetailed = async (): Promise<void> => {
     setDetailLoading(true)
     setDetailError(null)
     try {
-      const res = await api.compare.detailedSummary({
-        vcs,
-        base: result.base,
-        compare: result.compare,
-        stats: result.stats,
-        breakdown: result.breakdown,
-        commits: result.commits,
-        sourceSample: result.sourceSample,
-        sourceSampleTruncated: result.sourceSampleTruncated
-      })
+      const res = await api.compare.detailedSummary(req)
       if (res.ok) {
         setDetail(res.summary)
         setDetailDiag(res.diagnostics)
@@ -230,7 +269,7 @@ export default function CompareResultView({
 
       <BreakdownChips b={result.breakdown} />
 
-      {/* Quick AI summary */}
+      {/* Quick AI summary (fetched after the diff) */}
       <div className="rounded-md border bg-muted/30 p-3">
         <div className="mb-1 flex items-center justify-between gap-2">
           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -241,14 +280,20 @@ export default function CompareResultView({
               size="sm"
               variant="outline"
               onClick={() => void runDetailed()}
-              disabled={detailLoading}
+              disabled={detailLoading || quickLoading}
             >
               {detailLoading ? 'Analyse détaillée…' : '🔬 Résumé détaillé'}
             </Button>
           )}
         </div>
-        <Markdown text={result.summary} />
-        <DiagnosticsPanel diag={result.summaryDiagnostics} />
+        {quickLoading && (
+          <p className="py-2 text-sm text-muted-foreground">Génération de la synthèse IA…</p>
+        )}
+        {quickError && (
+          <p className="text-xs text-destructive">Synthèse IA indisponible : {quickError}</p>
+        )}
+        {quick && <Markdown text={quick} />}
+        {quickDiag && <DiagnosticsPanel diag={quickDiag} />}
         {detailError && <p className="mt-1 text-xs text-destructive">{detailError}</p>}
       </div>
 

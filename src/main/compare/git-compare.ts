@@ -8,7 +8,6 @@ import { execGit } from '../commenter/git-utils'
 import { injectGitCredentials, explainGitAuthFailure } from '../jobs/git-credentials'
 import { parseUnifiedDiffStats } from './diff-utils'
 import { streamDiff } from './diff-stream'
-import { summarizeQuick } from './feature-summary'
 import { debugError } from '../logger'
 import type { BranchCompareResult, BranchCompareCommit } from '@shared/types'
 
@@ -76,17 +75,8 @@ export async function compareGitBranches(args: {
     const commits = parseGitLog(logRaw)
     const statsObj = { files: stats.files, additions: stats.additions, deletions: stats.deletions }
 
-    const { summary, diagnostics } = await summarizeQuick({
-      vcs: 'git',
-      base,
-      compare,
-      stats: statsObj,
-      breakdown,
-      commits,
-      sourceSample,
-      sourceSampleTruncated
-    })
-
+    // The AI summary is fetched on demand by the renderer (compare:quick-summary)
+    // so the diff is shown immediately and never blocks on a slow/down LLM.
     return {
       base,
       compare,
@@ -95,8 +85,6 @@ export async function compareGitBranches(args: {
       commits,
       filesChanged: stats.filesChanged,
       stats: statsObj,
-      summary,
-      summaryDiagnostics: diagnostics,
       breakdown,
       sourceSample,
       sourceSampleTruncated,

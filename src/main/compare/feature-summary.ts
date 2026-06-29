@@ -30,6 +30,27 @@ const MAX_DETAIL_CHUNKS = 10
 
 type GenOpts = { temperature?: number; maxOutputTokens?: number; retries?: number }
 
+/** Hard cap on a single LLM call so a slow/hung local model can never block forever. */
+const LLM_CALL_TIMEOUT_MS = 120_000
+
+/** Race a generation against a timeout; the timer is always cleared. */
+function generateWithTimeout(
+  provider: ReturnType<typeof resolveLlmProvider>,
+  req: Parameters<ReturnType<typeof resolveLlmProvider>['generate']>[0],
+  ms: number
+): Promise<Awaited<ReturnType<ReturnType<typeof resolveLlmProvider>['generate']>>> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error(`délai LLM dépassé (${Math.round(ms / 1000)} s)`)),
+      ms
+    )
+  })
+  return Promise.race([provider.generate(req), timeout]).finally(() => {
+    if (timer) clearTimeout(timer)
+  })
+}
+
 const NO_THINK_HINT = ' /no_think'
 
 function newDiagnostics(): SummaryDiagnostics {
@@ -73,15 +94,19 @@ async function robustGenerate(
         : `${user}\n\n[IMPORTANT] Réponds directement en Markdown, en français. N'émets AUCUN bloc <think> ni préambule. Commence par un titre de section.`) +
       NO_THINK_HINT
     try {
-      const res = await provider.generate({
-        messages: [
-          { role: 'system', content: system },
-          { role: 'user', content: userMsg }
-        ],
-        temperature: opts.temperature ?? 0.2,
-        maxOutputTokens: opts.maxOutputTokens ?? 1500,
-        thinking: false
-      })
+      const res = await generateWithTimeout(
+        provider,
+        {
+          messages: [
+            { role: 'system', content: system },
+            { role: 'user', content: userMsg }
+          ],
+          temperature: opts.temperature ?? 0.2,
+          maxOutputTokens: opts.maxOutputTokens ?? 1500,
+          thinking: false
+        },
+        LLM_CALL_TIMEOUT_MS
+      )
       if (res.model) diag.model = res.model
       const text = sanitizeLlmText(res.text)
       const base: SummaryAttempt = {
