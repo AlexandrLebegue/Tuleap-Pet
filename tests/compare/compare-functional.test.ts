@@ -112,6 +112,28 @@ dGit('git compare (real binary)', () => {
     expect(r.breakdown.source).toBe(1)
     expect(r.breakdown.generated).toBe(1)
   })
+
+  it('streamDiff captures per-file changes for the diff explorer', async () => {
+    const r = await streamDiff('git', ['-C', work, 'diff', 'main...feature'], {
+      displayBudget: 1_000_000
+    })
+    expect(r.files.map((f) => f.path).sort()).toEqual(['bar.c', 'foo.c'])
+    const foo = r.files.find((f) => f.path === 'foo.c')!
+    expect(foo.category).toBe('source')
+    expect(foo.additions).toBe(1) // int sub
+    expect(foo.deletions).toBe(0)
+    expect(foo.diff).toContain('int sub(int a,int b)')
+    expect(r.filesTruncated).toBe(false)
+  })
+
+  it('streamDiff respects the maxFiles cap (filesTruncated)', async () => {
+    const r = await streamDiff('git', ['-C', work, 'diff', 'main...feature'], {
+      displayBudget: 1_000_000,
+      maxFiles: 1
+    })
+    expect(r.files.length).toBe(1)
+    expect(r.filesTruncated).toBe(true)
+  })
 })
 
 dSvn('svn compare (real binary)', () => {

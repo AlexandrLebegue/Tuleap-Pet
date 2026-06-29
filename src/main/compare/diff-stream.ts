@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process'
 import { createInterface } from 'node:readline'
 import { createDiffStatsAccumulator, type DiffStats } from './diff-utils'
 import { classifyDiffPath, includeInSample, dirBucket, type FileCategory } from './file-classify'
-import type { DiffFileBreakdown } from '@shared/types'
+import type { DiffFileBreakdown, DiffFileChange } from '@shared/types'
 
 export type StreamDiffOptions = {
   /** Max chars of raw diff kept for display. */
@@ -11,12 +11,21 @@ export type StreamDiffOptions = {
   sampleBudget: number
   /** Max chars taken from any single file into the sample (keeps breadth). */
   perFileBudget: number
+  /** Max number of files captured into the per-file `files` list. */
+  maxFiles: number
+  /** Max chars of any single file's captured diff (for the explorer). */
+  perFileDiffBudget: number
+  /** Max total chars across all captured per-file diffs. */
+  totalFileDiffBudget: number
 }
 
 export const DEFAULT_STREAM_OPTIONS: StreamDiffOptions = {
   displayBudget: 200_000,
   sampleBudget: 120_000,
-  perFileBudget: 4_000
+  perFileBudget: 4_000,
+  maxFiles: 4_000,
+  perFileDiffBudget: 8_000,
+  totalFileDiffBudget: 1_500_000
 }
 
 export type StreamedDiff = {
@@ -36,17 +45,31 @@ export type StreamedDiff = {
   sourceSampleTruncated: boolean
   /** File-category breakdown + most-touched directories. */
   breakdown: DiffFileBreakdown
+  /** Per-file changes (path, counts, capped diff) for the diff explorer. */
+  files: DiffFileChange[]
+  /** True when more files changed than were captured into `files`. */
+  filesTruncated: boolean
 }
 
 const FILE_HEADER_GIT = /^diff --git a\/(.+?) b\/(.+)$/
 const FILE_HEADER_SVN = /^Index:\s+(.+)$/
 
+type FileAccum = {
+  path: string
+  category: FileCategory
+  additions: number
+  deletions: number
+  diffParts: string[]
+  diffLen: number
+  diffTruncated: boolean
+}
+
 /**
  * Run a diff command (`git diff …` / `svn diff …`) and read its stdout as a
  * **stream**, so an arbitrarily large diff never overflows a fixed `execFile`
  * `maxBuffer`. In a single pass it computes exact stats, keeps a bounded raw
- * slice for display, and builds a denoised source/test sample + file breakdown
- * for the AI summary.
+ * slice for display, builds a denoised source/test sample + file breakdown for
+ * the AI summary, and captures bounded per-file diffs for the diff explorer.
  *
  * `args` must be the complete argument list (the caller adds `--non-interactive`
  * for svn, `-C <dir>` for git, etc.).
@@ -84,6 +107,13 @@ export function streamDiff(
     const dirCounts = new Map<string, number>()
     const seenFiles = new Set<string>()
 
+    // Per-file capture (diff explorer).
+    const fileOrder: string[] = []
+    const fileMap = new Map<string, FileAccum>()
+    let totalFileDiffLen = 0
+    let filesTruncated = false
+    let curAccum: FileAccum | null = null
+
     let stderr = ''
 
     const startFile = (rawPath: string): void => {
@@ -98,13 +128,36 @@ export function streamDiff(
         const d = dirBucket(path)
         dirCounts.set(d, (dirCounts.get(d) ?? 0) + 1)
       }
+      // Per-file accumulator (capped count of files).
+      let accum = fileMap.get(path)
+      if (!accum) {
+        if (fileMap.size >= opts.maxFiles) {
+          filesTruncated = true
+          curAccum = null
+          return
+        }
+        accum = {
+          path,
+          category: curCat,
+          additions: 0,
+          deletions: 0,
+          diffParts: [],
+          diffLen: 0,
+          diffTruncated: false
+        }
+        fileMap.set(path, accum)
+        fileOrder.push(path)
+      }
+      curAccum = accum
     }
 
-    const isContentLine = (line: string): boolean =>
+    const isHunkBody = (line: string): boolean =>
       line.startsWith('@@') ||
       (line.startsWith('+') && !line.startsWith('+++')) ||
       (line.startsWith('-') && !line.startsWith('---')) ||
       line.startsWith(' ')
+
+    const isContentLine = isHunkBody
 
     const rl = createInterface({ input: child.stdout, crlfDelay: Infinity })
 
@@ -121,6 +174,22 @@ export function streamDiff(
         else {
           kept.push(line)
           keptLen += line.length + 1
+        }
+      }
+
+      // Per-file capture: counts (always) + capped diff text.
+      if (curAccum && isHunkBody(line)) {
+        if (line.startsWith('+')) curAccum.additions++
+        else if (line.startsWith('-')) curAccum.deletions++
+        if (
+          curAccum.diffLen < opts.perFileDiffBudget &&
+          totalFileDiffLen < opts.totalFileDiffBudget
+        ) {
+          curAccum.diffParts.push(line)
+          curAccum.diffLen += line.length + 1
+          totalFileDiffLen += line.length + 1
+        } else {
+          curAccum.diffTruncated = true
         }
       }
 
@@ -172,13 +241,26 @@ export function streamDiff(
         .sort((a, b) => b[1] - a[1])
         .slice(0, 8)
         .map(([dir, files]) => ({ dir, files }))
+      const files: DiffFileChange[] = fileOrder.map((p) => {
+        const a = fileMap.get(p)!
+        return {
+          path: a.path,
+          category: a.category,
+          additions: a.additions,
+          deletions: a.deletions,
+          diff: a.diffParts.join('\n'),
+          diffTruncated: a.diffTruncated
+        }
+      })
       resolve({
         diff: kept.join('\n'),
         truncated,
         stats: acc.result(),
         sourceSample: sample.join('\n'),
         sourceSampleTruncated: sampleTruncated,
-        breakdown: { ...cat, topDirs }
+        breakdown: { ...cat, topDirs },
+        files,
+        filesTruncated
       })
     })
   })

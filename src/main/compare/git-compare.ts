@@ -55,11 +55,17 @@ export async function compareGitBranches(args: {
     const diffRange = `${baseRef}...${compareRef}`
     // Stream the textual diff so a huge branch divergence never overflows a
     // fixed buffer; numstat (small) stays the authoritative source for stats.
-    const { diff, truncated, sourceSample, sourceSampleTruncated, breakdown } = await streamDiff(
-      'git',
-      ['-C', dir, 'diff', diffRange],
-      { displayBudget: DISPLAY_DIFF_BUDGET }
-    )
+    const {
+      diff,
+      truncated,
+      sourceSample,
+      sourceSampleTruncated,
+      breakdown,
+      files,
+      filesTruncated
+    } = await streamDiff('git', ['-C', dir, 'diff', diffRange], {
+      displayBudget: DISPLAY_DIFF_BUDGET
+    })
     const numstat = await execGit(['diff', '--numstat', diffRange], dir)
     const logRaw = await execGit(
       ['log', `${baseRef}..${compareRef}`, `--pretty=format:%H${UNIT_SEP}%s${UNIT_SEP}%an`],
@@ -93,7 +99,9 @@ export async function compareGitBranches(args: {
       summaryDiagnostics: diagnostics,
       breakdown,
       sourceSample,
-      sourceSampleTruncated
+      sourceSampleTruncated,
+      files,
+      filesTruncated
     }
   } finally {
     try {

@@ -163,6 +163,19 @@ export type DiffFileBreakdown = {
   topDirs: { dir: string; files: number }[]
 }
 
+/** A single changed file, for the per-file/per-folder diff explorer. */
+export type DiffFileChange = {
+  /** Path relative to the repo root (forward slashes). */
+  path: string
+  category: 'source' | 'test' | 'config' | 'generated' | 'other'
+  additions: number
+  deletions: number
+  /** This file's unified diff hunks (capped); '' when not captured (budget hit). */
+  diff: string
+  /** True when this file's diff was capped or not captured. */
+  diffTruncated: boolean
+}
+
 /** Difference between a base branch/path and a compare branch/path + AI summary. */
 export type BranchCompareResult = {
   /** Base ref/path label (what we compare against). */
@@ -187,6 +200,10 @@ export type BranchCompareResult = {
   /** Denoised source/test diff sample, fed to the on-demand detailed summary. */
   sourceSample: string
   sourceSampleTruncated: boolean
+  /** Per-file changes for the diff explorer (file tree + per-file diff). */
+  files: DiffFileChange[]
+  /** True when more files changed than were captured into `files`. */
+  filesTruncated: boolean
 }
 
 /** Payload to compute the detailed (map-reduce) summary on demand. */

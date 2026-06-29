@@ -59,12 +59,20 @@ export async function compareSvnPaths(args: {
   // Stream the diff so a large branch divergence never overflows a fixed buffer.
   // Stats are exact (computed over the full stream); the display slice is capped
   // and a denoised source/test sample is built for the AI summary.
-  const { diff, truncated, stats, sourceSample, sourceSampleTruncated, breakdown } =
-    await streamDiff(
-      resolveSvnBinary(),
-      ['--non-interactive', 'diff', '--internal-diff', ...authArgs, baseUrl, compareUrl],
-      { displayBudget: DISPLAY_DIFF_BUDGET }
-    )
+  const {
+    diff,
+    truncated,
+    stats,
+    sourceSample,
+    sourceSampleTruncated,
+    breakdown,
+    files,
+    filesTruncated
+  } = await streamDiff(
+    resolveSvnBinary(),
+    ['--non-interactive', 'diff', '--internal-diff', ...authArgs, baseUrl, compareUrl],
+    { displayBudget: DISPLAY_DIFF_BUDGET }
+  )
 
   // The branch's own revisions (stops at the `svn copy` that created it).
   const logXml = await execSvn([
@@ -106,6 +114,8 @@ export async function compareSvnPaths(args: {
     summaryDiagnostics: diagnostics,
     breakdown,
     sourceSample,
-    sourceSampleTruncated
+    sourceSampleTruncated,
+    files,
+    filesTruncated
   }
 }

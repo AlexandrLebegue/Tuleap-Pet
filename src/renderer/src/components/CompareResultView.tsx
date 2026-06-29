@@ -2,23 +2,8 @@ import * as React from 'react'
 import { useState } from 'react'
 import { api } from '@renderer/lib/api'
 import { Button } from '@renderer/components/ui/button'
+import DiffExplorer from '@renderer/components/DiffExplorer'
 import type { BranchCompareResult, SummaryDiagnostics } from '@shared/types'
-
-/** Colourise a unified diff line by its leading character. */
-function DiffLine({ line }: { line: string }): React.JSX.Element {
-  let cls = 'text-foreground/80'
-  if (line.startsWith('+') && !line.startsWith('+++')) cls = 'text-green-600 dark:text-green-400'
-  else if (line.startsWith('-') && !line.startsWith('---')) cls = 'text-red-600 dark:text-red-400'
-  else if (line.startsWith('@@')) cls = 'text-cyan-600 dark:text-cyan-400'
-  else if (
-    line.startsWith('diff ') ||
-    line.startsWith('Index:') ||
-    line.startsWith('+++') ||
-    line.startsWith('---')
-  )
-    cls = 'text-muted-foreground font-medium'
-  return <span className={cls}>{line || ' '}</span>
-}
 
 /** Render inline `**bold**` and `` `code` `` spans safely (no HTML injection). */
 function inline(text: string): React.ReactNode[] {
@@ -200,12 +185,10 @@ export default function CompareResultView({
   result: BranchCompareResult
   vcs: 'git' | 'svn'
 }): React.JSX.Element {
-  const [showDiff, setShowDiff] = useState(false)
   const [detail, setDetail] = useState<string | null>(null)
   const [detailDiag, setDetailDiag] = useState<SummaryDiagnostics | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
   const [detailError, setDetailError] = useState<string | null>(null)
-  const lines = result.diff ? result.diff.split('\n') : []
 
   const runDetailed = async (): Promise<void> => {
     setDetailLoading(true)
@@ -300,26 +283,12 @@ export default function CompareResultView({
         </div>
       )}
 
-      {/* Diff */}
+      {/* Diff explorer (file tree + per-file diff) */}
       <div className="flex min-h-0 flex-col">
-        <button
-          className="mb-1 flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground hover:text-foreground"
-          onClick={() => setShowDiff((s) => !s)}
-        >
-          {showDiff ? '▾' : '▸'} Diff{result.diffTruncated ? ' (tronqué)' : ''}
-        </button>
-        {showDiff &&
-          (lines.length > 0 ? (
-            <pre className="max-h-80 overflow-auto whitespace-pre rounded bg-muted p-2 text-[11px] font-mono leading-snug">
-              {lines.map((l, i) => (
-                <div key={i}>
-                  <DiffLine line={l} />
-                </div>
-              ))}
-            </pre>
-          ) : (
-            <p className="text-xs text-muted-foreground">Aucune différence.</p>
-          ))}
+        <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          Différences par fichier
+        </p>
+        <DiffExplorer files={result.files} filesTruncated={result.filesTruncated} />
       </div>
     </div>
   )
