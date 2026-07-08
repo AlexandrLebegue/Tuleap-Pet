@@ -83,6 +83,18 @@ function progressLabel(event: SprintReviewProgressEvent): string {
   switch (event.type) {
     case 'enriching':
       return `Récupération des détails (${event.index}/${event.total})…`
+    case 'activity':
+      return `Historique des artefacts (${event.index}/${event.total})…`
+    case 'code_scan':
+      switch (event.step) {
+        case 'repos':
+          return 'Scan des dépôts Git du projet…'
+        case 'branches':
+          return 'Recherche des branches liées aux artefacts…'
+        case 'pull_requests':
+          return 'Recherche des pull requests en cours…'
+      }
+      return ''
     case 'summarizing':
       return 'Synthèse du sprint en cours…'
     case 'slide_start':
@@ -223,7 +235,7 @@ export const useGeneration = create<Store>((set, get) => ({
 
   selectTracker: async (id: number | null) => {
     const trackers = get().trackers
-    const tracker = id !== null ? trackers.find((t) => t.id === id) ?? null : null
+    const tracker = id !== null ? (trackers.find((t) => t.id === id) ?? null) : null
     const trackerLabel = tracker?.label ?? null
     set({
       selectedTrackerId: id,
@@ -378,7 +390,7 @@ export const useGeneration = create<Store>((set, get) => ({
     const label =
       mode === 'sprint'
         ? (sprints.find((s) => s.id === selectedSprintId)?.label ?? 'sprint-review')
-        : (customLabel || 'presentation')
+        : customLabel || 'presentation'
     const safeName = `${label}-sprint-review.pptx`.replace(/[^A-Za-z0-9._-]+/g, '_')
     const result = await api.marp.exportPptx({ markdown, suggestedName: safeName })
     if (result.ok) {

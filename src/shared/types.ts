@@ -294,18 +294,75 @@ export type SprintContent = {
   artifacts: ArtifactSummary[]
 }
 
+// ---- Sprint review enrichment (code activity + dernières mises à jour) ----
+
+/** Dernière activité connue d'un artefact (changesets Tuleap). */
+export type ArtifactLastUpdate = {
+  /** Date ISO du dernier changeset (ou null si inconnue). */
+  date: string | null
+  /** Auteur du dernier changeset. */
+  author: string | null
+  /** Extrait du dernier commentaire non vide (HTML nettoyé). */
+  comment: string | null
+  /** Nombre de changesets récupérés (indicateur d'activité). */
+  changesetCount: number
+}
+
+/** Branche Git rattachée à un ou plusieurs artefacts du sprint. */
+export type CodeBranchInfo = {
+  repoName: string
+  branchName: string
+  /** IDs d'artefacts du sprint détectés dans le nom de la branche. */
+  artifactIds: number[]
+  lastCommitTitle: string | null
+  lastCommitAuthor: string | null
+  lastCommitDate: string | null
+}
+
+/** Pull request détectée sur les dépôts Git du projet. */
+export type CodePullRequestInfo = {
+  id: number
+  title: string
+  repoName: string
+  sourceBranch: string
+  targetBranch: string
+  status: string
+  htmlUrl: string | null
+  creator: string | null
+  createdAt: string | null
+  /** IDs d'artefacts du sprint détectés (branche source ou titre). */
+  artifactIds: number[]
+}
+
+/** Résultat du scan Git du projet pour la revue de sprint. */
+export type SprintCodeActivity = {
+  /** Nombre de dépôts Git scannés. */
+  reposScanned: number
+  /** Nombre total de branches parcourues (avant filtrage). */
+  branchesScanned: number
+  /** Branches rattachées à des artefacts du sprint. */
+  branches: CodeBranchInfo[]
+  /** Pull requests en cours (toutes, même non rattachées à un artefact). */
+  pullRequests: CodePullRequestInfo[]
+  /** Erreurs non bloquantes rencontrées pendant le scan (info debug). */
+  warnings: string[]
+}
+
 export type SprintReviewSlideType =
   | 'titre'
   | 'contexte'
   | 'equipe'
   | 'livrables'
   | 'avancement'
+  | 'code_activity'
   | 'indicateurs'
   | 'risques'
   | 'synthese'
 
 export type SprintReviewProgressEvent =
   | { type: 'enriching'; index: number; total: number }
+  | { type: 'activity'; index: number; total: number }
+  | { type: 'code_scan'; step: 'repos' | 'branches' | 'pull_requests' }
   | { type: 'summarizing' }
   | { type: 'slide_start'; slide: SprintReviewSlideType; index: number; total: number }
   | { type: 'slide_done'; slide: SprintReviewSlideType; index: number; total: number }

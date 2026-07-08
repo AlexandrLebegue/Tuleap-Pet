@@ -1,7 +1,13 @@
 import type { LlmProvider } from '../llm'
 import { getPrompt, interpolate } from '../prompts/loader'
 import { bucketArtifacts } from '../prompts/sprint-review'
-import { formatArtifactBlock, formatArtifactSummaryBlock, stripFences } from './utils'
+import {
+  formatArtifactBlock,
+  formatArtifactSummaryBlock,
+  formatCodeActivityBlock,
+  formatRecentUpdatesBlock,
+  stripFences
+} from './utils'
 import type { EnrichedContext } from './enricher'
 
 function formatDate(iso: string | null): string {
@@ -12,13 +18,22 @@ function formatDate(iso: string | null): string {
 export async function generateSprintSummary(
   provider: LlmProvider,
   ctx: EnrichedContext
-): Promise<{ text: string; usage: { inputTokens?: number; outputTokens?: number; totalTokens?: number } | null; model: string }> {
+): Promise<{
+  text: string
+  usage: { inputTokens?: number; outputTokens?: number; totalTokens?: number } | null
+  model: string
+}> {
   const buckets = bucketArtifacts(ctx.artifacts)
   const tpl = getPrompt('sprint_summary')
 
   const artifactsBlock =
     ctx.detailedArtifacts.length > 0
-      ? formatArtifactBlock(ctx.detailedArtifacts, ctx.childArtifactIds)
+      ? formatArtifactBlock(ctx.detailedArtifacts, {
+          childIds: ctx.childArtifactIds,
+          childrenByParent: ctx.childrenByParent,
+          lastUpdates: ctx.lastUpdates,
+          codeActivity: ctx.codeActivity
+        })
       : formatArtifactSummaryBlock(ctx.artifacts)
 
   const vars: Record<string, string | number> = {
@@ -31,7 +46,12 @@ export async function generateSprintSummary(
     in_progress_count: buckets.inProgress.length,
     todo_count: buckets.todo.length,
     language: ctx.language,
-    artifacts_block: artifactsBlock
+    artifacts_block: artifactsBlock,
+    code_activity_block: formatCodeActivityBlock(ctx.codeActivity),
+    recent_updates_block: formatRecentUpdatesBlock(
+      [...ctx.artifacts, ...ctx.detailedArtifacts.filter((a) => ctx.childArtifactIds.has(a.id))],
+      ctx.lastUpdates
+    )
   }
 
   const userMessage = interpolate(tpl.userTemplate, vars)

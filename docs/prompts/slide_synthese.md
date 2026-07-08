@@ -104,5 +104,8 @@ Total artefacts : {{artifact_count}} ({{done_count}} termines, {{in_progress_cou
 === LISTE DES ARTEFACTS ===
 {{artifacts_block}}
 
+=== ACTIVITE CODE (branches & pull requests) ===
+{{code_activity_block}}
+
 === DATE ===
 {{date}}

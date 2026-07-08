@@ -8,6 +8,7 @@ import {
   TuleapServerError
 } from './errors'
 import {
+  artifactChangesetSchema,
   artifactDetailSchema,
   artifactSummarySchema,
   arrayOf,
@@ -25,6 +26,7 @@ import {
   ttmCampaignSchema,
   ttmTestExecutionSchema,
   userSelfSchema,
+  type ArtifactChangesetRaw,
   type ArtifactDetailRaw,
   type ArtifactSummaryRaw,
   type GitBranchRaw,
@@ -293,6 +295,23 @@ export class TuleapClient {
     return this.json(artifactDetailSchema, `/api/artifacts/${id}`, {
       values_format: 'collection',
       tracker_structure_format: 'minimal'
+    })
+  }
+
+  /**
+   * Derniers changesets d'un artefact (historique des modifications + commentaires),
+   * du plus récent au plus ancien. `fields=comments` allège la réponse : Tuleap
+   * n'inclut alors que les commentaires, pas les valeurs de champs.
+   */
+  listArtifactChangesets(
+    artifactId: number,
+    opts?: Pagination & { fields?: 'all' | 'comments' }
+  ): Promise<PaginatedResponse<ArtifactChangesetRaw>> {
+    return this.paginated(artifactChangesetSchema, `/api/artifacts/${artifactId}/changesets`, {
+      fields: opts?.fields ?? 'comments',
+      order: 'desc',
+      limit: opts?.limit ?? 10,
+      offset: opts?.offset ?? 0
     })
   }
 
@@ -660,12 +679,32 @@ export class TuleapClient {
 
   async listPullRequests(
     repoId: number,
-    opts?: Pagination
+    opts?: Pagination & { status?: 'open' | 'closed' | 'all' }
   ): Promise<PaginatedResponse<PullRequestSummaryRaw>> {
     const limit = opts?.limit ?? 50
     const offset = opts?.offset ?? 0
     const path = `/api/git/${repoId}/pull_requests`
-    const response = await this.request(path, { limit, offset, status: 'review' })
+    // Filtre documenté par Tuleap : query={"status":"open"|"closed"}.
+    // Sans option on garde le comportement historique (param `status=review`,
+    // ignoré par les versions récentes mais inoffensif).
+    const params: Record<string, unknown> =
+      opts?.status === 'open' || opts?.status === 'closed'
+        ? { limit, offset, query: JSON.stringify({ status: opts.status }) }
+        : opts?.status === 'all'
+          ? { limit, offset }
+          : { limit, offset, status: 'review' }
+    let response: Response
+    try {
+      response = await this.request(path, params)
+    } catch (err) {
+      // Certaines versions de Tuleap rejettent le param `query` : on retente
+      // sans filtre plutôt que d'échouer tout l'enrichissement.
+      if (err instanceof TuleapServerError && 'query' in params) {
+        response = await this.request(path, { limit, offset })
+      } else {
+        throw err
+      }
+    }
     const totalHeader = response.headers.get('X-PAGINATION-SIZE')
     const total = totalHeader ? Number.parseInt(totalHeader, 10) : Number.NaN
     let raw: unknown

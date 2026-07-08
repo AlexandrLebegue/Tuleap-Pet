@@ -1,4 +1,8 @@
-import type { GenerationSource, SprintReviewProgressEvent, SprintReviewSlideType } from '@shared/types'
+import type {
+  GenerationSource,
+  SprintReviewProgressEvent,
+  SprintReviewSlideType
+} from '@shared/types'
 import { resolveLlmProvider } from '../llm'
 import { buildEnrichedContext } from './enricher'
 import { generateSprintSummary } from './summarizer'
@@ -18,6 +22,7 @@ export async function runSprintReviewPipeline(
   opts: {
     source: GenerationSource
     projectName: string
+    projectId: number
     language: 'fr' | 'en'
   },
   emitProgress: (e: SprintReviewProgressEvent) => void
@@ -27,6 +32,7 @@ export async function runSprintReviewPipeline(
   const ctx = await buildEnrichedContext(
     opts.source,
     opts.projectName,
+    opts.projectId,
     opts.language,
     emitProgress
   )

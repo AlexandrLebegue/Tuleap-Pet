@@ -225,11 +225,66 @@ export const pullRequestSummarySchema = z
     branch_src: z.string().optional().default(''),
     branch_dest: z.string().optional().default(''),
     status: z.string().optional().default('review'),
-    html_url: z.string().optional().default('')
+    html_url: z.string().optional().default(''),
+    creation_date: z.string().nullable().optional(),
+    creator: z
+      .object({
+        display_name: z.string().optional(),
+        real_name: z.string().optional(),
+        username: z.string().optional()
+      })
+      .passthrough()
+      .nullable()
+      .optional(),
+    repository: z
+      .object({ id: z.number().optional(), name: z.string().optional() })
+      .passthrough()
+      .nullable()
+      .optional(),
+    repository_dest: z
+      .object({ id: z.number().optional(), name: z.string().optional() })
+      .passthrough()
+      .nullable()
+      .optional()
   })
   .passthrough()
 
 export type PullRequestSummaryRaw = z.infer<typeof pullRequestSummarySchema>
+
+// ---- Artifact changesets (historique / commentaires) ----
+
+/**
+ * Un changeset renvoyé par GET /api/artifacts/{id}/changesets.
+ * On ne garde que ce qui sert aux rapports : qui, quand, et le dernier
+ * commentaire. Les `values` complètes sont ignorées (déjà couvertes par
+ * getArtifact).
+ */
+export const artifactChangesetSchema = z
+  .object({
+    id: z.number().optional(),
+    submitted_on: z.string().nullable().optional(),
+    submitted_by: z.number().nullable().optional(),
+    submitted_by_details: z
+      .object({
+        display_name: z.string().optional(),
+        real_name: z.string().optional(),
+        username: z.string().optional()
+      })
+      .passthrough()
+      .nullable()
+      .optional(),
+    last_comment: z
+      .object({
+        body: z.string().optional().default(''),
+        format: z.string().optional()
+      })
+      .passthrough()
+      .nullable()
+      .optional()
+  })
+  .passthrough()
+
+export type ArtifactChangesetRaw = z.infer<typeof artifactChangesetSchema>
 
 // ---- Git commits ----
 

@@ -25,6 +25,8 @@ Consignes specifiques pour ce slide (RISQUES & CONTRAINTES) :
 - {BLOQUANTS_ROWS} : points bloquants identifies (items bloques ou en retard).
   Format : | # | Description | Proprietaire | Depuis |. Max 3 lignes.
   Si aucun bloquant : | - | Aucun bloquant identifie | - | - |
+  Indices de blocage dans les donnees : item "en cours" absent de la section
+  ACTIVITE RECENTE (aucune mise a jour), ou pull request ancienne jamais fusionnee.
 - {SLIDE_ICON} : emoji representant les risques (ex: ⚠️, 🚧, 🛡️).
 - {DATE_EXTRACTION} : date fournie.
 
@@ -78,6 +80,15 @@ Total artefacts : {{artifact_count}} ({{done_count}} termines, {{in_progress_cou
 
 === ARTEFACTS NON COMMENCES (risques potentiels) ===
 {{todo_artifacts_block}}
+
+=== ARTEFACTS EN COURS ===
+{{in_progress_artifacts_block}}
+
+=== ACTIVITE RECENTE (dernieres mises a jour) ===
+{{recent_updates_block}}
+
+=== ACTIVITE CODE (branches & pull requests) ===
+{{code_activity_block}}
 
 === RESUME D'AVANCEMENT ===
 {{summary}}

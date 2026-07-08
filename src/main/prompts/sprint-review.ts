@@ -9,8 +9,56 @@ export type SprintReviewContext = {
   language?: 'fr' | 'en'
 }
 
-const DONE_STATUSES = ['done', 'closed', 'fermé', 'fermee', 'fini', 'fini(e)', 'terminé', 'terminee', 'resolved', 'resolu']
-const IN_PROGRESS_STATUSES = ['in progress', 'en cours', 'wip', 'doing', 'review']
+const DONE_STATUSES = [
+  'done',
+  'closed',
+  'fermé',
+  'ferme',
+  'fermee',
+  'fermée',
+  'fini',
+  'finie',
+  'fini(e)',
+  'terminé',
+  'termine',
+  'terminee',
+  'terminée',
+  'resolved',
+  'resolu',
+  'résolu',
+  'résolue',
+  'livré',
+  'livre',
+  'livrée',
+  'livree',
+  'delivered',
+  'validé',
+  'valide',
+  'validée',
+  'validee',
+  'merged',
+  'fusionné',
+  'fusionne'
+]
+const IN_PROGRESS_STATUSES = [
+  'in progress',
+  'en cours',
+  'wip',
+  'doing',
+  'review',
+  'en revue',
+  'in review',
+  'à tester',
+  'a tester',
+  'en test',
+  'testing',
+  'en développement',
+  'en developpement',
+  'in development',
+  'implémentation',
+  'implementation',
+  'ongoing'
+]
 
 function bucketStatus(raw: string | null): 'done' | 'in_progress' | 'todo' {
   if (!raw) return 'todo'

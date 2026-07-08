@@ -173,7 +173,7 @@ export function registerGenerationHandlers(): void {
       }
 
       const pipelineResult = await runSprintReviewPipeline(
-        { source, projectName: project.label, language: resolvedLanguage },
+        { source, projectName: project.label, projectId, language: resolvedLanguage },
         emitProgress
       )
 

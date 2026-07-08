@@ -1,20 +1,41 @@
-import type { ArtifactSummary, SprintReviewProgressEvent, SprintReviewSlideType } from '@shared/types'
+import type {
+  ArtifactSummary,
+  SprintReviewProgressEvent,
+  SprintReviewSlideType
+} from '@shared/types'
 import type { LlmProvider } from '../llm'
 import { getPrompt, interpolate } from '../prompts/loader'
 import { bucketArtifacts } from '../prompts/sprint-review'
-import { stripFences, detectUnmatchedPlaceholders, formatArtifactSummaryBlock, formatArtifactBlock } from './utils'
+import {
+  stripFences,
+  detectUnmatchedPlaceholders,
+  formatArtifactSummaryBlock,
+  formatArtifactBlock,
+  formatCodeActivityBlock,
+  formatRecentUpdatesBlock
+} from './utils'
+import { buildCodeActivitySlide } from './code-activity-slide'
 import type { EnrichedContext } from './enricher'
 
 export type SlideResult =
   | { type: SprintReviewSlideType; ok: true; markdown: string; warnings: string[] }
   | { type: SprintReviewSlideType; ok: false; error: string }
 
-const SLIDE_DEFINITIONS: ReadonlyArray<{ type: SprintReviewSlideType; promptKey: string }> = [
+/**
+ * Slides du deck, dans l'ordre de présentation. Les slides `deterministic`
+ * sont générés en code (données Tuleap rendues telles quelles) : pas d'appel
+ * LLM, donc pas de risque d'hallucination sur les branches / PRs.
+ */
+const SLIDE_DEFINITIONS: ReadonlyArray<
+  | { type: SprintReviewSlideType; promptKey: string; deterministic?: false }
+  | { type: SprintReviewSlideType; deterministic: true }
+> = [
   { type: 'titre', promptKey: 'slide_titre' },
   { type: 'contexte', promptKey: 'slide_contexte' },
   { type: 'equipe', promptKey: 'slide_equipe' },
   { type: 'livrables', promptKey: 'slide_livrables' },
   { type: 'avancement', promptKey: 'slide_avancement' },
+  { type: 'code_activity', deterministic: true },
   { type: 'indicateurs', promptKey: 'slide_indicateurs' },
   { type: 'risques', promptKey: 'slide_risques' },
   { type: 'synthese', promptKey: 'slide_synthese' }
@@ -58,28 +79,40 @@ function buildSlideVars(
   // For custom (non-sprint) mode, some slides benefit from a focused artifact subset
   const primaryArtifacts = (() => {
     switch (type) {
-      case 'livrables': return ctx.detailedArtifacts.filter((a) => {
-        const s = (a.status ?? '').toLowerCase()
-        return s.includes('done') || s.includes('ferm') || s.includes('termin') || s.includes('clos')
-      })
-      case 'risques': return ctx.detailedArtifacts.filter((a) => {
-        const s = (a.status ?? '').toLowerCase()
-        return !s.includes('done') && !s.includes('ferm') && !s.includes('termin') && !s.includes('clos')
-      })
-      default: return ctx.detailedArtifacts
+      case 'livrables':
+        return ctx.detailedArtifacts.filter((a) => {
+          const s = (a.status ?? '').toLowerCase()
+          return (
+            s.includes('done') || s.includes('ferm') || s.includes('termin') || s.includes('clos')
+          )
+        })
+      case 'risques':
+        return ctx.detailedArtifacts.filter((a) => {
+          const s = (a.status ?? '').toLowerCase()
+          return (
+            !s.includes('done') &&
+            !s.includes('ferm') &&
+            !s.includes('termin') &&
+            !s.includes('clos')
+          )
+        })
+      default:
+        return ctx.detailedArtifacts
     }
   })()
 
-  const trackerHint = ctx.trackerLabel
-    ? `\nType d'artefacts : ${ctx.trackerLabel}`
-    : ''
+  const trackerHint = ctx.trackerLabel ? `\nType d'artefacts : ${ctx.trackerLabel}` : ''
 
   return {
     project_name: ctx.projectName,
     sprint_name: ctx.trackerLabel ? `${ctx.label} — ${ctx.trackerLabel}` : ctx.label,
     sprint_start: ctx.milestone ? formatDate(ctx.milestone.startDate) : 'inconnue',
     sprint_end: ctx.milestone ? formatDate(ctx.milestone.endDate) : 'inconnue',
-    sprint_status: ctx.milestone ? sprintStatus : (ctx.trackerLabel ? `Personnalisé (${ctx.trackerLabel})` : 'Personnalisé'),
+    sprint_status: ctx.milestone
+      ? sprintStatus
+      : ctx.trackerLabel
+        ? `Personnalisé (${ctx.trackerLabel})`
+        : 'Personnalisé',
     artifact_count: total,
     done_count: doneCount,
     in_progress_count: inProgressCount,
@@ -87,11 +120,21 @@ function buildSlideVars(
     completion_rate: completionRate,
     date: ctx.generatedAt,
     summary: summary.slice(0, 1200) + trackerHint,
-    artifacts_block: formatArtifactBlock(primaryArtifacts, ctx.childArtifactIds),
+    artifacts_block: formatArtifactBlock(primaryArtifacts, {
+      childIds: ctx.childArtifactIds,
+      childrenByParent: ctx.childrenByParent,
+      lastUpdates: ctx.lastUpdates,
+      codeActivity: ctx.codeActivity
+    }),
     done_artifacts_block: formatArtifactSummaryBlock(buckets.done),
     in_progress_artifacts_block: formatArtifactSummaryBlock(buckets.inProgress),
     todo_artifacts_block: formatArtifactSummaryBlock(buckets.todo),
-    contributors_block: buildContributorsBlock(ctx.detailedArtifacts)
+    contributors_block: buildContributorsBlock(ctx.detailedArtifacts),
+    code_activity_block: formatCodeActivityBlock(ctx.codeActivity),
+    recent_updates_block: formatRecentUpdatesBlock(
+      [...ctx.artifacts, ...ctx.detailedArtifacts.filter((a) => ctx.childArtifactIds.has(a.id))],
+      ctx.lastUpdates
+    )
   }
 }
 
@@ -100,19 +143,36 @@ export async function generateAllSlides(
   ctx: EnrichedContext,
   summary: string,
   onProgress: (e: SprintReviewProgressEvent) => void
-): Promise<{ results: SlideResult[]; usages: ({ inputTokens?: number; outputTokens?: number; totalTokens?: number } | null)[]; model: string }> {
+): Promise<{
+  results: SlideResult[]
+  usages: ({ inputTokens?: number; outputTokens?: number; totalTokens?: number } | null)[]
+  model: string
+}> {
   const results: SlideResult[] = []
-  const usages: ({ inputTokens?: number; outputTokens?: number; totalTokens?: number } | null)[] = []
+  const usages: ({ inputTokens?: number; outputTokens?: number; totalTokens?: number } | null)[] =
+    []
   let lastModel = ''
   const total = SLIDE_DEFINITIONS.length
 
   let i = 0
-  for (const { type, promptKey } of SLIDE_DEFINITIONS) {
+  for (const def of SLIDE_DEFINITIONS) {
+    const type = def.type
     i++
     onProgress({ type: 'slide_start', slide: type, index: i, total })
 
+    if (def.deterministic) {
+      // Slide généré en code : données Tuleap rendues sans passer par le LLM.
+      const markdown = buildCodeActivitySlide(ctx.codeActivity, ctx.generatedAt)
+      if (markdown) {
+        results.push({ type, ok: true, markdown, warnings: [] })
+      }
+      // Rien à montrer → slide simplement omis, sans erreur ni warning.
+      onProgress({ type: 'slide_done', slide: type, index: i, total })
+      continue
+    }
+
     try {
-      const tpl = getPrompt(promptKey)
+      const tpl = getPrompt(def.promptKey)
       const vars = buildSlideVars(type, ctx, summary)
       const userMessage = interpolate(tpl.userTemplate, vars)
 
