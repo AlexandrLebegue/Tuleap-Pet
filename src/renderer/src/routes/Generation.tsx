@@ -3,14 +3,22 @@ import { useEffect, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { useSettings } from '@renderer/stores/settings.store'
 import { useGeneration } from '@renderer/stores/generation.store'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@renderer/components/ui/card'
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle
+} from '@renderer/components/ui/card'
 import { Button } from '@renderer/components/ui/button'
 import { Badge } from '@renderer/components/ui/badge'
 import { Label } from '@renderer/components/ui/label'
 import { Input } from '@renderer/components/ui/input'
 import MarpPreviewFrame from '@renderer/components/MarpPreviewFrame'
 
-function formatTokens(usage: { totalTokens?: number; inputTokens?: number; outputTokens?: number } | null): string {
+function formatTokens(
+  usage: { totalTokens?: number; inputTokens?: number; outputTokens?: number } | null
+): string {
   if (!usage) return ''
   if (typeof usage.totalTokens === 'number') return `${usage.totalTokens} tokens`
   const i = usage.inputTokens ?? 0
@@ -64,6 +72,8 @@ function Generation(): React.JSX.Element {
   const modelUsed = useGeneration((s) => s.modelUsed)
   const usage = useGeneration((s) => s.usage)
   const slideWarnings = useGeneration((s) => s.slideWarnings)
+  const storySlides = useGeneration((s) => s.storySlides)
+  const setStorySlides = useGeneration((s) => s.setStorySlides)
 
   // Progress
   const currentProgressLabel = useGeneration((s) => s.currentProgressLabel)
@@ -144,7 +154,8 @@ function Generation(): React.JSX.Element {
         <div>
           <h2 className="text-2xl font-semibold tracking-tight">Génération IA</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Générez des slides Marp slide par slide, depuis un sprint ou une sélection d&apos;artefacts.
+            Générez des slides Marp slide par slide, depuis un sprint ou une sélection
+            d&apos;artefacts.
           </p>
         </div>
         <Badge variant="outline">Phase 1</Badge>
@@ -193,7 +204,12 @@ function Generation(): React.JSX.Element {
                 <option value="closed">Clos</option>
                 <option value="all">Tous</option>
               </select>
-              <Button size="sm" variant="outline" onClick={() => loadSprints()} disabled={loadingSprints}>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => loadSprints()}
+                disabled={loadingSprints}
+              >
                 {loadingSprints ? 'Chargement…' : 'Rafraîchir'}
               </Button>
             </div>
@@ -214,7 +230,9 @@ function Generation(): React.JSX.Element {
                 <select
                   id="sprint-select"
                   value={selectedSprintId ?? ''}
-                  onChange={(e) => selectSprint(e.target.value === '' ? null : Number(e.target.value))}
+                  onChange={(e) =>
+                    selectSprint(e.target.value === '' ? null : Number(e.target.value))
+                  }
                   className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
                 >
                   <option value="">— Aucun —</option>
@@ -223,8 +241,12 @@ function Generation(): React.JSX.Element {
                       .filter(Boolean)
                       .join(' → ')
                     const suffix = dates ? ` (${dates})` : ''
+                    // Sprints imbriqués (release → sprint) : indentation visuelle
+                    const indent = '   '.repeat(s.depth ?? 0)
+                    const prefix = (s.depth ?? 0) > 0 ? `${indent}↳ ` : ''
                     return (
                       <option key={s.id} value={s.id}>
+                        {prefix}
                         {s.label}
                         {suffix}
                       </option>
@@ -239,14 +261,19 @@ function Generation(): React.JSX.Element {
                 <strong>{selectedSprint.label}</strong> · {sprintContent.artifacts.length} item
                 {sprintContent.artifacts.length === 1 ? '' : 's'}
                 {selectedSprint.semanticStatus && (
-                  <Badge className="ml-2" variant={selectedSprint.semanticStatus === 'closed' ? 'secondary' : 'success'}>
+                  <Badge
+                    className="ml-2"
+                    variant={selectedSprint.semanticStatus === 'closed' ? 'secondary' : 'success'}
+                  >
                     {selectedSprint.semanticStatus}
                   </Badge>
                 )}
               </div>
             )}
 
-            {loadingContent && <p className="text-xs text-muted-foreground">Chargement du contenu…</p>}
+            {loadingContent && (
+              <p className="text-xs text-muted-foreground">Chargement du contenu…</p>
+            )}
             {contentError && (
               <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm">
                 {contentError}
@@ -264,7 +291,8 @@ function Generation(): React.JSX.Element {
               <div>
                 <CardTitle>Artefacts personnalisés</CardTitle>
                 <CardDescription>
-                  Sélectionnez des artefacts depuis n&apos;importe quel tracker pour générer une présentation sur mesure.
+                  Sélectionnez des artefacts depuis n&apos;importe quel tracker pour générer une
+                  présentation sur mesure.
                 </CardDescription>
               </div>
               {selectedTrackerLabel && (
@@ -288,12 +316,16 @@ function Generation(): React.JSX.Element {
 
             <div className="space-y-2">
               <Label htmlFor="tracker-select">Tracker</Label>
-              {loadingTrackers && <p className="text-xs text-muted-foreground">Chargement des trackers…</p>}
+              {loadingTrackers && (
+                <p className="text-xs text-muted-foreground">Chargement des trackers…</p>
+              )}
               {!loadingTrackers && trackers.length > 0 && (
                 <select
                   id="tracker-select"
                   value={selectedTrackerId ?? ''}
-                  onChange={(e) => selectTracker(e.target.value === '' ? null : Number(e.target.value))}
+                  onChange={(e) =>
+                    selectTracker(e.target.value === '' ? null : Number(e.target.value))
+                  }
                   className="flex h-9 w-full max-w-sm rounded-md border border-input bg-transparent px-3 text-sm"
                 >
                   <option value="">— Choisir un tracker —</option>
@@ -314,7 +346,9 @@ function Generation(): React.JSX.Element {
               <div className="space-y-3">
                 <div className="flex flex-wrap items-end gap-3">
                   <div className="space-y-1">
-                    <Label htmlFor="date-from" className="text-xs">Du</Label>
+                    <Label htmlFor="date-from" className="text-xs">
+                      Du
+                    </Label>
                     <input
                       id="date-from"
                       type="date"
@@ -324,7 +358,9 @@ function Generation(): React.JSX.Element {
                     />
                   </div>
                   <div className="space-y-1">
-                    <Label htmlFor="date-to" className="text-xs">Au</Label>
+                    <Label htmlFor="date-to" className="text-xs">
+                      Au
+                    </Label>
                     <input
                       id="date-to"
                       type="date"
@@ -337,7 +373,10 @@ function Generation(): React.JSX.Element {
                     <Button
                       size="sm"
                       variant="ghost"
-                      onClick={() => { setDateFrom(null); setDateTo(null) }}
+                      onClick={() => {
+                        setDateFrom(null)
+                        setDateTo(null)
+                      }}
                       className="text-xs"
                     >
                       Effacer dates
@@ -347,10 +386,16 @@ function Generation(): React.JSX.Element {
 
                 <div className="flex items-center justify-between">
                   <Label className="text-xs">
-                    Artefacts ({selectedArtifactIds.length} sélectionné{selectedArtifactIds.length === 1 ? '' : 's'})
+                    Artefacts ({selectedArtifactIds.length} sélectionné
+                    {selectedArtifactIds.length === 1 ? '' : 's'})
                   </Label>
                   {selectedArtifactIds.length > 0 && (
-                    <Button size="sm" variant="ghost" onClick={clearArtifactSelection} className="text-xs">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={clearArtifactSelection}
+                      className="text-xs"
+                    >
                       Tout désélectionner
                     </Button>
                   )}
@@ -401,15 +446,28 @@ function Generation(): React.JSX.Element {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
+          <label className="flex cursor-pointer items-start gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={storySlides}
+              onChange={(e) => setStorySlides(e.target.checked)}
+              disabled={isGenerating}
+              className="mt-0.5 h-4 w-4 flex-shrink-0"
+            />
+            <span>
+              Une slide détaillée par user story
+              <span className="block text-xs text-muted-foreground">
+                Description, critères d&apos;acceptance, tâches, branches et pull requests. Clone
+                tous les dépôts Git du projet pour un état exact des branches (plus lent, nécessite
+                le dossier temporaire des réglages).
+              </span>
+            </span>
+          </label>
           <div className="flex flex-wrap items-center gap-2">
             <Button onClick={() => generate('fr')} disabled={!canGenerate}>
               {isGenerating ? 'Génération en cours…' : 'Générer en français'}
             </Button>
-            <Button
-              variant="secondary"
-              onClick={() => generate('en')}
-              disabled={!canGenerate}
-            >
+            <Button variant="secondary" onClick={() => generate('en')} disabled={!canGenerate}>
               Generate in English
             </Button>
             {modelUsed && generationStatus === 'done' && (

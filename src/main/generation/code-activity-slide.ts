@@ -20,6 +20,16 @@ function statusTag(status: string): string {
   return '<span class="tag tag-orange">En revue</span>'
 }
 
+/** État de la branche vs branche par défaut — dispo seulement en scan par clone. */
+function branchState(b: { ahead?: number | null; behind?: number | null }): string {
+  if (b.ahead === null || b.ahead === undefined) return 'N/D'
+  if (b.ahead === 0 && (b.behind ?? 0) === 0)
+    return '<span class="tag tag-green">Fusionnée / à jour</span>'
+  const behind = b.behind !== null && b.behind !== undefined ? ` ↓${b.behind}` : ''
+  const tag = (b.behind ?? 0) > 0 ? 'tag-orange' : 'tag-blue'
+  return `<span class="tag ${tag}">↑${b.ahead}${behind}</span>`
+}
+
 /**
  * Slide « Activité code » : tableaux des pull requests en cours et des
  * branches liées aux artefacts du sprint. Généré 100 % en code (aucun LLM) :
@@ -47,16 +57,24 @@ export function buildCodeActivitySlide(
       ? `\n<small>… et ${pullRequests.length - MAX_PR_ROWS} autre(s) pull request(s).</small>`
       : ''
 
+  // La colonne « État » (ahead/behind vs branche par défaut) n'a de valeur
+  // que lorsque le scan par clone a tourné.
+  const showState = activity.scanMethod === 'clone'
   const branchRows =
     branches.length === 0
-      ? ['| - | Aucune branche liée détectée | - | - |']
+      ? [
+          showState
+            ? '| - | Aucune branche liée détectée | - | - | - |'
+            : '| - | Aucune branche liée détectée | - | - |'
+        ]
       : branches.slice(0, MAX_BRANCH_ROWS).map((b) => {
           const arts = b.artifactIds.map((i) => `#${i}`).join(' ')
           const commit = b.lastCommitTitle ? esc(b.lastCommitTitle.slice(0, 55)) : 'N/D'
           const meta = [b.lastCommitAuthor, b.lastCommitDate ? shortDate(b.lastCommitDate) : null]
             .filter(Boolean)
             .join(', ')
-          return `| \`${esc(b.branchName)}\` | ${arts} | ${commit} | ${esc(meta) || 'N/D'} |`
+          const state = showState ? ` ${branchState(b)} |` : ''
+          return `| \`${esc(b.branchName)}\` | ${arts} | ${commit} | ${esc(meta) || 'N/D'} |${state}`
         })
   const branchOverflow =
     branches.length > MAX_BRANCH_ROWS
@@ -100,14 +118,17 @@ ${prOverflow}
 
 ## Branches actives liées au sprint
 
-| Branche | Artefacts | Dernier commit | Auteur, date |
-|---|---|---|---|
+${
+  showState
+    ? '| Branche | Artefacts | Dernier commit | Auteur, date | État |\n|---|---|---|---|---|'
+    : '| Branche | Artefacts | Dernier commit | Auteur, date |\n|---|---|---|---|'
+}
 ${branchRows.join('\n')}
 ${branchOverflow}
 
 </div>
 
 <div class="slide-footer">
-<small>Données Git Tuleap extraites le ${generatedAt} — généré automatiquement, sans IA</small>
+<small>Données Git Tuleap extraites le ${generatedAt}${showState ? ' (scan par clone : état ↑avance ↓retard vs branche par défaut)' : ''} — généré automatiquement, sans IA</small>
 </div>`
 }

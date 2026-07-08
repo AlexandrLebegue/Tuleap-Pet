@@ -268,7 +268,14 @@ export function formatCodeActivityBlock(activity: SprintCodeActivity | undefined
       const commit = b.lastCommitTitle
         ? ` — dernier commit « ${b.lastCommitTitle.slice(0, 70)} »${meta ? ` (${meta})` : ''}`
         : ''
-      lines.push(`- \`${b.branchName}\` (dépôt ${b.repoName}) → ${arts}${commit}`)
+      // État vs branche par défaut, connu seulement après un scan par clone.
+      const state =
+        b.ahead !== null && b.ahead !== undefined
+          ? b.ahead === 0 && (b.behind ?? 0) === 0
+            ? ' — fusionnée / à jour'
+            : ` — ${b.ahead} commit(s) en avance${b.behind ? `, ${b.behind} en retard` : ''}${b.baseBranch ? ` sur ${b.baseBranch}` : ''}`
+          : ''
+      lines.push(`- \`${b.branchName}\` (dépôt ${b.repoName}) → ${arts}${commit}${state}`)
     }
     if (activity.branches.length > 15) {
       lines.push(`- … et ${activity.branches.length - 15} autre(s) branche(s).`)

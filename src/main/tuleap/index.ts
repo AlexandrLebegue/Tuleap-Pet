@@ -1,10 +1,5 @@
 export { TuleapClient } from './client'
-export type {
-  Pagination,
-  PaginatedResponse,
-  TuleapAuthHeader,
-  TuleapClientOptions
-} from './client'
+export type { Pagination, PaginatedResponse, TuleapAuthHeader, TuleapClientOptions } from './client'
 export {
   TuleapAuthError,
   TuleapError,
@@ -14,5 +9,15 @@ export {
   TuleapServerError
 } from './errors'
 export type { ErrorKind } from './errors'
-export { mapArtifactDetail, mapArtifactSummary, mapGitCommit, mapMilestone, mapMilestoneContentItem, mapProject, mapTracker, mapTrackerFields } from './mappers'
+export {
+  mapArtifactDetail,
+  mapArtifactSummary,
+  mapGitCommit,
+  mapMilestone,
+  mapMilestoneContentItem,
+  mapProject,
+  mapTracker,
+  mapTrackerFields
+} from './mappers'
 export { buildTuleapClient } from './build'
+export { listMilestonesWithChildren } from './milestones'

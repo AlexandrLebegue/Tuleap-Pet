@@ -15,6 +15,7 @@ import {
   formatRecentUpdatesBlock
 } from './utils'
 import { buildCodeActivitySlide } from './code-activity-slide'
+import { buildUsRecapSlide, buildUsStorySlides } from './us-slides'
 import type { EnrichedContext } from './enricher'
 
 export type SlideResult =
@@ -22,24 +23,35 @@ export type SlideResult =
   | { type: SprintReviewSlideType; ok: false; error: string }
 
 /**
- * Slides du deck, dans l'ordre de présentation. Les slides `deterministic`
- * sont générés en code (données Tuleap rendues telles quelles) : pas d'appel
- * LLM, donc pas de risque d'hallucination sur les branches / PRs.
+ * Slides du deck, dans l'ordre de présentation. Les slides `build` sont
+ * générés en code (données Tuleap rendues telles quelles) : pas d'appel LLM,
+ * donc pas de risque d'hallucination sur les US / branches / PRs. Un builder
+ * peut retourner plusieurs slides (une par US), une seule, ou null (omis).
  */
-const SLIDE_DEFINITIONS: ReadonlyArray<
-  | { type: SprintReviewSlideType; promptKey: string; deterministic?: false }
-  | { type: SprintReviewSlideType; deterministic: true }
-> = [
-  { type: 'titre', promptKey: 'slide_titre' },
-  { type: 'contexte', promptKey: 'slide_contexte' },
-  { type: 'equipe', promptKey: 'slide_equipe' },
-  { type: 'livrables', promptKey: 'slide_livrables' },
-  { type: 'avancement', promptKey: 'slide_avancement' },
-  { type: 'code_activity', deterministic: true },
-  { type: 'indicateurs', promptKey: 'slide_indicateurs' },
-  { type: 'risques', promptKey: 'slide_risques' },
-  { type: 'synthese', promptKey: 'slide_synthese' }
-]
+type SlideDefinition =
+  | { type: SprintReviewSlideType; promptKey: string; build?: undefined }
+  | { type: SprintReviewSlideType; build: (ctx: EnrichedContext) => string | string[] | null }
+
+function buildSlideDefinitions(ctx: EnrichedContext): SlideDefinition[] {
+  const defs: SlideDefinition[] = [
+    { type: 'titre', promptKey: 'slide_titre' },
+    { type: 'contexte', promptKey: 'slide_contexte' },
+    { type: 'us_recap', build: buildUsRecapSlide },
+    { type: 'equipe', promptKey: 'slide_equipe' },
+    { type: 'livrables', promptKey: 'slide_livrables' },
+    { type: 'avancement', promptKey: 'slide_avancement' }
+  ]
+  if (ctx.storySlides) {
+    defs.push({ type: 'us_story', build: buildUsStorySlides })
+  }
+  defs.push(
+    { type: 'code_activity', build: (c) => buildCodeActivitySlide(c.codeActivity, c.generatedAt) },
+    { type: 'indicateurs', promptKey: 'slide_indicateurs' },
+    { type: 'risques', promptKey: 'slide_risques' },
+    { type: 'synthese', promptKey: 'slide_synthese' }
+  )
+  return defs
+}
 
 function buildContributorsBlock(artifacts: ArtifactSummary[]): string {
   const counts = new Map<string, number>()
@@ -152,21 +164,30 @@ export async function generateAllSlides(
   const usages: ({ inputTokens?: number; outputTokens?: number; totalTokens?: number } | null)[] =
     []
   let lastModel = ''
-  const total = SLIDE_DEFINITIONS.length
+  const definitions = buildSlideDefinitions(ctx)
+  const total = definitions.length
 
   let i = 0
-  for (const def of SLIDE_DEFINITIONS) {
+  for (const def of definitions) {
     const type = def.type
     i++
     onProgress({ type: 'slide_start', slide: type, index: i, total })
 
-    if (def.deterministic) {
-      // Slide généré en code : données Tuleap rendues sans passer par le LLM.
-      const markdown = buildCodeActivitySlide(ctx.codeActivity, ctx.generatedAt)
-      if (markdown) {
-        results.push({ type, ok: true, markdown, warnings: [] })
+    if (def.build) {
+      // Slide(s) généré(s) en code : données Tuleap rendues sans passer par le LLM.
+      try {
+        const built = def.build(ctx)
+        const markdowns = built === null ? [] : Array.isArray(built) ? built : [built]
+        for (const markdown of markdowns) {
+          results.push({ type, ok: true, markdown, warnings: [] })
+        }
+        // Rien à montrer → slide simplement omis, sans erreur ni warning.
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        results.push({ type, ok: false, error: message })
+        onProgress({ type: 'slide_error', slide: type, index: i, total, error: message })
+        continue
       }
-      // Rien à montrer → slide simplement omis, sans erreur ni warning.
       onProgress({ type: 'slide_done', slide: type, index: i, total })
       continue
     }

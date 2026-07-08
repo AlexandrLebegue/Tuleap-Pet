@@ -379,6 +379,20 @@ export class TuleapClient {
   }
 
   /**
+   * Sous-milestones d'un milestone (sprints imbriqués dans une release, etc.),
+   * via GET /api/milestones/{id}/milestones.
+   */
+  listSubMilestones(
+    milestoneId: number,
+    opts?: Pagination
+  ): Promise<PaginatedResponse<MilestoneRaw>> {
+    return this.paginated(milestoneSchema, `/api/milestones/${milestoneId}/milestones`, {
+      limit: opts?.limit ?? DEFAULT_PAGE_LIMIT,
+      offset: opts?.offset ?? 0
+    })
+  }
+
+  /**
    * Items linked to a milestone (user stories, tasks, …).
    * Tuleap exposes them as backlog items on /api/milestones/{id}/content.
    * The response shape may differ from standard artifacts (missing uri/tracker).

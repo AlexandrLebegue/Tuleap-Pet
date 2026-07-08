@@ -18,6 +18,7 @@ import {
 } from '../tuleap'
 import type { TuleapClient } from '../tuleap/client'
 import type { ArtifactChangesetRaw, GitRepositoryRaw } from '../tuleap/schemas'
+import { matchArtifactIds } from './artifact-matching'
 
 /** Max top-level artifacts to enrich with full detail */
 const ENRICH_CAP = 40
@@ -50,6 +51,8 @@ export type EnrichedContext = {
   lastUpdates: Map<number, ArtifactLastUpdate>
   /** Git branches / pull requests discovered on the project's repositories. */
   codeActivity: SprintCodeActivity
+  /** True quand l'utilisateur a demandé une slide détaillée par user story. */
+  storySlides: boolean
   language: 'fr' | 'en'
   generatedAt: string
 }
@@ -158,24 +161,7 @@ async function fetchLastUpdates(
   return map
 }
 
-/**
- * Extract the sprint-artifact ids referenced by a branch name or PR title.
- * Matches every number of the string against the set of known artifact ids,
- * which covers the usual conventions: `tuleap-123`, `art-123`, `story/123`,
- * `feature/123-mon-sujet`, `TASK-123`, `#123`…
- */
-export function matchArtifactIds(text: string, knownIds: Set<number>): number[] {
-  const out: number[] = []
-  const seen = new Set<number>()
-  for (const m of text.matchAll(/\d{1,10}/g)) {
-    const id = Number.parseInt(m[0], 10)
-    if (knownIds.has(id) && !seen.has(id)) {
-      seen.add(id)
-      out.push(id)
-    }
-  }
-  return out
-}
+export { matchArtifactIds } from './artifact-matching'
 
 function repoDisplayName(repo: GitRepositoryRaw): string {
   return repo.name || repo.path_without_project || repo.path || `repo-${repo.id}`
@@ -190,6 +176,7 @@ async function scanCodeActivity(
   client: TuleapClient,
   projectId: number,
   knownIds: Set<number>,
+  deepScan: boolean,
   onProgress: (e: SprintReviewProgressEvent) => void
 ): Promise<SprintCodeActivity> {
   const empty: SprintCodeActivity = {
@@ -197,7 +184,8 @@ async function scanCodeActivity(
     branchesScanned: 0,
     branches: [],
     pullRequests: [],
-    warnings: []
+    warnings: [],
+    scanMethod: 'api'
   }
 
   onProgress({ type: 'code_scan', step: 'repos' })
@@ -217,40 +205,66 @@ async function scanCodeActivity(
     warnings.push(`${repos.length - scanned.length} dépôt(s) non scanné(s) (cap ${REPO_SCAN_CAP}).`)
   }
 
-  onProgress({ type: 'code_scan', step: 'branches' })
   let branchesScanned = 0
+  let scanMethod: 'api' | 'clone' = 'api'
   const branches: CodeBranchInfo[] = []
-  const branchResults = await Promise.allSettled(
-    scanned.map(async (repo) => {
-      const items = await client.fetchAll(async (offset) => {
-        const page = await client.listBranches(repo.id, { offset })
-        // fetchAll s'arrête quand items.length >= total : on borne aussi ici.
-        return offset + page.items.length >= BRANCH_SCAN_CAP
-          ? { ...page, total: Math.min(page.total, offset + page.items.length) }
-          : page
-      })
-      return { repo, items }
-    })
-  )
-  for (const r of branchResults) {
-    if (r.status !== 'fulfilled') {
+
+  // Scan profond : clone de chaque dépôt (ahead/behind, dernier commit exact).
+  // Import dynamique — le module tire la config Electron, inutile de le
+  // charger quand l'option n'est pas cochée.
+  if (deepScan) {
+    onProgress({ type: 'code_scan', step: 'clone' })
+    try {
+      const { deepScanBranches } = await import('./deep-scan')
+      const deep = await deepScanBranches(scanned, knownIds)
+      warnings.push(...deep.warnings)
+      if (deep.clonedRepos > 0) {
+        branches.push(...deep.branches)
+        branchesScanned = deep.branchesScanned
+        scanMethod = 'clone'
+      }
+    } catch (err) {
       warnings.push(
-        `Branches illisibles sur un dépôt : ${r.reason instanceof Error ? r.reason.message : String(r.reason)}`
+        `Scan par clone indisponible : ${err instanceof Error ? err.message : String(err)}`
       )
-      continue
     }
-    branchesScanned += r.value.items.length
-    for (const b of r.value.items) {
-      const artifactIds = matchArtifactIds(b.name, knownIds)
-      if (artifactIds.length === 0) continue
-      branches.push({
-        repoName: repoDisplayName(r.value.repo),
-        branchName: b.name,
-        artifactIds,
-        lastCommitTitle: b.commit?.title ?? null,
-        lastCommitAuthor: b.commit?.author_name ?? null,
-        lastCommitDate: b.commit?.authored_date ?? null
+  }
+
+  // Scan API (toujours utilisé en fallback quand le clone n'a rien donné).
+  if (scanMethod === 'api') {
+    onProgress({ type: 'code_scan', step: 'branches' })
+    const branchResults = await Promise.allSettled(
+      scanned.map(async (repo) => {
+        const items = await client.fetchAll(async (offset) => {
+          const page = await client.listBranches(repo.id, { offset })
+          // fetchAll s'arrête quand items.length >= total : on borne aussi ici.
+          return offset + page.items.length >= BRANCH_SCAN_CAP
+            ? { ...page, total: Math.min(page.total, offset + page.items.length) }
+            : page
+        })
+        return { repo, items }
       })
+    )
+    for (const r of branchResults) {
+      if (r.status !== 'fulfilled') {
+        warnings.push(
+          `Branches illisibles sur un dépôt : ${r.reason instanceof Error ? r.reason.message : String(r.reason)}`
+        )
+        continue
+      }
+      branchesScanned += r.value.items.length
+      for (const b of r.value.items) {
+        const artifactIds = matchArtifactIds(b.name, knownIds)
+        if (artifactIds.length === 0) continue
+        branches.push({
+          repoName: repoDisplayName(r.value.repo),
+          branchName: b.name,
+          artifactIds,
+          lastCommitTitle: b.commit?.title ?? null,
+          lastCommitAuthor: b.commit?.author_name ?? null,
+          lastCommitDate: b.commit?.authored_date ?? null
+        })
+      }
     }
   }
 
@@ -297,7 +311,8 @@ async function scanCodeActivity(
     branchesScanned,
     branches,
     pullRequests,
-    warnings
+    warnings,
+    scanMethod
   }
 }
 
@@ -306,8 +321,10 @@ export async function buildEnrichedContext(
   projectName: string,
   projectId: number,
   language: 'fr' | 'en',
-  onProgress: (e: SprintReviewProgressEvent) => void
+  onProgress: (e: SprintReviewProgressEvent) => void,
+  options?: { storySlides?: boolean }
 ): Promise<EnrichedContext> {
+  const storySlides = options?.storySlides ?? false
   const client = await buildTuleapClient()
   let milestone: MilestoneSummary | null = null
   let artifacts: ArtifactSummary[] = []
@@ -383,7 +400,8 @@ export async function buildEnrichedContext(
 
   // Branches & pull requests des dépôts Git du projet (best effort).
   // knownIds inclut US + sous-tâches : une branche `task-456` remonte aussi.
-  const codeActivity = await scanCodeActivity(client, projectId, knownIds, onProgress)
+  // Avec storySlides, le scan clone chaque dépôt pour un état exact (ahead/behind).
+  const codeActivity = await scanCodeActivity(client, projectId, knownIds, storySlides, onProgress)
 
   return {
     projectName,
@@ -396,6 +414,7 @@ export async function buildEnrichedContext(
     childrenByParent,
     lastUpdates,
     codeActivity,
+    storySlides,
     language,
     generatedAt: new Date().toISOString().slice(0, 10)
   }

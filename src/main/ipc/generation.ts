@@ -2,6 +2,7 @@ import { ipcMain } from 'electron'
 import {
   TuleapError,
   buildTuleapClient,
+  listMilestonesWithChildren,
   mapArtifactSummary,
   mapMilestone,
   mapMilestoneContentItem
@@ -42,7 +43,14 @@ export type GenerationResult = {
 
 export type LlmTestResult =
   | { ok: true; model: string; sample: string; provider: string }
-  | { ok: false; error: string; kind: string; provider?: string; attemptedModel?: string; status?: number }
+  | {
+      ok: false
+      error: string
+      kind: string
+      provider?: string
+      attemptedModel?: string
+      status?: number
+    }
 
 export function registerGenerationHandlers(): void {
   ipcMain.handle(
@@ -56,10 +64,9 @@ export function registerGenerationHandlers(): void {
         status === 'open' || status === 'closed' || status === 'all' ? status : 'open'
       audit('generation.list-sprints', `${projectId}:${validStatus}`)
       const client = await buildTuleapClient()
-      const items = await client.fetchAll((offset) =>
-        client.listMilestones(projectId, { status: validStatus, limit: 50, offset })
-      )
-      return items.map(mapMilestone)
+      // Descend dans les sous-milestones : sur certains plannings les sprints
+      // sont imbriqués dans des releases et n'apparaissent pas au niveau projet.
+      return listMilestonesWithChildren(client, projectId, validStatus)
     }
   )
 
@@ -74,20 +81,17 @@ export function registerGenerationHandlers(): void {
     }
   )
 
-  ipcMain.handle(
-    'generation:list-tracker-artifacts',
-    async (_event, trackerId: unknown) => {
-      if (typeof trackerId !== 'number' || !Number.isInteger(trackerId) || trackerId <= 0) {
-        throw new TuleapError('unknown', 'trackerId invalide.')
-      }
-      audit('generation.list-tracker-artifacts', String(trackerId))
-      const client = await buildTuleapClient()
-      const items = await client.fetchAll((offset) =>
-        client.listArtifacts(trackerId, { limit: 50, offset })
-      )
-      return items.map(mapArtifactSummary)
+  ipcMain.handle('generation:list-tracker-artifacts', async (_event, trackerId: unknown) => {
+    if (typeof trackerId !== 'number' || !Number.isInteger(trackerId) || trackerId <= 0) {
+      throw new TuleapError('unknown', 'trackerId invalide.')
     }
-  )
+    audit('generation.list-tracker-artifacts', String(trackerId))
+    const client = await buildTuleapClient()
+    const items = await client.fetchAll((offset) =>
+      client.listArtifacts(trackerId, { limit: 50, offset })
+    )
+    return items.map(mapArtifactSummary)
+  })
 
   ipcMain.handle('generation:test-llm', async (): Promise<LlmTestResult> => {
     const resolvedProvider = getLlmProvider()
@@ -124,23 +128,25 @@ export function registerGenerationHandlers(): void {
 
   ipcMain.handle(
     'generation:generate-sprint-review',
-    async (
-      event,
-      args: unknown
-    ): Promise<GenerationResult> => {
+    async (event, args: unknown): Promise<GenerationResult> => {
       if (!args || typeof args !== 'object') {
         throw new Error('Arguments invalides.')
       }
-      const { source, language } = args as {
+      const { source, language, storySlides } = args as {
         source?: GenerationSource
         language?: 'fr' | 'en'
+        storySlides?: boolean
       }
 
       if (!source || typeof source !== 'object' || !('mode' in source)) {
         throw new Error('source invalide : mode requis.')
       }
       if (source.mode === 'sprint') {
-        if (typeof source.milestoneId !== 'number' || !Number.isInteger(source.milestoneId) || source.milestoneId <= 0) {
+        if (
+          typeof source.milestoneId !== 'number' ||
+          !Number.isInteger(source.milestoneId) ||
+          source.milestoneId <= 0
+        ) {
           throw new Error('milestoneId invalide.')
         }
       } else if (source.mode === 'custom') {
@@ -154,8 +160,7 @@ export function registerGenerationHandlers(): void {
         throw new Error('source.mode invalide.')
       }
 
-      const resolvedLanguage: 'fr' | 'en' =
-        language === 'fr' || language === 'en' ? language : 'fr'
+      const resolvedLanguage: 'fr' | 'en' = language === 'fr' || language === 'en' ? language : 'fr'
 
       const projectId = getConfig().projectId
       if (typeof projectId !== 'number') {
@@ -163,7 +168,10 @@ export function registerGenerationHandlers(): void {
       }
 
       const sourceLabel = source.mode === 'sprint' ? String(source.milestoneId) : source.label
-      audit('generation.sprint-review.start', sourceLabel, { mode: source.mode, language: resolvedLanguage })
+      audit('generation.sprint-review.start', sourceLabel, {
+        mode: source.mode,
+        language: resolvedLanguage
+      })
 
       const client = await buildTuleapClient()
       const project = await client.getProject(projectId)
@@ -173,7 +181,13 @@ export function registerGenerationHandlers(): void {
       }
 
       const pipelineResult = await runSprintReviewPipeline(
-        { source, projectName: project.label, projectId, language: resolvedLanguage },
+        {
+          source,
+          projectName: project.label,
+          projectId,
+          language: resolvedLanguage,
+          storySlides: storySlides === true
+        },
         emitProgress
       )
 

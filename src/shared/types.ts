@@ -287,6 +287,10 @@ export type MilestoneSummary = {
   endDate: string | null
   uri: string
   htmlUrl: string | null
+  /** Id du milestone parent quand ce sprint est imbriqué dans un autre (releases → sprints). */
+  parentId?: number | null
+  /** Profondeur d'imbrication (0 = top niveau) pour l'indentation dans la sélection. */
+  depth?: number
 }
 
 export type SprintContent = {
@@ -317,6 +321,12 @@ export type CodeBranchInfo = {
   lastCommitTitle: string | null
   lastCommitAuthor: string | null
   lastCommitDate: string | null
+  /** Commits en avance sur la branche par défaut (scan par clone uniquement). */
+  ahead?: number | null
+  /** Commits de retard sur la branche par défaut (scan par clone uniquement). */
+  behind?: number | null
+  /** Branche par défaut du dépôt utilisée comme référence pour ahead/behind. */
+  baseBranch?: string | null
 }
 
 /** Pull request détectée sur les dépôts Git du projet. */
@@ -346,14 +356,18 @@ export type SprintCodeActivity = {
   pullRequests: CodePullRequestInfo[]
   /** Erreurs non bloquantes rencontrées pendant le scan (info debug). */
   warnings: string[]
+  /** 'clone' quand les branches viennent d'un clone local (ahead/behind dispo), 'api' sinon. */
+  scanMethod?: 'api' | 'clone'
 }
 
 export type SprintReviewSlideType =
   | 'titre'
   | 'contexte'
+  | 'us_recap'
   | 'equipe'
   | 'livrables'
   | 'avancement'
+  | 'us_story'
   | 'code_activity'
   | 'indicateurs'
   | 'risques'
@@ -362,7 +376,7 @@ export type SprintReviewSlideType =
 export type SprintReviewProgressEvent =
   | { type: 'enriching'; index: number; total: number }
   | { type: 'activity'; index: number; total: number }
-  | { type: 'code_scan'; step: 'repos' | 'branches' | 'pull_requests' }
+  | { type: 'code_scan'; step: 'repos' | 'branches' | 'pull_requests' | 'clone' }
   | { type: 'summarizing' }
   | { type: 'slide_start'; slide: SprintReviewSlideType; index: number; total: number }
   | { type: 'slide_done'; slide: SprintReviewSlideType; index: number; total: number }
@@ -383,6 +397,12 @@ export type GenerationSource =
 export type GenerationOptions = {
   source: GenerationSource
   language?: 'fr' | 'en'
+  /**
+   * Génère une slide détaillée par user story (description, critères
+   * d'acceptance, tâches, branches, PRs) et active la recherche de branches
+   * par clone local de tous les dépôts Git du projet (ahead/behind).
+   */
+  storySlides?: boolean
 }
 
 // ---- Chat (Phase 2) ----

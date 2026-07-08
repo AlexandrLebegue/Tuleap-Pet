@@ -230,6 +230,7 @@ const generation = {
   generateSprintReview: (args: {
     source: GenerationSource
     language?: 'fr' | 'en'
+    storySlides?: boolean
   }): Promise<GenerationResult> => ipcRenderer.invoke('generation:generate-sprint-review', args),
   listTrackerArtifacts: (trackerId: number): Promise<ArtifactSummary[]> =>
     ipcRenderer.invoke('generation:list-tracker-artifacts', trackerId),

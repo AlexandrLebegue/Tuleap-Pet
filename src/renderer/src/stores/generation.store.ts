@@ -46,6 +46,8 @@ type Store = {
   modelUsed: string | null
   usage: { inputTokens?: number; outputTokens?: number; totalTokens?: number } | null
   slideWarnings: { slide: SprintReviewSlideType; warning: string }[]
+  /** Option : une slide détaillée par user story (clone des dépôts Git). */
+  storySlides: boolean
 
   // --- Progress ---
   pipelineProgress: SprintReviewProgressEvent[]
@@ -72,6 +74,7 @@ type Store = {
   setCustomLabel: (label: string) => void
   setDateFrom: (date: string | null) => void
   setDateTo: (date: string | null) => void
+  setStorySlides: (value: boolean) => void
   generate: (language?: 'fr' | 'en') => Promise<void>
   setMarkdown: (markdown: string) => void
   refreshPreview: () => Promise<void>
@@ -89,6 +92,8 @@ function progressLabel(event: SprintReviewProgressEvent): string {
       switch (event.step) {
         case 'repos':
           return 'Scan des dépôts Git du projet…'
+        case 'clone':
+          return 'Clone des dépôts Git (recherche approfondie des branches)…'
         case 'branches':
           return 'Recherche des branches liées aux artefacts…'
         case 'pull_requests':
@@ -160,6 +165,7 @@ export const useGeneration = create<Store>((set, get) => ({
   modelUsed: null,
   usage: null,
   slideWarnings: [],
+  storySlides: false,
 
   // Progress
   pipelineProgress: [],
@@ -271,6 +277,8 @@ export const useGeneration = create<Store>((set, get) => ({
 
   setCustomLabel: (label: string) => set({ customLabel: label }),
 
+  setStorySlides: (value: boolean) => set({ storySlides: value }),
+
   setDateFrom: (date: string | null) => {
     const { dateTo, trackerArtifacts } = get()
     const from = date
@@ -288,7 +296,14 @@ export const useGeneration = create<Store>((set, get) => ({
   },
 
   generate: async (language = 'fr') => {
-    const { mode, selectedSprintId, selectedArtifactIds, customLabel, selectedTrackerLabel } = get()
+    const {
+      mode,
+      selectedSprintId,
+      selectedArtifactIds,
+      customLabel,
+      selectedTrackerLabel,
+      storySlides
+    } = get()
 
     let source: GenerationSource | null = null
     if (mode === 'sprint') {
@@ -342,7 +357,7 @@ export const useGeneration = create<Store>((set, get) => ({
     })
 
     try {
-      const result = await api.generation.generateSprintReview({ source, language })
+      const result = await api.generation.generateSprintReview({ source, language, storySlides })
       unsubscribe()
       set({
         markdown: result.markdown,

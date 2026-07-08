@@ -68,6 +68,13 @@ const US_1201 = art({
       label: 'Description',
       type: 'text',
       value: 'En tant qu’auditeur, je veux exporter mes rapports en PDF afin de les archiver.'
+    },
+    {
+      field_id: 5,
+      label: "Critères d'acceptance",
+      type: 'text',
+      value:
+        '<ul><li>Le PDF respecte le gabarit officiel</li><li>Export en moins de 10 secondes</li></ul>'
     }
   ]
 })
@@ -252,6 +259,34 @@ const PULL_REQUESTS = [
   }
 ]
 
+const RELEASE_900 = {
+  id: 900,
+  uri: 'milestones/900',
+  label: 'Release 2026.2',
+  status: 'closed',
+  semantic_status: 'closed',
+  start_date: '2026-05-01T00:00:00+02:00',
+  end_date: '2026-08-31T00:00:00+02:00',
+  html_url: null
+}
+
+const SPRINT_901 = {
+  id: 901,
+  uri: 'milestones/901',
+  label: 'Sprint 24.08 (imbriqué)',
+  status: 'open',
+  semantic_status: 'open',
+  start_date: '2026-07-08T00:00:00+02:00',
+  end_date: '2026-07-22T00:00:00+02:00',
+  html_url: null
+}
+
+const SUB_MILESTONES: Record<number, unknown[]> = {
+  900: [SPRINT_901],
+  901: [],
+  [MILESTONE_ID]: []
+}
+
 function fakeTuleapFetch(input: RequestInfo | URL): Promise<Response> {
   const url = typeof input === 'string' ? input : input.toString()
   const { pathname, searchParams } = new URL(url)
@@ -268,6 +303,17 @@ function fakeTuleapFetch(input: RequestInfo | URL): Promise<Response> {
   }
   if (pathname === `/api/milestones/${MILESTONE_ID}`) {
     return Promise.resolve(jsonRes(milestone))
+  }
+  // Milestones du projet : une release close contenant un sprint ouvert imbriqué
+  // + le sprint 850 au niveau racine.
+  if (pathname === `/api/projects/${PROJECT_ID}/milestones`) {
+    const items = [RELEASE_900, milestone]
+    return Promise.resolve(jsonRes(items, items.length))
+  }
+  const subMilestones = pathname.match(/^\/api\/milestones\/(\d+)\/milestones$/)
+  if (subMilestones) {
+    const items = SUB_MILESTONES[Number(subMilestones[1])] ?? []
+    return Promise.resolve(jsonRes(items, items.length))
   }
   if (pathname === `/api/milestones/${MILESTONE_ID}/content`) {
     const items = [US_1201, US_1202, BUG_1203, US_1204]
@@ -310,6 +356,47 @@ const fakeClient = new TuleapClient({
 
 vi.mock('../src/main/tuleap/build', () => ({
   buildTuleapClient: async () => fakeClient
+}))
+
+// Le scan par clone est mocké : pas de git ni de réseau dans les tests. Le
+// module réel tire electron-store (config) — il n'est importé (dynamiquement)
+// que lorsque l'option storySlides est active. vi.hoisted : les factories de
+// vi.mock sont remontées avant les const du module.
+const { deepScanMock } = vi.hoisted(() => ({
+  deepScanMock: vi.fn()
+}))
+deepScanMock.mockImplementation(async () => ({
+  branches: [
+    {
+      repoName: 'webapp',
+      branchName: 'feature/1201-export-pdf',
+      artifactIds: [1201],
+      lastCommitTitle: 'feat(export): page de prévisualisation PDF',
+      lastCommitAuthor: 'David Roux',
+      lastCommitDate: '2026-07-04T15:58:00+02:00',
+      ahead: 3,
+      behind: 1,
+      baseBranch: 'main'
+    },
+    {
+      repoName: 'webapp',
+      branchName: 'fix/1203-dashboard-crash',
+      artifactIds: [1203],
+      lastCommitTitle: 'fix(dashboard): guard sur cache vide',
+      lastCommitAuthor: 'Chloé Petit',
+      lastCommitDate: '2026-07-05T09:10:00+02:00',
+      ahead: 0,
+      behind: 0,
+      baseBranch: 'main'
+    }
+  ],
+  branchesScanned: 4,
+  clonedRepos: 1,
+  warnings: []
+}))
+
+vi.mock('../src/main/generation/deep-scan', () => ({
+  deepScanBranches: deepScanMock
 }))
 
 // ─── Faux LLM ────────────────────────────────────────────────────────────────
@@ -660,6 +747,7 @@ import {
 } from '../src/main/generation/enricher'
 import { formatCodeActivityBlock, formatRecentUpdatesBlock } from '../src/main/generation/utils'
 import { buildCodeActivitySlide } from '../src/main/generation/code-activity-slide'
+import { listMilestonesWithChildren } from '../src/main/tuleap/milestones'
 
 beforeEach(() => {
   llmCalls.length = 0
@@ -790,13 +878,14 @@ describe('runSprintReviewPipeline (bout en bout, LLM mocké)', () => {
       (e) => events.push(e)
     )
 
-    // 9 slides annoncés (8 LLM + 1 déterministe), dans l'ordre
+    // 10 slides annoncés (8 LLM + 2 déterministes), dans l'ordre
     const started = events
       .filter((e) => e.type === 'slide_start')
       .map((e) => (e as { slide: string }).slide)
     expect(started).toEqual([
       'titre',
       'contexte',
+      'us_recap',
       'equipe',
       'livrables',
       'avancement',
@@ -806,12 +895,24 @@ describe('runSprintReviewPipeline (bout en bout, LLM mocké)', () => {
       'synthese'
     ])
 
+    // Le slide récapitulatif des US est présent, déterministe, avec statut,
+    // description, compteur de tâches et indicateurs code.
+    expect(result.markdown).toContain('# 📋 Récapitulatif des user stories')
+    expect(result.markdown).toMatch(
+      /\| #1201 \| US — Export PDF des rapports d’audit \| <span class="tag tag-orange">En cours<\/span> \| En tant qu’auditeur[^|]*\| 1\/2 \| 🌿 🔀 \|/
+    )
+    expect(result.markdown).toMatch(
+      /\| #1204 \| US — Notifications e-mail configurables \| <span class="tag tag-blue">À faire<\/span> \| N\/D \| — \| — \|/
+    )
+
     // Le slide code_activity est présent, généré sans LLM, avec les vraies données
     expect(result.markdown).toContain('# 🔀 Activité code — Branches & Pull Requests')
     expect(result.markdown).toContain('`feature/1201-export-pdf` → `main`')
     expect(result.markdown).toContain('Export PDF des rapports (art #1201)')
     expect(result.markdown).toContain('fix(dashboard): guard sur cache vide')
-    // 9 appels LLM (1 synthèse + 8 slides) : le slide déterministe n'en fait pas
+    // Pas de slides par US sans l'option
+    expect(result.markdown).not.toContain('# 📘 US #')
+    // 9 appels LLM (1 synthèse + 8 slides) : les slides déterministes n'en font pas
     expect(llmCalls).toHaveLength(9)
 
     // Le prompt de synthèse contient la hiérarchie, l'activité et le code
@@ -849,6 +950,110 @@ describe('runSprintReviewPipeline (bout en bout, LLM mocké)', () => {
         'utf8'
       )
     }
+  })
+})
+
+// ─── Test d'intégration : option « une slide par US » + scan par clone ──────
+
+describe('runSprintReviewPipeline (storySlides: true, clone mocké)', () => {
+  it('génère les slides par US avec critères, tâches, branches (ahead/behind) et PRs', async () => {
+    const events: SprintReviewProgressEvent[] = []
+    const result = await runSprintReviewPipeline(
+      {
+        source: { mode: 'sprint', milestoneId: MILESTONE_ID },
+        projectName: 'Portail Audit',
+        projectId: PROJECT_ID,
+        language: 'fr',
+        storySlides: true
+      },
+      (e) => events.push(e)
+    )
+
+    // Le scan par clone a été utilisé (une seule fois, tous les repos passés)
+    expect(deepScanMock).toHaveBeenCalledTimes(1)
+    expect(
+      events.filter((e) => e.type === 'code_scan').map((e) => (e as { step: string }).step)
+    ).toEqual(['repos', 'clone', 'pull_requests'])
+
+    // Le slide us_story est annoncé entre avancement et code_activity
+    const started = events
+      .filter((e) => e.type === 'slide_start')
+      .map((e) => (e as { slide: string }).slide)
+    expect(started).toEqual([
+      'titre',
+      'contexte',
+      'us_recap',
+      'equipe',
+      'livrables',
+      'avancement',
+      'us_story',
+      'code_activity',
+      'indicateurs',
+      'risques',
+      'synthese'
+    ])
+
+    // Une slide par US top-level (4 US, les tâches n'ont pas de slide)
+    expect(result.markdown).toContain('# 📘 US #1201 — US — Export PDF des rapports d’audit')
+    expect(result.markdown).toContain('# 📘 US #1202 — US — Authentification SSO (SAML)')
+    expect(result.markdown).toContain('# 📘 US #1203 — Bug — Crash à l’ouverture du dashboard')
+    expect(result.markdown).toContain('# 📘 US #1204 — US — Notifications e-mail configurables')
+    expect((result.markdown.match(/# 📘 US #/g) ?? []).length).toBe(4)
+
+    // Contenu de la slide US #1201 : critères d'acceptance, tâches, branche avec état, PR
+    expect(result.markdown).toContain("## Critères d'acceptance")
+    expect(result.markdown).toContain('Le PDF respecte le gabarit officiel')
+    expect(result.markdown).toContain('## Tâches (1/2 terminées)')
+    expect(result.markdown).toMatch(/\| #1210 \| Générer le PDF côté serveur/)
+    expect(result.markdown).toContain('🌿 `feature/1201-export-pdf` (webapp) — ↑3 ↓1 vs main')
+    expect(result.markdown).toContain('🔀 PR #77')
+
+    // Slide activité code : colonne État alimentée par le clone
+    expect(result.markdown).toContain(
+      '| Branche | Artefacts | Dernier commit | Auteur, date | État |'
+    )
+    expect(result.markdown).toContain('<span class="tag tag-orange">↑3 ↓1</span>')
+    expect(result.markdown).toContain('<span class="tag tag-green">Fusionnée / à jour</span>')
+    expect(result.markdown).toContain('scan par clone')
+
+    // Toujours 9 appels LLM : les slides US sont déterministes
+    expect(llmCalls).toHaveLength(9)
+    expect(result.slideWarnings).toEqual([])
+
+    if (process.env.WRITE_EXAMPLE === '1') {
+      const outDir = resolve(__dirname, '../docs/examples')
+      mkdirSync(outDir, { recursive: true })
+      writeFileSync(
+        resolve(outDir, 'sprint-review-story-slides-example.md'),
+        result.markdown,
+        'utf8'
+      )
+    }
+  })
+})
+
+// ─── Sprints imbriqués ───────────────────────────────────────────────────────
+
+describe('listMilestonesWithChildren (sprints imbriqués)', () => {
+  it('descend dans les sous-milestones et renseigne depth/parentId', async () => {
+    const sprints = await listMilestonesWithChildren(fakeClient, PROJECT_ID, 'all')
+    expect(sprints.map((s) => s.id)).toEqual([900, 901, MILESTONE_ID])
+    const nested = sprints.find((s) => s.id === 901)
+    expect(nested?.parentId).toBe(900)
+    expect(nested?.depth).toBe(1)
+    expect(sprints.find((s) => s.id === 900)?.depth).toBe(0)
+  })
+
+  it('garde une release close quand un sprint enfant matche le filtre « open »', async () => {
+    const sprints = await listMilestonesWithChildren(fakeClient, PROJECT_ID, 'open')
+    // Release 900 close conservée (porte le sprint ouvert 901), sprint 850 ouvert conservé
+    expect(sprints.map((s) => s.id)).toEqual([900, 901, MILESTONE_ID])
+  })
+
+  it('filtre les enfants qui ne matchent pas le statut', async () => {
+    const sprints = await listMilestonesWithChildren(fakeClient, PROJECT_ID, 'closed')
+    // Seule la release 900 est close ; le sprint imbriqué 901 (ouvert) est exclu
+    expect(sprints.map((s) => s.id)).toEqual([900])
   })
 })
 

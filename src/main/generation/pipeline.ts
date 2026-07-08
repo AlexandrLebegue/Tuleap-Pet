@@ -24,6 +24,8 @@ export async function runSprintReviewPipeline(
     projectName: string
     projectId: number
     language: 'fr' | 'en'
+    /** Slides détaillées par US + recherche de branches par clone des dépôts. */
+    storySlides?: boolean
   },
   emitProgress: (e: SprintReviewProgressEvent) => void
 ): Promise<PipelineResult> {
@@ -34,7 +36,8 @@ export async function runSprintReviewPipeline(
     opts.projectName,
     opts.projectId,
     opts.language,
-    emitProgress
+    emitProgress,
+    { storySlides: opts.storySlides ?? false }
   )
 
   emitProgress({ type: 'summarizing' })

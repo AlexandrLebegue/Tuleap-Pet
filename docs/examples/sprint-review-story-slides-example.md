@@ -999,6 +999,185 @@ style: |
 
 ---
 
+# 📘 US #1201 — US — Export PDF des rapports d’audit
+
+<div class="slide-body">
+
+<div class="columns">
+<div class="col">
+
+## Description
+
+En tant qu’auditeur, je veux exporter mes rapports en PDF afin de les archiver.
+
+## Critères d'acceptance
+
+- Le PDF respecte le gabarit officiel
+- Export en moins de 10 secondes
+
+- **Story points :** 8
+- **Assigné à :** Alice Martin
+
+</div>
+<div class="col">
+
+## Tâches (1/2 terminées)
+
+| # | Tâche | Statut |
+|---|---|---|
+| #1210 | Générer le PDF côté serveur (lib wkhtmltopdf) | <span class="tag tag-green">Terminé</span> |
+| #1211 | Page de prévisualisation avant export | <span class="tag tag-orange">En cours</span> |
+
+
+## Code & activité
+
+- 🌿 `feature/1201-export-pdf` (webapp) — ↑3 ↓1 vs main · « feat(export): page de prévisualisation PDF » (2026-07-04)
+- 🔀 PR #77 « Export PDF des rapports (art #1201) » — feature/1201-export-pdf → main · David Roux
+
+<div class="kpi-card">
+<strong>Statut :</strong> <span class="tag tag-orange">En cours</span> · <strong>Dernière activité :</strong> 2026-07-04 par Alice Martin — « PDF serveur OK, reste la prévisualisation — PR ouverte pour revue. »
+</div>
+
+</div>
+</div>
+
+</div>
+
+<div class="slide-footer">
+<small>US #1201 — données Tuleap extraites le 2026-07-08, générée automatiquement sans IA</small>
+</div>
+
+---
+
+# 📘 US #1202 — US — Authentification SSO (SAML)
+
+<div class="slide-body">
+
+<div class="columns">
+<div class="col">
+
+## Description
+
+_Pas de description._
+
+
+- **Story points :** 5
+
+</div>
+<div class="col">
+
+## Tâches (1/1 terminées)
+
+| # | Tâche | Statut |
+|---|---|---|
+| #1212 | Configurer le connecteur SAML côté IdP | <span class="tag tag-green">Terminé</span> |
+
+
+## Code & activité
+
+- _Aucune branche ni pull request détectée._
+
+<div class="kpi-card">
+<strong>Statut :</strong> <span class="tag tag-green">Terminé</span> · <strong>Dernière activité :</strong> 2026-07-02 par Bob Durand — « Recette validée en préprod, story fermée. »
+</div>
+
+</div>
+</div>
+
+</div>
+
+<div class="slide-footer">
+<small>US #1202 — données Tuleap extraites le 2026-07-08, générée automatiquement sans IA</small>
+</div>
+
+---
+
+# 📘 US #1203 — Bug — Crash à l’ouverture du dashboard
+
+<div class="slide-body">
+
+<div class="columns">
+<div class="col">
+
+## Description
+
+_Pas de description._
+
+
+- **Sévérité :** Critique
+
+</div>
+<div class="col">
+
+## Tâches (0/0 terminées)
+
+| # | Tâche | Statut |
+|---|---|---|
+| - | Aucune tâche associée | - |
+
+
+## Code & activité
+
+- 🌿 `fix/1203-dashboard-crash` (webapp) — fusionnée / à jour · « fix(dashboard): guard sur cache vide » (2026-07-05)
+- 🔀 PR #78 « Correctif crash dashboard » — fix/1203-dashboard-crash → main · Chloé Petit
+
+<div class="kpi-card">
+<strong>Statut :</strong> <span class="tag tag-orange">En cours</span> · <strong>Dernière activité :</strong> 2026-07-05 par Chloé Petit — « Reproduit uniquement avec le cache vide — correctif en cours sur fix/1203. »
+</div>
+
+</div>
+</div>
+
+</div>
+
+<div class="slide-footer">
+<small>US #1203 — données Tuleap extraites le 2026-07-08, générée automatiquement sans IA</small>
+</div>
+
+---
+
+# 📘 US #1204 — US — Notifications e-mail configurables
+
+<div class="slide-body">
+
+<div class="columns">
+<div class="col">
+
+## Description
+
+_Pas de description._
+
+
+
+</div>
+<div class="col">
+
+## Tâches (0/0 terminées)
+
+| # | Tâche | Statut |
+|---|---|---|
+| - | Aucune tâche associée | - |
+
+
+## Code & activité
+
+- _Aucune branche ni pull request détectée._
+
+<div class="kpi-card">
+<strong>Statut :</strong> <span class="tag tag-blue">À faire</span> · <strong>Dernière activité :</strong> N/D
+</div>
+
+</div>
+</div>
+
+</div>
+
+<div class="slide-footer">
+<small>US #1204 — données Tuleap extraites le 2026-07-08, générée automatiquement sans IA</small>
+</div>
+
+---
+
 # 🔀 Activité code — Branches & Pull Requests
 
 <div class="slide-body">
@@ -1037,16 +1216,16 @@ style: |
 
 ## Branches actives liées au sprint
 
-| Branche | Artefacts | Dernier commit | Auteur, date |
-|---|---|---|---|
-| `feature/1201-export-pdf` | #1201 | feat(export): page de prévisualisation PDF | David Roux, 2026-07-04 |
-| `fix/1203-dashboard-crash` | #1203 | fix(dashboard): guard sur cache vide | Chloé Petit, 2026-07-05 |
+| Branche | Artefacts | Dernier commit | Auteur, date | État |
+|---|---|---|---|---|
+| `feature/1201-export-pdf` | #1201 | feat(export): page de prévisualisation PDF | David Roux, 2026-07-04 | <span class="tag tag-orange">↑3 ↓1</span> |
+| `fix/1203-dashboard-crash` | #1203 | fix(dashboard): guard sur cache vide | Chloé Petit, 2026-07-05 | <span class="tag tag-green">Fusionnée / à jour</span> |
 
 
 </div>
 
 <div class="slide-footer">
-<small>Données Git Tuleap extraites le 2026-07-08 — généré automatiquement, sans IA</small>
+<small>Données Git Tuleap extraites le 2026-07-08 (scan par clone : état ↑avance ↓retard vs branche par défaut) — généré automatiquement, sans IA</small>
 </div>
 
 ---

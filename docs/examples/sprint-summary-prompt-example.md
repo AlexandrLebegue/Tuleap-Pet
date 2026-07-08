@@ -24,6 +24,7 @@ Généré par `tests/generation-pipeline.test.ts` (WRITE_EXAMPLE=1).
 - **Date soumission :** 2026-06-20
 - **Story points :** 8
 - **Assigné à :** Alice Martin
+- **Critères d'acceptance :** Le PDF respecte le gabarit officiel Export en moins de 10 secondes
 - **Dernière mise à jour :** 2026-07-04 par Alice Martin
 - **Dernier commentaire :** PDF serveur OK, reste la prévisualisation — PR ouverte pour revue.
 - **Branche :** `feature/1201-export-pdf` (dépôt webapp) — dernier commit : « feat(export): page de prévisualisation PDF » (David Roux, 2026-07-04)
