@@ -248,6 +248,103 @@ const MARP_CSS = `\
   .gov-empty-icon { font-size: 1.6em; opacity: 0.55; }
   .gov-empty-hint { font-size: 0.82em; opacity: 0.75; font-style: italic; }
 
+  .pie-wrap {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    padding: 12px 16px;
+    margin: 4px 0;
+  }
+
+  .pie-chart {
+    width: 130px;
+    height: 130px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.06);
+  }
+
+  .pie-legend {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    font-size: 0.74em;
+    color: #2d3748;
+    min-width: 0;
+  }
+
+  .pie-legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .pie-legend-item strong { color: var(--color-primary); font-weight: 700; }
+
+  .pie-dot {
+    width: 11px;
+    height: 11px;
+    border-radius: 3px;
+    display: inline-block;
+    flex-shrink: 0;
+  }
+
+  .pie-caption {
+    font-size: 0.72em;
+    color: var(--color-muted);
+    margin-top: 2px;
+  }
+
+  .pie-caption strong { color: var(--color-primary); }
+
+  .ref-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin: 4px 0;
+  }
+
+  .us-quote {
+    border-left: 4px solid var(--color-accent);
+    background: linear-gradient(90deg, #ebf4ff 0%, #f7fafc 100%);
+    padding: 10px 14px;
+    margin: 6px 0;
+    font-size: 0.9em;
+    line-height: 1.4;
+    color: #2c5282;
+    border-radius: 0 6px 6px 0;
+    font-weight: 500;
+  }
+
+  .us-quote em { font-style: normal; font-weight: 700; color: var(--color-primary); }
+
+  .effort-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 4px 0;
+  }
+
+  .effort-chip {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 5px;
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    padding: 5px 10px;
+    font-size: 0.72em;
+    color: var(--color-muted);
+  }
+
+  .effort-chip strong { font-size: 1.25em; color: var(--color-primary); font-weight: 700; }
+
   .gauge-card {
     background: #ffffff;
     border: 1px solid #e2e8f0;
@@ -782,7 +879,9 @@ paginate: true
 size: 16:9
 footer: '${footer}'
 style: |
-${MARP_CSS.split('\n').map((l) => (l.trim() ? `  ${l}` : '')).join('\n')}
+${MARP_CSS.split('\n')
+  .map((l) => (l.trim() ? `  ${l}` : ''))
+  .join('\n')}
 ---`
 }
 

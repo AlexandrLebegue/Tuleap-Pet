@@ -75,7 +75,19 @@ const US_1201 = art({
       type: 'text',
       value:
         '<ul><li>Le PDF respecte le gabarit officiel</li><li>Export en moins de 10 secondes</li></ul>'
-    }
+    },
+    { field_id: 6, label: 'Remaining Effort', type: 'computed', value: 12 },
+    {
+      field_id: 7,
+      label: 'Cross References',
+      type: 'cross',
+      value: [
+        { ref: 'pr #77', url: 'https://tuleap.example.com/pr/77', direction: 'out' },
+        { ref: 'git #webapp/bbb222', url: 'https://tuleap.example.com/g/bbb222', direction: 'in' }
+      ]
+    },
+    { field_id: 8, label: 'Rank', type: 'int', value: 12984 },
+    { field_id: 9, label: 'Last Modified On', type: 'lud', value: '2026-07-04T16:12:00+02:00' }
   ]
 })
 
@@ -135,12 +147,49 @@ const TASK_1212 = art({
   last_modified_date: '2026-07-02T10:45:00+02:00'
 })
 
-const ALL_ARTIFACTS = [US_1201, US_1202, BUG_1203, US_1204, TASK_1210, TASK_1211, TASK_1212]
+// Epic parent des US 1201 et 1204 (tracker 300 « Epics »).
+const EPIC_TRACKER = { id: 300, uri: 'trackers/300', label: 'Epics', item_name: 'epic' }
+const EPIC_1100 = {
+  id: 1100,
+  uri: 'artifacts/1100',
+  tracker: { id: 300 },
+  title: 'Epic — Dématérialisation des rapports d’audit',
+  status: 'En cours',
+  submitted_by_user: { real_name: 'Alice Martin', username: 'amartin' },
+  submitted_on: '2026-05-02T09:00:00+02:00',
+  last_modified_date: '2026-07-04T16:20:00+02:00',
+  values: [
+    {
+      field_id: 30,
+      label: 'Description',
+      type: 'text',
+      value:
+        'Supprimer le papier du processus d’audit : génération, export et archivage numérique des rapports.'
+    },
+    { field_id: 31, label: 'Story points', type: 'computed', value: 34 }
+  ]
+}
+
+const ALL_ARTIFACTS = [
+  US_1201,
+  US_1202,
+  BUG_1203,
+  US_1204,
+  TASK_1210,
+  TASK_1211,
+  TASK_1212,
+  EPIC_1100
+]
 const CHILDREN: Record<number, unknown[]> = {
   1201: [TASK_1210, TASK_1211],
   1202: [TASK_1212],
   1203: [],
   1204: []
+}
+/** Parents (liens _is_child en sens reverse) : US → epics. */
+const PARENTS: Record<number, unknown[]> = {
+  1201: [EPIC_1100],
+  1204: [EPIC_1100]
 }
 
 const CHANGESETS: Record<number, unknown[]> = {
@@ -321,8 +370,12 @@ function fakeTuleapFetch(input: RequestInfo | URL): Promise<Response> {
   }
   const linked = pathname.match(/^\/api\/artifacts\/(\d+)\/linked_artifacts$/)
   if (linked) {
-    const items = CHILDREN[Number(linked[1])] ?? []
+    const table = searchParams.get('direction') === 'reverse' ? PARENTS : CHILDREN
+    const items = table[Number(linked[1])] ?? []
     return Promise.resolve(jsonRes({ collection: items }, items.length))
+  }
+  if (pathname === '/api/trackers/300') {
+    return Promise.resolve(jsonRes(EPIC_TRACKER))
   }
   const changesets = pathname.match(/^\/api\/artifacts\/(\d+)\/changesets$/)
   if (changesets) {
@@ -392,7 +445,8 @@ deepScanMock.mockImplementation(async () => ({
   ],
   branchesScanned: 4,
   clonedRepos: 1,
-  warnings: []
+  warnings: [],
+  commitsByRepo: [{ repoName: 'webapp', commits: 42 }]
 }))
 
 vi.mock('../src/main/generation/deep-scan', () => ({
@@ -457,15 +511,40 @@ const CANNED_SLIDES: Record<string, string> = {
 <div class="slide-footer">
 <small>Données au 2026-07-08</small>
 </div>`,
-  slide_equipe: `# 👥 Équipe & contributions
+  slide_equipe: `# 👥 Équipe & Activité
 
 <div class="slide-body">
 
+<div class="columns">
+<div class="col">
+
+## Contributeurs du sprint
+
 <div class="person-grid">
-<div class="person-card"><span class="person-avatar is-pilote">AM</span><span class="person-info"><span class="person-name">Alice Martin</span><span class="person-role">3 artefacts</span></span></div>
-<div class="person-card"><span class="person-avatar is-leader">BD</span><span class="person-info"><span class="person-name">Bob Durand</span><span class="person-role">2 artefacts</span></span></div>
-<div class="person-card"><span class="person-avatar is-sponsor">CP</span><span class="person-info"><span class="person-name">Chloé Petit</span><span class="person-role">1 artefact</span></span></div>
-<div class="person-card"><span class="person-avatar is-pilote">DR</span><span class="person-info"><span class="person-name">David Roux</span><span class="person-role">1 artefact</span></span></div>
+<div class="person-card"><span class="person-avatar is-leader">AM</span><span class="person-info"><span class="person-name">Alice Martin</span><span class="person-role">Contributeur</span></span></div>
+<div class="person-card"><span class="person-avatar is-leader">BD</span><span class="person-info"><span class="person-name">Bob Durand</span><span class="person-role">Contributeur</span></span></div>
+<div class="person-card"><span class="person-avatar is-leader">CP</span><span class="person-info"><span class="person-name">Chloé Petit</span><span class="person-role">Contributeur</span></span></div>
+<div class="person-card"><span class="person-avatar is-leader">DR</span><span class="person-info"><span class="person-name">David Roux</span><span class="person-role">Contributeur</span></span></div>
+</div>
+
+</div>
+<div class="col">
+
+## Activité des dépôts
+
+[[ACTIVITE_DEPOTS]]
+
+</div>
+</div>
+
+## Parties prenantes
+
+<div class="pill-group">
+<span class="pill-group-label">Equipe</span>
+<span class="pill pill-leader">Alice Martin</span>
+<span class="pill pill-leader">Bob Durand</span>
+<span class="pill pill-leader">Chloé Petit</span>
+<span class="pill pill-leader">David Roux</span>
 </div>
 
 </div>
@@ -747,6 +826,7 @@ import {
 } from '../src/main/generation/enricher'
 import { formatCodeActivityBlock, formatRecentUpdatesBlock } from '../src/main/generation/utils'
 import { buildCodeActivitySlide } from '../src/main/generation/code-activity-slide'
+import { buildUsRecapSlides } from '../src/main/generation/us-slides'
 import { listMilestonesWithChildren } from '../src/main/tuleap/milestones'
 
 beforeEach(() => {
@@ -878,7 +958,7 @@ describe('runSprintReviewPipeline (bout en bout, LLM mocké)', () => {
       (e) => events.push(e)
     )
 
-    // 10 slides annoncés (8 LLM + 2 déterministes), dans l'ordre
+    // 11 slides annoncés (8 LLM + 3 déterministes), dans l'ordre
     const started = events
       .filter((e) => e.type === 'slide_start')
       .map((e) => (e as { slide: string }).slide)
@@ -886,6 +966,7 @@ describe('runSprintReviewPipeline (bout en bout, LLM mocké)', () => {
       'titre',
       'contexte',
       'us_recap',
+      'epic',
       'equipe',
       'livrables',
       'avancement',
@@ -902,8 +983,19 @@ describe('runSprintReviewPipeline (bout en bout, LLM mocké)', () => {
       /\| #1201 \| US — Export PDF des rapports d’audit \| <span class="tag tag-orange">En cours<\/span> \| En tant qu’auditeur[^|]*\| 1\/2 \| 🌿 🔀 \|/
     )
     expect(result.markdown).toMatch(
-      /\| #1204 \| US — Notifications e-mail configurables \| <span class="tag tag-blue">À faire<\/span> \| N\/D \| — \| — \|/
+      /\| #1204 \| US — Notifications e-mail configurables \| <span class="tag tag-blue">À faire<\/span> \| — \| — \| — \|/
     )
+
+    // Slide epic : avancement basé sur les US du sprint rattachées (0/2 terminées)
+    expect(result.markdown).toContain('# 🏔️ Epic #1100 — Epic — Dématérialisation des rapports')
+    expect(result.markdown).toContain('Avancement dans ce sprint')
+    expect(result.markdown).toContain('0 terminée / 2 US')
+    expect(result.markdown).toMatch(
+      /\| #1201 \| US — Export PDF des rapports d’audit \| <span class="tag tag-orange">En cours<\/span> \| 1\/2 \|/
+    )
+
+    // Sans scan par clone, le camembert cède la place au placeholder explicite
+    expect(result.markdown).toContain('Activité des dépôts non mesurée')
 
     // Le slide code_activity est présent, généré sans LLM, avec les vraies données
     expect(result.markdown).toContain('# 🔀 Activité code — Branches & Pull Requests')
@@ -914,6 +1006,12 @@ describe('runSprintReviewPipeline (bout en bout, LLM mocké)', () => {
     expect(result.markdown).not.toContain('# 📘 US #')
     // 9 appels LLM (1 synthèse + 8 slides) : les slides déterministes n'en font pas
     expect(llmCalls).toHaveLength(9)
+
+    // Les champs techniques sont filtrés et les références remontent au LLM
+    const summaryPromptFields = llmCalls[0].user
+    expect(summaryPromptFields).not.toContain('**Rank :**')
+    expect(summaryPromptFields).not.toContain('**Last Modified On :**')
+    expect(summaryPromptFields).toContain('**Références :** pr #77, git #webapp/bbb222')
 
     // Le prompt de synthèse contient la hiérarchie, l'activité et le code
     const summaryPrompt = llmCalls[0].user
@@ -983,6 +1081,7 @@ describe('runSprintReviewPipeline (storySlides: true, clone mocké)', () => {
       'titre',
       'contexte',
       'us_recap',
+      'epic',
       'equipe',
       'livrables',
       'avancement',
@@ -1000,13 +1099,34 @@ describe('runSprintReviewPipeline (storySlides: true, clone mocké)', () => {
     expect(result.markdown).toContain('# 📘 US #1204 — US — Notifications e-mail configurables')
     expect((result.markdown.match(/# 📘 US #/g) ?? []).length).toBe(4)
 
-    // Contenu de la slide US #1201 : critères d'acceptance, tâches, branche avec état, PR
+    // Contenu de la slide US #1201 : citation « je veux » mise en avant,
+    // critères d'acceptance, effort en heures, badges de références,
+    // tâches, branche avec état, PR
+    expect(result.markdown).toMatch(
+      /<div class="us-quote">En tant qu[’']auditeur, <em>je veux exporter mes rapports en PDF afin de les archiver<\/em><\/div>/
+    )
     expect(result.markdown).toContain("## Critères d'acceptance")
     expect(result.markdown).toContain('Le PDF respecte le gabarit officiel')
+    expect(result.markdown).toContain(
+      '<span class="effort-chip"><strong>12</strong> h · Effort restant</span>'
+    )
+    expect(result.markdown).toContain('<span class="tag tag-orange">→ pr #77</span>')
+    expect(result.markdown).toContain('<span class="tag tag-green">← git #webapp/bbb222</span>')
     expect(result.markdown).toContain('## Tâches (1/2 terminées)')
     expect(result.markdown).toMatch(/\| #1210 \| Générer le PDF côté serveur/)
     expect(result.markdown).toContain('🌿 `feature/1201-export-pdf` (webapp) — ↑3 ↓1 vs main')
     expect(result.markdown).toContain('🔀 PR #77')
+    // Les sections vides ne s'affichent pas : pas de « Pas de description »
+    expect(result.markdown).not.toContain('Pas de description')
+    expect(result.markdown).not.toContain('Aucune tâche associée')
+    // Labels techniques absents des slides US
+    expect(result.markdown).not.toContain('Last Modified On')
+
+    // Le camembert des commits remplace le placeholder du slide équipe
+    expect(result.markdown).toContain('conic-gradient(')
+    expect(result.markdown).toContain('<strong>42</strong> commit')
+    expect(result.markdown).toContain('depuis le 2026-06-23')
+    expect(result.markdown).not.toContain('[[ACTIVITE_DEPOTS]]')
 
     // Slide activité code : colonne État alimentée par le clone
     expect(result.markdown).toContain(
@@ -1054,6 +1174,66 @@ describe('listMilestonesWithChildren (sprints imbriqués)', () => {
     const sprints = await listMilestonesWithChildren(fakeClient, PROJECT_ID, 'closed')
     // Seule la release 900 est close ; le sprint imbriqué 901 (ouvert) est exclu
     expect(sprints.map((s) => s.id)).toEqual([900])
+  })
+})
+
+// ─── Pagination du récapitulatif US ──────────────────────────────────────────
+
+describe('buildUsRecapSlides (pagination)', () => {
+  function makeCtx(storyCount: number): Parameters<typeof buildUsRecapSlides>[0] {
+    const artifacts = Array.from({ length: storyCount }, (_, i) => ({
+      id: 100 + i,
+      title: `Story ${i + 1}`,
+      status: 'En cours',
+      uri: '',
+      htmlUrl: null,
+      submittedBy: null,
+      submittedOn: null,
+      lastModified: null,
+      trackerId: 1
+    }))
+    return {
+      projectName: 'P',
+      label: 'S',
+      trackerLabel: null,
+      milestone: null,
+      artifacts,
+      detailedArtifacts: [],
+      childArtifactIds: new Set<number>(),
+      childrenByParent: new Map(),
+      lastUpdates: new Map(),
+      codeActivity: {
+        reposScanned: 0,
+        branchesScanned: 0,
+        branches: [],
+        pullRequests: [],
+        warnings: []
+      },
+      epics: [],
+      storySlides: false,
+      language: 'fr' as const,
+      generatedAt: '2026-07-08'
+    }
+  }
+
+  it('tient sur une slide quand il y a peu de stories', () => {
+    const slides = buildUsRecapSlides(makeCtx(5))
+    expect(slides).toHaveLength(1)
+    expect(slides[0]).toContain('# 📋 Récapitulatif des user stories\n')
+  })
+
+  it('coupe le tableau en plusieurs slides quand il déborde', () => {
+    const slides = buildUsRecapSlides(makeCtx(16))
+    expect(slides).toHaveLength(3) // 7 + 7 + 2
+    expect(slides[0]).toContain('Récapitulatif des user stories (1/3)')
+    expect(slides[2]).toContain('Récapitulatif des user stories (3/3)')
+    // La stat-bar n'apparaît que sur la première slide
+    expect(slides[0]).toContain('stat-bar')
+    expect(slides[1]).not.toContain('stat-bar')
+    // Toutes les stories sont présentes, réparties sur les pages
+    const all = slides.join('\n')
+    expect(all).toContain('| #100 |')
+    expect(all).toContain('| #115 |')
   })
 })
 

@@ -21,6 +21,8 @@ export type CloneScanResult = {
   /** Nombre total de branches du dépôt. */
   branchesScanned: number
   defaultBranch: string | null
+  /** Commits (toutes branches) depuis `sinceDate` ; null si non demandé. */
+  commitsSince: number | null
 }
 
 async function git(dir: string, args: string[], timeoutMs = GIT_TIMEOUT_MS): Promise<string> {
@@ -44,6 +46,8 @@ export async function scanRepoBranchesByClone(args: {
   cloneUrl: string
   knownIds: Set<number>
   tempClonePath: string
+  /** Date ISO : compter les commits (toutes branches) depuis cette date. */
+  sinceDate?: string | null
 }): Promise<CloneScanResult> {
   const safe = args.repoName.replace(/[^\w.-]+/g, '_')
   const dir = path.join(args.tempClonePath, `${safe}_scan_${randomBytes(3).toString('hex')}`)
@@ -110,7 +114,25 @@ export async function scanRepoBranchesByClone(args: {
       })
     }
 
-    return { repoName: args.repoName, branches, branchesScanned: lines.length, defaultBranch }
+    // Commits du sprint : toutes branches confondues depuis la date de début.
+    let commitsSince: number | null = null
+    if (args.sinceDate) {
+      try {
+        const count = await git(dir, ['rev-list', '--all', '--count', `--since=${args.sinceDate}`])
+        const n = Number.parseInt(count, 10)
+        if (Number.isFinite(n)) commitsSince = n
+      } catch {
+        // Dépôt vide ou git trop ancien : pas de comptage.
+      }
+    }
+
+    return {
+      repoName: args.repoName,
+      branches,
+      branchesScanned: lines.length,
+      defaultBranch,
+      commitsSince
+    }
   } finally {
     try {
       if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true })

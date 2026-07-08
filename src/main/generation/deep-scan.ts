@@ -16,14 +16,23 @@ export type DeepScanResult = {
   branchesScanned: number
   clonedRepos: number
   warnings: string[]
+  /** Commits par dépôt depuis `sinceDate` (début de sprint). */
+  commitsByRepo: { repoName: string; commits: number }[]
 }
 
 export async function deepScanBranches(
   repos: GitRepositoryRaw[],
-  knownIds: Set<number>
+  knownIds: Set<number>,
+  sinceDate: string | null = null
 ): Promise<DeepScanResult> {
   const { tempClonePath, gitCloneSsh, tuleapUrl } = getConfig()
-  const result: DeepScanResult = { branches: [], branchesScanned: 0, clonedRepos: 0, warnings: [] }
+  const result: DeepScanResult = {
+    branches: [],
+    branchesScanned: 0,
+    clonedRepos: 0,
+    warnings: [],
+    commitsByRepo: []
+  }
 
   if (!tempClonePath) {
     result.warnings.push(
@@ -47,11 +56,15 @@ export async function deepScanBranches(
         repoName,
         cloneUrl: credUrl,
         knownIds,
-        tempClonePath
+        tempClonePath,
+        sinceDate
       })
       result.branches.push(...scan.branches)
       result.branchesScanned += scan.branchesScanned
       result.clonedRepos++
+      if (scan.commitsSince !== null) {
+        result.commitsByRepo.push({ repoName, commits: scan.commitsSince })
+      }
     } catch (err) {
       result.warnings.push(
         `Clone du dépôt ${repoName} impossible : ${err instanceof Error ? err.message : String(err)}`

@@ -251,6 +251,19 @@ export type ArtifactLink = {
   direction: 'forward' | 'reverse'
 }
 
+/**
+ * Référence croisée Tuleap (champ « Cross References ») : liens vers/depuis
+ * d'autres objets — artefacts (`art #123`), pull requests (`pr #45`),
+ * commits (`git #repo/sha`), révisions (`rev #99`), wiki…
+ */
+export type ArtifactReference = {
+  /** Texte de la référence, ex : "pr #12", "art #1201", "git #webapp/abc123". */
+  ref: string
+  url: string | null
+  /** 'in' = référencé par, 'out' = référence vers, null si inconnu. */
+  direction: 'in' | 'out' | null
+}
+
 export type ArtifactSummary = {
   id: number
   title: string
@@ -267,6 +280,8 @@ export type ArtifactDetail = ArtifactSummary & {
   description: string | null
   values: ArtifactFieldValue[]
   links: ArtifactLink[]
+  /** Références croisées (PRs, commits, autres artefacts…) extraites du champ dédié. */
+  crossReferences: ArtifactReference[]
 }
 
 export type Page<T> = {
@@ -358,12 +373,15 @@ export type SprintCodeActivity = {
   warnings: string[]
   /** 'clone' quand les branches viennent d'un clone local (ahead/behind dispo), 'api' sinon. */
   scanMethod?: 'api' | 'clone'
+  /** Commits par dépôt depuis le début du sprint (scan par clone uniquement). */
+  commitsByRepo?: { repoName: string; commits: number }[]
 }
 
 export type SprintReviewSlideType =
   | 'titre'
   | 'contexte'
   | 'us_recap'
+  | 'epic'
   | 'equipe'
   | 'livrables'
   | 'avancement'

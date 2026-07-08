@@ -15,7 +15,9 @@ import {
   formatRecentUpdatesBlock
 } from './utils'
 import { buildCodeActivitySlide } from './code-activity-slide'
-import { buildUsRecapSlide, buildUsStorySlides } from './us-slides'
+import { buildUsRecapSlides, buildUsStorySlides } from './us-slides'
+import { buildEpicSlides } from './epic-slides'
+import { buildCommitPieBlock } from './commit-pie'
 import type { EnrichedContext } from './enricher'
 
 export type SlideResult =
@@ -36,7 +38,8 @@ function buildSlideDefinitions(ctx: EnrichedContext): SlideDefinition[] {
   const defs: SlideDefinition[] = [
     { type: 'titre', promptKey: 'slide_titre' },
     { type: 'contexte', promptKey: 'slide_contexte' },
-    { type: 'us_recap', build: buildUsRecapSlide },
+    { type: 'us_recap', build: buildUsRecapSlides },
+    { type: 'epic', build: buildEpicSlides },
     { type: 'equipe', promptKey: 'slide_equipe' },
     { type: 'livrables', promptKey: 'slide_livrables' },
     { type: 'avancement', promptKey: 'slide_avancement' }
@@ -206,7 +209,16 @@ export async function generateAllSlides(
         maxOutputTokens: 1024
       })
 
-      const cleaned = stripFences(result.text)
+      let cleaned = stripFences(result.text)
+      // Injection post-LLM : le marqueur [[ACTIVITE_DEPOTS]] du slide équipe
+      // est remplacé par le camembert pré-rendu (le LLM ne recopie qu'une
+      // ligne, pas 20 lignes de HTML — bien plus fiable avec un petit modèle).
+      if (cleaned.includes('[[ACTIVITE_DEPOTS]]')) {
+        cleaned = cleaned.replace(
+          '[[ACTIVITE_DEPOTS]]',
+          buildCommitPieBlock(ctx.codeActivity, ctx.milestone?.startDate ?? null)
+        )
+      }
       const unmatched = detectUnmatchedPlaceholders(cleaned)
 
       usages.push(result.usage)

@@ -4,6 +4,7 @@ import type {
   ArtifactSummary,
   SprintCodeActivity
 } from '@shared/types'
+import { translateFieldLabel } from './us-slides'
 
 export function stripFences(text: string): string {
   return text.replace(/^```(?:\w+)?\n([\s\S]*?)\n```\s*$/m, '$1').trim()
@@ -72,6 +73,7 @@ function resolveFieldValue(raw: unknown): string | null {
 const REDUNDANT_FIELD_LABELS = new Set([
   'description',
   'details',
+  'détails',
   'résumé',
   'resume',
   'summary',
@@ -83,7 +85,14 @@ const REDUNDANT_FIELD_LABELS = new Set([
   'soumis par',
   'submitted on',
   'links',
-  'artifact id'
+  'artifact id',
+  'rank',
+  'last modified on',
+  'last update date',
+  'cross references',
+  'references',
+  'références',
+  'attachments'
 ])
 
 /** Optional context to render hierarchy + code/activity data per artifact. */
@@ -125,10 +134,19 @@ function formatOneArtifact(
       if (REDUNDANT_FIELD_LABELS.has((field.label ?? '').toLowerCase())) continue
       const val = resolveFieldValue(field.value)
       if (val && val.length > 0) {
-        lines.push(`- **${field.label} :** ${val.slice(0, 150)}`)
+        lines.push(`- **${translateFieldLabel(field.label)} :** ${val.slice(0, 150)}`)
         shown++
       }
     }
+  }
+
+  // Références croisées (c'est là que Tuleap rattache PRs, commits, artefacts).
+  if (a.crossReferences && a.crossReferences.length > 0) {
+    const refs = a.crossReferences
+      .slice(0, 10)
+      .map((r) => r.ref)
+      .join(', ')
+    lines.push(`- **Références :** ${refs}`)
   }
 
   // Dernière activité (changesets) : date + auteur + extrait de commentaire.

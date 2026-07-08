@@ -2,6 +2,7 @@ import type {
   ArtifactDetail,
   ArtifactFieldValue,
   ArtifactLink,
+  ArtifactReference,
   ArtifactSummary,
   GitCommit,
   MilestoneSummary,
@@ -92,13 +93,28 @@ export function mapMilestoneContentItem(raw: MilestoneContentItemRaw): ArtifactS
 }
 
 function stripHtml(text: string): string {
-  return text.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
+  return text
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
 }
+
+const DESCRIPTION_LABELS = new Set([
+  'description',
+  'details',
+  'détails',
+  'résumé',
+  'resume',
+  'description détaillée',
+  'description detaillee',
+  'original submission',
+  'user story'
+])
 
 function extractDescription(values: ArtifactFieldValueRaw[]): string | null {
   for (const value of values) {
     const label = (value.label ?? '').toLowerCase()
-    if (label === 'description' || label === 'details' || label === 'résumé' || label === 'resume') {
+    if (DESCRIPTION_LABELS.has(label)) {
       const raw = value as unknown as Record<string, unknown>
       // values_format=collection: { value: "text" }
       if (typeof raw['value'] === 'string' && raw['value'].length > 0) {
@@ -106,7 +122,64 @@ function extractDescription(values: ArtifactFieldValueRaw[]): string | null {
       }
     }
   }
-  return null
+  // Fallback : les trackers personnalisés nomment souvent la description
+  // autrement — on prend le champ texte le plus long (hors labels connus).
+  let best: string | null = null
+  for (const value of values) {
+    if (value.type !== 'text') continue
+    const raw = value as unknown as Record<string, unknown>
+    if (typeof raw['value'] === 'string') {
+      const text = stripHtml(raw['value'])
+      if (text.length > 30 && (best === null || text.length > best.length)) best = text
+    }
+  }
+  return best
+}
+
+/**
+ * Extrait les références croisées du champ « Cross References » (type `cross`).
+ * Selon la version de Tuleap, `value` est un array direct de refs, ou un objet
+ * `{ references: [...] }` ; chaque ref porte `ref`/`reference`, `url`/`link`
+ * et parfois `direction` ('in' | 'out'). C'est là que remontent les pull
+ * requests (`pr #12`), commits (`git #repo/sha`) et artefacts liés.
+ */
+function extractCrossReferences(values: ArtifactFieldValueRaw[]): ArtifactReference[] {
+  const out: ArtifactReference[] = []
+  for (const value of values) {
+    const label = (value.label ?? '').toLowerCase()
+    if (
+      value.type !== 'cross' &&
+      !label.includes('cross reference') &&
+      label !== 'references' &&
+      label !== 'références'
+    ) {
+      continue
+    }
+    const raw = value as unknown as Record<string, unknown>
+    const inner = raw['value'] as Record<string, unknown> | unknown[] | null | undefined
+    const candidates: unknown[] = Array.isArray(inner)
+      ? inner
+      : inner && Array.isArray((inner as Record<string, unknown>)['references'])
+        ? ((inner as Record<string, unknown>)['references'] as unknown[])
+        : Array.isArray(raw['references'])
+          ? (raw['references'] as unknown[])
+          : []
+    for (const c of candidates) {
+      if (!c || typeof c !== 'object') continue
+      const obj = c as Record<string, unknown>
+      const ref = String(obj['ref'] ?? obj['reference'] ?? '').trim()
+      if (!ref) continue
+      const url =
+        typeof obj['url'] === 'string'
+          ? obj['url']
+          : typeof obj['link'] === 'string'
+            ? obj['link']
+            : null
+      const dir = obj['direction']
+      out.push({ ref, url, direction: dir === 'in' || dir === 'out' ? dir : null })
+    }
+  }
+  return out
 }
 
 function extractLinks(values: ArtifactFieldValueRaw[]): ArtifactLink[] {
@@ -152,7 +225,8 @@ export function mapArtifactDetail(raw: ArtifactDetailRaw): ArtifactDetail {
     ...summary,
     description: extractDescription(values),
     values: values.map(rawToFieldValue),
-    links: extractLinks(values)
+    links: extractLinks(values),
+    crossReferences: extractCrossReferences(values)
   }
 }
 

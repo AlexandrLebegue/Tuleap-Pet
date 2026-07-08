@@ -32,6 +32,17 @@ const CHANGESETS_PER_ARTIFACT = 5
 const REPO_SCAN_CAP = 15
 /** Max branches fetched per repository */
 const BRANCH_SCAN_CAP = 200
+/** Max epics détaillés (slides + contexte LLM). */
+const EPIC_CAP = 8
+
+/** Un epic (artefact parent des US du sprint, tracker de type « epic »). */
+export type EpicInfo = {
+  detail: ArtifactDetail
+  /** Label du tracker de l'epic (ex : "Epics"). */
+  trackerLabel: string | null
+  /** IDs des US du sprint rattachées à cet epic. */
+  storyIds: number[]
+}
 
 export type EnrichedContext = {
   projectName: string
@@ -51,6 +62,8 @@ export type EnrichedContext = {
   lastUpdates: Map<number, ArtifactLastUpdate>
   /** Git branches / pull requests discovered on the project's repositories. */
   codeActivity: SprintCodeActivity
+  /** Epics du sprint (parents des US, trackers de type « epic »). */
+  epics: EpicInfo[]
   /** True quand l'utilisateur a demandé une slide détaillée par user story. */
   storySlides: boolean
   language: 'fr' | 'en'
@@ -168,6 +181,78 @@ function repoDisplayName(repo: GitRepositoryRaw): string {
 }
 
 /**
+ * Identifie les epics du sprint : pour chaque US top-level on remonte ses
+ * parents (liens `_is_child` en sens inverse) ; les parents dont le tracker
+ * ressemble à un epic (label / item_name / titre contenant « epic ») sont
+ * retenus avec la liste des US du sprint qui leur sont rattachées.
+ */
+async function fetchEpics(
+  client: TuleapClient,
+  topLevel: ArtifactSummary[],
+  childArtifactIds: Set<number>
+): Promise<EpicInfo[]> {
+  const stories = topLevel.filter((a) => !childArtifactIds.has(a.id))
+
+  // US → parents (reverse links), best effort.
+  const parentResults = await Promise.allSettled(
+    stories.map((story) =>
+      client
+        .listLinkedArtifacts(story.id, { nature: '_is_child', direction: 'reverse', limit: 50 })
+        .then((page) => ({ storyId: story.id, parents: page.items.map(mapArtifactSummary) }))
+    )
+  )
+
+  const storiesByParent = new Map<number, number[]>()
+  const parentSummaries = new Map<number, ArtifactSummary>()
+  for (const r of parentResults) {
+    if (r.status !== 'fulfilled') continue
+    for (const parent of r.value.parents) {
+      parentSummaries.set(parent.id, parent)
+      const ids = storiesByParent.get(parent.id) ?? []
+      ids.push(r.value.storyId)
+      storiesByParent.set(parent.id, ids)
+    }
+  }
+  if (parentSummaries.size === 0) return []
+
+  // Labels des trackers des parents (dédupliqués), pour reconnaître les epics.
+  const trackerIds = [...new Set([...parentSummaries.values()].map((p) => p.trackerId))]
+  const trackerInfo = new Map<number, { display: string; match: string }>()
+  const trackerResults = await Promise.allSettled(trackerIds.map((id) => client.getTracker(id)))
+  for (const r of trackerResults) {
+    if (r.status === 'fulfilled') {
+      trackerInfo.set(r.value.id, {
+        display: r.value.label,
+        match: `${r.value.label} ${r.value.item_name ?? ''}`
+      })
+    }
+  }
+
+  const isEpic = (p: ArtifactSummary): boolean => {
+    const match = trackerInfo.get(p.trackerId)?.match ?? ''
+    return /epic/i.test(match) || /^epic\b/i.test(p.title)
+  }
+
+  const epicParents = [...parentSummaries.values()].filter(isEpic).slice(0, EPIC_CAP)
+  if (epicParents.length === 0) return []
+
+  const detailResults = await Promise.allSettled(
+    epicParents.map((p) => client.getArtifact(p.id).then(mapArtifactDetail))
+  )
+  const epics: EpicInfo[] = []
+  detailResults.forEach((r, i) => {
+    const parent = epicParents[i]
+    if (r.status !== 'fulfilled' || !parent) return
+    epics.push({
+      detail: r.value,
+      trackerLabel: trackerInfo.get(parent.trackerId)?.display ?? null,
+      storyIds: storiesByParent.get(parent.id) ?? []
+    })
+  })
+  return epics
+}
+
+/**
  * Scan the project's git repositories: branches whose name references a sprint
  * artifact, and every open pull request. Fully best-effort — a repo that fails
  * (permissions, plugin absent…) is skipped and reported in `warnings`.
@@ -176,9 +261,10 @@ async function scanCodeActivity(
   client: TuleapClient,
   projectId: number,
   knownIds: Set<number>,
-  deepScan: boolean,
+  opts: { deepScan: boolean; sinceDate: string | null },
   onProgress: (e: SprintReviewProgressEvent) => void
 ): Promise<SprintCodeActivity> {
+  const deepScan = opts.deepScan
   const empty: SprintCodeActivity = {
     reposScanned: 0,
     branchesScanned: 0,
@@ -207,21 +293,23 @@ async function scanCodeActivity(
 
   let branchesScanned = 0
   let scanMethod: 'api' | 'clone' = 'api'
+  let commitsByRepo: { repoName: string; commits: number }[] | undefined
   const branches: CodeBranchInfo[] = []
 
-  // Scan profond : clone de chaque dépôt (ahead/behind, dernier commit exact).
-  // Import dynamique — le module tire la config Electron, inutile de le
-  // charger quand l'option n'est pas cochée.
+  // Scan profond : clone de chaque dépôt (ahead/behind, dernier commit exact,
+  // commits depuis le début du sprint). Import dynamique — le module tire la
+  // config Electron, inutile de le charger quand l'option n'est pas cochée.
   if (deepScan) {
     onProgress({ type: 'code_scan', step: 'clone' })
     try {
       const { deepScanBranches } = await import('./deep-scan')
-      const deep = await deepScanBranches(scanned, knownIds)
+      const deep = await deepScanBranches(scanned, knownIds, opts.sinceDate)
       warnings.push(...deep.warnings)
       if (deep.clonedRepos > 0) {
         branches.push(...deep.branches)
         branchesScanned = deep.branchesScanned
         scanMethod = 'clone'
+        commitsByRepo = deep.commitsByRepo
       }
     } catch (err) {
       warnings.push(
@@ -312,7 +400,8 @@ async function scanCodeActivity(
     branches,
     pullRequests,
     warnings,
-    scanMethod
+    scanMethod,
+    commitsByRepo
   }
 }
 
@@ -389,7 +478,33 @@ export async function buildEnrichedContext(
     }
   }
 
+  // Les items de /milestones/{id}/content sont parfois lacunaires (id sans
+  // titre ni statut selon la version de Tuleap) : on consolide les summaries
+  // avec les données du détail, source de vérité.
+  const detailById = new Map(detailedArtifacts.map((d) => [d.id, d]))
+  artifacts = artifacts.map((a) => {
+    const d = detailById.get(a.id)
+    if (!d) return a
+    return {
+      ...a,
+      title: a.title || d.title,
+      status: a.status ?? d.status,
+      submittedBy: a.submittedBy ?? d.submittedBy,
+      submittedOn: a.submittedOn ?? d.submittedOn,
+      lastModified: a.lastModified ?? d.lastModified,
+      htmlUrl: a.htmlUrl ?? d.htmlUrl
+    }
+  })
+
   const childArtifactIds = new Set(childrenCapped.map((c) => c.id))
+
+  // Epics : parents des US dont le tracker est de type « epic » (best effort).
+  let epics: EpicInfo[] = []
+  try {
+    epics = await fetchEpics(client, topLevel, childArtifactIds)
+  } catch {
+    // Liens reverse indisponibles sur cette instance : pas de slides epic.
+  }
 
   // Dernières mises à jour (changesets) : US en priorité, puis sous-tâches.
   const lastUpdates = await fetchLastUpdates(
@@ -400,8 +515,15 @@ export async function buildEnrichedContext(
 
   // Branches & pull requests des dépôts Git du projet (best effort).
   // knownIds inclut US + sous-tâches : une branche `task-456` remonte aussi.
-  // Avec storySlides, le scan clone chaque dépôt pour un état exact (ahead/behind).
-  const codeActivity = await scanCodeActivity(client, projectId, knownIds, storySlides, onProgress)
+  // Avec storySlides, le scan clone chaque dépôt pour un état exact (ahead/behind)
+  // et compte les commits depuis le début du sprint (camembert du slide équipe).
+  const codeActivity = await scanCodeActivity(
+    client,
+    projectId,
+    knownIds,
+    { deepScan: storySlides, sinceDate: milestone?.startDate ?? null },
+    onProgress
+  )
 
   return {
     projectName,
@@ -414,6 +536,7 @@ export async function buildEnrichedContext(
     childrenByParent,
     lastUpdates,
     codeActivity,
+    epics,
     storySlides,
     language,
     generatedAt: new Date().toISOString().slice(0, 10)

@@ -15,7 +15,7 @@ Regles strictes :
 10. Densite : titre h1 sur 1 ligne, corps dans le cadre 16:9 sans debordement.
 11. Quand une slide utilise <div class="columns">, equilibre les colonnes visuellement.
 
-Consignes specifiques pour ce slide (EQUIPE & GOUVERNANCE) :
+Consignes specifiques pour ce slide (EQUIPE & ACTIVITE) :
 - {EQUIPE_CARDS} : genere une "person-card" HTML par contributeur unique.
   Utilise PRIORITAIREMENT la section "CONTRIBUTEURS" (liste des soumetteurs d'artefacts avec nombre de contributions).
   Chaque entree de cette liste est une personne reelle. Max 8 cartes (grille 2 col x 4 lignes).
@@ -42,28 +42,16 @@ Consignes specifiques pour ce slide (EQUIPE & GOUVERNANCE) :
     </div>
   Max 8 pills au total. Si aucune partie prenante identifiee : genere un seul group "Equipe" avec les contributeurs.
   Classes de pill disponibles : pill-leader (equipe), pill-programme (programme), pill-plateforme (plateforme).
-- {GOUVERNANCE_CARDS} : instances de gouvernance deduites du resume. Max 3 cartes.
-  Format EXACT par carte :
-    <div class="gov-card">
-    <div class="gov-card-head"><span class="gov-icon">📅</span><span class="gov-name">NOM_INSTANCE</span></div>
-    <div class="gov-meta">
-    <span><strong>Fréquence</strong> — VALEUR</span>
-    <span><strong>Participants</strong> — LISTE</span>
-    </div>
-    </div>
-  Si aucune gouvernance identifiee, genere :
-    <div class="gov-empty">
-    <span class="gov-empty-icon">🗓️</span>
-    <span>Aucune instance de gouvernance formalisée</span>
-    <span class="gov-empty-hint">À définir lors du cadrage sprint</span>
-    </div>
+- [[ACTIVITE_DEPOTS]] : marqueur technique. Recopie la ligne [[ACTIVITE_DEPOTS]]
+  EXACTEMENT telle quelle, sans la modifier ni la supprimer — elle est remplacee
+  automatiquement apres generation par le graphique d'activite des depots Git.
 - {SLIDE_ICON} : emoji representant l'equipe (ex: 👥, 🤝).
 - {DATE_EXTRACTION} : date fournie.
 
 ---user---
 === TEMPLATE MARP (a remplir) ===
 
-# {SLIDE_ICON} Équipe & Gouvernance
+# {SLIDE_ICON} Équipe & Activité
 
 <div class="slide-body">
 
@@ -79,11 +67,9 @@ Consignes specifiques pour ce slide (EQUIPE & GOUVERNANCE) :
 </div>
 <div class="col">
 
-## Gouvernance
+## Activité des dépôts
 
-<div class="gov-list">
-{GOUVERNANCE_CARDS}
-</div>
+[[ACTIVITE_DEPOTS]]
 
 </div>
 </div>
@@ -111,7 +97,7 @@ Statut : {{sprint_status}}
 === CONTRIBUTEURS (soumetteurs uniques des artefacts, par nombre de contributions) ===
 {{contributors_block}}
 
-=== RESUME D'AVANCEMENT (pour deduire gouvernance et parties prenantes) ===
+=== RESUME D'AVANCEMENT (pour deduire les parties prenantes) ===
 {{summary}}
 
 === DATE ===

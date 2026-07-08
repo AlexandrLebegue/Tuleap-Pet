@@ -22,9 +22,11 @@ Généré par `tests/generation-pipeline.test.ts` (WRITE_EXAMPLE=1).
 - **Description :** En tant qu’auditeur, je veux exporter mes rapports en PDF afin de les archiver.
 - **Soumis par :** Alice Martin
 - **Date soumission :** 2026-06-20
-- **Story points :** 8
+- **Points :** 8
 - **Assigné à :** Alice Martin
 - **Critères d'acceptance :** Le PDF respecte le gabarit officiel Export en moins de 10 secondes
+- **Effort restant :** 12
+- **Références :** pr #77, git #webapp/bbb222
 - **Dernière mise à jour :** 2026-07-04 par Alice Martin
 - **Dernier commentaire :** PDF serveur OK, reste la prévisualisation — PR ouverte pour revue.
 - **Branche :** `feature/1201-export-pdf` (dépôt webapp) — dernier commit : « feat(export): page de prévisualisation PDF » (David Roux, 2026-07-04)
@@ -46,7 +48,7 @@ Généré par `tests/generation-pipeline.test.ts` (WRITE_EXAMPLE=1).
 - **Statut :** Terminé
 - **Soumis par :** Bob Durand
 - **Date soumission :** 2026-06-18
-- **Story points :** 5
+- **Points :** 5
 - **Dernière mise à jour :** 2026-07-02 par Bob Durand
 - **Dernier commentaire :** Recette validée en préprod, story fermée.
 

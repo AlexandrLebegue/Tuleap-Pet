@@ -250,6 +250,103 @@ style: |
     .gov-empty-icon { font-size: 1.6em; opacity: 0.55; }
     .gov-empty-hint { font-size: 0.82em; opacity: 0.75; font-style: italic; }
 
+    .pie-wrap {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      padding: 12px 16px;
+      margin: 4px 0;
+    }
+
+    .pie-chart {
+      width: 130px;
+      height: 130px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.06);
+    }
+
+    .pie-legend {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      font-size: 0.74em;
+      color: #2d3748;
+      min-width: 0;
+    }
+
+    .pie-legend-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .pie-legend-item strong { color: var(--color-primary); font-weight: 700; }
+
+    .pie-dot {
+      width: 11px;
+      height: 11px;
+      border-radius: 3px;
+      display: inline-block;
+      flex-shrink: 0;
+    }
+
+    .pie-caption {
+      font-size: 0.72em;
+      color: var(--color-muted);
+      margin-top: 2px;
+    }
+
+    .pie-caption strong { color: var(--color-primary); }
+
+    .ref-badges {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      margin: 4px 0;
+    }
+
+    .us-quote {
+      border-left: 4px solid var(--color-accent);
+      background: linear-gradient(90deg, #ebf4ff 0%, #f7fafc 100%);
+      padding: 10px 14px;
+      margin: 6px 0;
+      font-size: 0.9em;
+      line-height: 1.4;
+      color: #2c5282;
+      border-radius: 0 6px 6px 0;
+      font-weight: 500;
+    }
+
+    .us-quote em { font-style: normal; font-weight: 700; color: var(--color-primary); }
+
+    .effort-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 4px 0;
+    }
+
+    .effort-chip {
+      display: inline-flex;
+      align-items: baseline;
+      gap: 5px;
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      padding: 5px 10px;
+      font-size: 0.72em;
+      color: var(--color-muted);
+    }
+
+    .effort-chip strong { font-size: 1.25em; color: var(--color-primary); font-weight: 700; }
+
     .gauge-card {
       background: #ffffff;
       border: 1px solid #e2e8f0;
@@ -855,10 +952,9 @@ style: |
 | US | Titre | Statut | Description | Tâches | Code |
 |---|---|---|---|---|---|
 | #1201 | US — Export PDF des rapports d’audit | <span class="tag tag-orange">En cours</span> | En tant qu’auditeur, je veux exporter mes rapports en PDF afin de les archiver. | 1/2 | 🌿 🔀 |
-| #1202 | US — Authentification SSO (SAML) | <span class="tag tag-green">Terminé</span> | N/D | 1/1 | — |
-| #1203 | Bug — Crash à l’ouverture du dashboard | <span class="tag tag-orange">En cours</span> | N/D | — | 🌿 🔀 |
-| #1204 | US — Notifications e-mail configurables | <span class="tag tag-blue">À faire</span> | N/D | — | — |
-
+| #1202 | US — Authentification SSO (SAML) | <span class="tag tag-green">Terminé</span> | — | 1/1 | — |
+| #1203 | Bug — Crash à l’ouverture du dashboard | <span class="tag tag-orange">En cours</span> | — | — | 🌿 🔀 |
+| #1204 | US — Notifications e-mail configurables | <span class="tag tag-blue">À faire</span> | — | — | — |
 
 </div>
 
@@ -868,15 +964,91 @@ style: |
 
 ---
 
-# 👥 Équipe & contributions
+# 🏔️ Epic #1100 — Epic — Dématérialisation des rapports d’audit
 
 <div class="slide-body">
 
+<div class="columns">
+<div class="col">
+
+Supprimer le papier du processus d’audit : génération, export et archivage numérique des rapports.
+
+<div class="gauge-card">
+<div class="gauge-head"><span class="gauge-title">📈 Avancement dans ce sprint</span><span class="gauge-value">0<span class="gauge-unit">%</span></span></div>
+<div class="gauge-bar"><div class="gauge-bar-fill w-0"></div></div>
+<div class="gauge-meta"><span>0 terminée / 2 US</span><strong>1 en cours · 1 à venir</strong></div>
+</div>
+
+<div class="effort-bar">
+<span class="effort-chip"><strong>34</strong> pts · Points</span>
+</div>
+
+</div>
+<div class="col">
+
+## User stories du sprint (2)
+
+| # | User story | Statut | Tâches |
+|---|---|---|---|
+| #1201 | US — Export PDF des rapports d’audit | <span class="tag tag-orange">En cours</span> | 1/2 |
+| #1204 | US — Notifications e-mail configurables | <span class="tag tag-blue">À faire</span> | — |
+
+
+<div class="kpi-card">
+<strong>Statut epic :</strong> <span class="tag tag-orange">En cours</span> · <strong>Tracker :</strong> Epics
+</div>
+
+</div>
+</div>
+
+</div>
+
+<div class="slide-footer">
+<small>Epic #1100 — avancement basé sur les 2 US de ce sprint · données Tuleap du 2026-07-08</small>
+</div>
+
+---
+
+# 👥 Équipe & Activité
+
+<div class="slide-body">
+
+<div class="columns">
+<div class="col">
+
+## Contributeurs du sprint
+
 <div class="person-grid">
-<div class="person-card"><span class="person-avatar is-pilote">AM</span><span class="person-info"><span class="person-name">Alice Martin</span><span class="person-role">3 artefacts</span></span></div>
-<div class="person-card"><span class="person-avatar is-leader">BD</span><span class="person-info"><span class="person-name">Bob Durand</span><span class="person-role">2 artefacts</span></span></div>
-<div class="person-card"><span class="person-avatar is-sponsor">CP</span><span class="person-info"><span class="person-name">Chloé Petit</span><span class="person-role">1 artefact</span></span></div>
-<div class="person-card"><span class="person-avatar is-pilote">DR</span><span class="person-info"><span class="person-name">David Roux</span><span class="person-role">1 artefact</span></span></div>
+<div class="person-card"><span class="person-avatar is-leader">AM</span><span class="person-info"><span class="person-name">Alice Martin</span><span class="person-role">Contributeur</span></span></div>
+<div class="person-card"><span class="person-avatar is-leader">BD</span><span class="person-info"><span class="person-name">Bob Durand</span><span class="person-role">Contributeur</span></span></div>
+<div class="person-card"><span class="person-avatar is-leader">CP</span><span class="person-info"><span class="person-name">Chloé Petit</span><span class="person-role">Contributeur</span></span></div>
+<div class="person-card"><span class="person-avatar is-leader">DR</span><span class="person-info"><span class="person-name">David Roux</span><span class="person-role">Contributeur</span></span></div>
+</div>
+
+</div>
+<div class="col">
+
+## Activité des dépôts
+
+<div class="pie-wrap">
+<div class="pie-chart" style="background: conic-gradient(#2b6cb0 0.0% 100.0%)"></div>
+<div class="pie-legend">
+<span class="pie-legend-item"><span class="pie-dot" style="background:#2b6cb0"></span>webapp — <strong>42</strong> commits (100%)</span>
+</div>
+</div>
+<div class="pie-caption"><strong>42</strong> commits depuis le 2026-06-23 — toutes branches confondues</div>
+
+</div>
+</div>
+
+## Parties prenantes
+
+<div class="pill-group">
+<span class="pill-group-label">Equipe</span>
+<span class="pill pill-leader">Alice Martin</span>
+<span class="pill pill-leader">Bob Durand</span>
+<span class="pill pill-leader">Chloé Petit</span>
+<span class="pill pill-leader">David Roux</span>
 </div>
 
 </div>
@@ -1006,17 +1178,26 @@ style: |
 <div class="columns">
 <div class="col">
 
-## Description
-
-En tant qu’auditeur, je veux exporter mes rapports en PDF afin de les archiver.
+<div class="us-quote">En tant qu’auditeur, <em>je veux exporter mes rapports en PDF afin de les archiver</em></div>
 
 ## Critères d'acceptance
 
 - Le PDF respecte le gabarit officiel
 - Export en moins de 10 secondes
 
-- **Story points :** 8
+<div class="effort-bar">
+<span class="effort-chip"><strong>8</strong> pts · Points</span>
+<span class="effort-chip"><strong>12</strong> h · Effort restant</span>
+</div>
+
 - **Assigné à :** Alice Martin
+
+## Références
+
+<div class="ref-badges">
+<span class="tag tag-orange">→ pr #77</span>
+<span class="tag tag-green">← git #webapp/bbb222</span>
+</div>
 
 </div>
 <div class="col">
@@ -1028,15 +1209,18 @@ En tant qu’auditeur, je veux exporter mes rapports en PDF afin de les archiver
 | #1210 | Générer le PDF côté serveur (lib wkhtmltopdf) | <span class="tag tag-green">Terminé</span> |
 | #1211 | Page de prévisualisation avant export | <span class="tag tag-orange">En cours</span> |
 
-
-## Code & activité
+## Code
 
 - 🌿 `feature/1201-export-pdf` (webapp) — ↑3 ↓1 vs main · « feat(export): page de prévisualisation PDF » (2026-07-04)
 - 🔀 PR #77 « Export PDF des rapports (art #1201) » — feature/1201-export-pdf → main · David Roux
 
 <div class="kpi-card">
-<strong>Statut :</strong> <span class="tag tag-orange">En cours</span> · <strong>Dernière activité :</strong> 2026-07-04 par Alice Martin — « PDF serveur OK, reste la prévisualisation — PR ouverte pour revue. »
+<strong>Statut :</strong> <span class="tag tag-orange">En cours</span> · <strong>Dernière activité :</strong> 2026-07-04 par Alice Martin · <strong>Créée par :</strong> Alice Martin
 </div>
+
+<blockquote>
+« PDF serveur OK, reste la prévisualisation — PR ouverte pour revue. »
+</blockquote>
 
 </div>
 </div>
@@ -1044,7 +1228,7 @@ En tant qu’auditeur, je veux exporter mes rapports en PDF afin de les archiver
 </div>
 
 <div class="slide-footer">
-<small>US #1201 — données Tuleap extraites le 2026-07-08, générée automatiquement sans IA</small>
+<small>US #1201 — données Tuleap du 2026-07-08</small>
 </div>
 
 ---
@@ -1056,12 +1240,9 @@ En tant qu’auditeur, je veux exporter mes rapports en PDF afin de les archiver
 <div class="columns">
 <div class="col">
 
-## Description
-
-_Pas de description._
-
-
-- **Story points :** 5
+<div class="effort-bar">
+<span class="effort-chip"><strong>5</strong> pts · Points</span>
+</div>
 
 </div>
 <div class="col">
@@ -1072,14 +1253,13 @@ _Pas de description._
 |---|---|---|
 | #1212 | Configurer le connecteur SAML côté IdP | <span class="tag tag-green">Terminé</span> |
 
-
-## Code & activité
-
-- _Aucune branche ni pull request détectée._
-
 <div class="kpi-card">
-<strong>Statut :</strong> <span class="tag tag-green">Terminé</span> · <strong>Dernière activité :</strong> 2026-07-02 par Bob Durand — « Recette validée en préprod, story fermée. »
+<strong>Statut :</strong> <span class="tag tag-green">Terminé</span> · <strong>Dernière activité :</strong> 2026-07-02 par Bob Durand · <strong>Créée par :</strong> Bob Durand
 </div>
+
+<blockquote>
+« Recette validée en préprod, story fermée. »
+</blockquote>
 
 </div>
 </div>
@@ -1087,7 +1267,7 @@ _Pas de description._
 </div>
 
 <div class="slide-footer">
-<small>US #1202 — données Tuleap extraites le 2026-07-08, générée automatiquement sans IA</small>
+<small>US #1202 — données Tuleap du 2026-07-08</small>
 </div>
 
 ---
@@ -1099,31 +1279,23 @@ _Pas de description._
 <div class="columns">
 <div class="col">
 
-## Description
-
-_Pas de description._
-
-
 - **Sévérité :** Critique
 
 </div>
 <div class="col">
 
-## Tâches (0/0 terminées)
-
-| # | Tâche | Statut |
-|---|---|---|
-| - | Aucune tâche associée | - |
-
-
-## Code & activité
+## Code
 
 - 🌿 `fix/1203-dashboard-crash` (webapp) — fusionnée / à jour · « fix(dashboard): guard sur cache vide » (2026-07-05)
 - 🔀 PR #78 « Correctif crash dashboard » — fix/1203-dashboard-crash → main · Chloé Petit
 
 <div class="kpi-card">
-<strong>Statut :</strong> <span class="tag tag-orange">En cours</span> · <strong>Dernière activité :</strong> 2026-07-05 par Chloé Petit — « Reproduit uniquement avec le cache vide — correctif en cours sur fix/1203. »
+<strong>Statut :</strong> <span class="tag tag-orange">En cours</span> · <strong>Dernière activité :</strong> 2026-07-05 par Chloé Petit · <strong>Créée par :</strong> Chloé Petit
 </div>
+
+<blockquote>
+« Reproduit uniquement avec le cache vide — correctif en cours sur fix/1203. »
+</blockquote>
 
 </div>
 </div>
@@ -1131,7 +1303,7 @@ _Pas de description._
 </div>
 
 <div class="slide-footer">
-<small>US #1203 — données Tuleap extraites le 2026-07-08, générée automatiquement sans IA</small>
+<small>US #1203 — données Tuleap du 2026-07-08</small>
 </div>
 
 ---
@@ -1140,40 +1312,16 @@ _Pas de description._
 
 <div class="slide-body">
 
-<div class="columns">
-<div class="col">
 
-## Description
-
-_Pas de description._
-
-
-
-</div>
-<div class="col">
-
-## Tâches (0/0 terminées)
-
-| # | Tâche | Statut |
-|---|---|---|
-| - | Aucune tâche associée | - |
-
-
-## Code & activité
-
-- _Aucune branche ni pull request détectée._
 
 <div class="kpi-card">
-<strong>Statut :</strong> <span class="tag tag-blue">À faire</span> · <strong>Dernière activité :</strong> N/D
-</div>
-
-</div>
+<strong>Statut :</strong> <span class="tag tag-blue">À faire</span> · <strong>Dernière modification :</strong> 2026-06-22 · <strong>Créée par :</strong> Alice Martin
 </div>
 
 </div>
 
 <div class="slide-footer">
-<small>US #1204 — données Tuleap extraites le 2026-07-08, générée automatiquement sans IA</small>
+<small>US #1204 — données Tuleap du 2026-07-08</small>
 </div>
 
 ---
