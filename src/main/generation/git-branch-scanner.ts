@@ -3,7 +3,7 @@ import { promisify } from 'node:util'
 import fs from 'node:fs'
 import path from 'node:path'
 import { randomBytes } from 'node:crypto'
-import type { CodeBranchInfo } from '@shared/types'
+import type { ActiveBranchStat, CodeBranchInfo, RepoSprintStats } from '@shared/types'
 import { debugError } from '../logger'
 import { matchArtifactIds } from './artifact-matching'
 
@@ -23,6 +23,120 @@ export type CloneScanResult = {
   defaultBranch: string | null
   /** Commits (toutes branches) depuis `sinceDate` ; null si non demandé. */
   commitsSince: number | null
+  /** Stats détaillées du sprint (branches actives, fichiers, lignes, auteurs). */
+  sprintStats: RepoSprintStats | null
+}
+
+/** Max de branches actives détaillées dans les stats sprint (mind map). */
+const ACTIVE_BRANCH_CAP = 8
+
+function parseDateMs(iso: string | null | undefined): number | null {
+  if (!iso) return null
+  const ms = Date.parse(iso)
+  return Number.isFinite(ms) ? ms : null
+}
+
+/**
+ * Statistiques d'activité du dépôt depuis `sinceDate` : commits et fichiers
+ * touchés toutes branches confondues, auteurs distincts, et détail des
+ * branches actives (commits depuis le début, branche née pendant le sprint).
+ */
+async function computeSprintStats(
+  dir: string,
+  repoName: string,
+  sinceDate: string,
+  defaultBranch: string | null,
+  allBranches: { name: string; date: string | null }[],
+  totalCommits: number
+): Promise<RepoSprintStats> {
+  // Un seul `git log` pour fichiers / lignes / auteurs : chaque commit émet
+  // une ligne marqueur `@@auteur`, suivie de ses lignes numstat `add\tdel\tpath`.
+  let filesChanged = 0
+  let additions = 0
+  let deletions = 0
+  let authors = 0
+  try {
+    const raw = await git(
+      dir,
+      ['log', '--all', `--since=${sinceDate}`, '--numstat', '--format=@@%an'],
+      60_000
+    )
+    const files = new Set<string>()
+    const authorSet = new Set<string>()
+    for (const line of raw.split('\n')) {
+      if (line.startsWith('@@')) {
+        const name = line.slice(2).trim()
+        if (name) authorSet.add(name)
+        continue
+      }
+      const m = line.match(/^(\d+|-)\t(\d+|-)\t(.+)$/)
+      if (!m) continue
+      if (m[1] !== '-') additions += Number.parseInt(m[1] as string, 10)
+      if (m[2] !== '-') deletions += Number.parseInt(m[2] as string, 10)
+      files.add(m[3] as string)
+    }
+    filesChanged = files.size
+    authors = authorSet.size
+  } catch {
+    // Dépôt vide : stats à zéro.
+  }
+
+  // Branches actives : dernier commit depuis le début du sprint.
+  const sinceMs = parseDateMs(sinceDate) ?? 0
+  const candidates = allBranches
+    .filter((b) => (parseDateMs(b.date) ?? 0) >= sinceMs)
+    .sort((a, b) => (parseDateMs(b.date) ?? 0) - (parseDateMs(a.date) ?? 0))
+    .slice(0, ACTIVE_BRANCH_CAP)
+
+  const activeBranches: ActiveBranchStat[] = []
+  for (const b of candidates) {
+    let commits = 0
+    try {
+      const count = await git(dir, ['rev-list', '--count', `--since=${sinceDate}`, b.name])
+      const n = Number.parseInt(count, 10)
+      if (Number.isFinite(n)) commits = n
+    } catch {
+      continue
+    }
+    if (commits === 0) continue
+
+    // Branche « nouvelle » : son premier commit propre (hors branche par
+    // défaut) date d'après le début du sprint.
+    let isNew = false
+    const isDefault = defaultBranch !== null && b.name === defaultBranch
+    if (!isDefault && defaultBranch) {
+      try {
+        const firstOwn = await git(dir, [
+          'log',
+          '--reverse',
+          '--format=%cI',
+          `${defaultBranch}..${b.name}`
+        ])
+        const first = firstOwn.split('\n')[0]?.trim()
+        const firstMs = parseDateMs(first)
+        if (firstMs !== null && firstMs >= sinceMs) isNew = true
+      } catch {
+        // Historique disjoint : on laisse isNew=false.
+      }
+    }
+    activeBranches.push({
+      name: b.name,
+      commits,
+      lastCommitDate: b.date,
+      isNew,
+      isDefault
+    })
+  }
+
+  return {
+    repoName,
+    commits: totalCommits,
+    activeBranches,
+    filesChanged,
+    additions,
+    deletions,
+    authors
+  }
 }
 
 async function git(dir: string, args: string[], timeoutMs = GIT_TIMEOUT_MS): Promise<string> {
@@ -74,9 +188,11 @@ export async function scanRepoBranchesByClone(args: {
     const lines = raw ? raw.split('\n').filter(Boolean) : []
 
     const branches: CodeBranchInfo[] = []
+    const allBranches: { name: string; date: string | null }[] = []
     for (const line of lines) {
       const [name, date, author, subject] = line.split(UNIT_SEP)
       if (!name) continue
+      allBranches.push({ name, date: date || null })
       const artifactIds = matchArtifactIds(name, args.knownIds)
       if (artifactIds.length === 0) continue
 
@@ -126,12 +242,34 @@ export async function scanRepoBranchesByClone(args: {
       }
     }
 
+    // Stats détaillées du sprint (slide « activité dépôt » : gros chiffres + mind map).
+    let sprintStats: RepoSprintStats | null = null
+    if (args.sinceDate) {
+      try {
+        sprintStats = await computeSprintStats(
+          dir,
+          args.repoName,
+          args.sinceDate,
+          defaultBranch,
+          allBranches,
+          commitsSince ?? 0
+        )
+      } catch (err) {
+        debugError(
+          '[git-branch-scanner] sprint stats failed for %s: %s',
+          args.repoName,
+          String(err)
+        )
+      }
+    }
+
     return {
       repoName: args.repoName,
       branches,
       branchesScanned: lines.length,
       defaultBranch,
-      commitsSince
+      commitsSince,
+      sprintStats
     }
   } finally {
     try {

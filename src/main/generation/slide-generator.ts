@@ -17,6 +17,7 @@ import {
 import { buildCodeActivitySlide } from './code-activity-slide'
 import { buildUsRecapSlides, buildUsStorySlides } from './us-slides'
 import { buildEpicSlides } from './epic-slides'
+import { buildRepoActivitySlides } from './repo-activity-slides'
 import { buildCommitPieBlock } from './commit-pie'
 import type { EnrichedContext } from './enricher'
 
@@ -49,6 +50,7 @@ function buildSlideDefinitions(ctx: EnrichedContext): SlideDefinition[] {
   }
   defs.push(
     { type: 'code_activity', build: (c) => buildCodeActivitySlide(c.codeActivity, c.generatedAt) },
+    { type: 'repo_activity', build: buildRepoActivitySlides },
     { type: 'indicateurs', promptKey: 'slide_indicateurs' },
     { type: 'risques', promptKey: 'slide_risques' },
     { type: 'synthese', promptKey: 'slide_synthese' }

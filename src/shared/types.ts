@@ -375,6 +375,35 @@ export type SprintCodeActivity = {
   scanMethod?: 'api' | 'clone'
   /** Commits par dépôt depuis le début du sprint (scan par clone uniquement). */
   commitsByRepo?: { repoName: string; commits: number }[]
+  /** Statistiques détaillées par dépôt depuis le début du sprint (scan par clone). */
+  repoSprintStats?: RepoSprintStats[]
+}
+
+/** Une branche active d'un dépôt pendant le sprint (mind map d'activité). */
+export type ActiveBranchStat = {
+  name: string
+  /** Commits atteignables depuis cette branche depuis le début du sprint. */
+  commits: number
+  lastCommitDate: string | null
+  /** True si la branche est née pendant le sprint (premier commit propre ≥ début). */
+  isNew: boolean
+  /** True si c'est la branche par défaut du dépôt. */
+  isDefault: boolean
+}
+
+/** Activité d'un dépôt Git depuis le début du sprint (calculée sur clone local). */
+export type RepoSprintStats = {
+  repoName: string
+  /** Commits toutes branches confondues depuis le début du sprint. */
+  commits: number
+  /** Branches avec au moins un commit depuis le début du sprint. */
+  activeBranches: ActiveBranchStat[]
+  /** Fichiers distincts modifiés depuis le début du sprint. */
+  filesChanged: number
+  additions: number
+  deletions: number
+  /** Auteurs distincts sur la période. */
+  authors: number
 }
 
 export type SprintReviewSlideType =
@@ -387,6 +416,7 @@ export type SprintReviewSlideType =
   | 'avancement'
   | 'us_story'
   | 'code_activity'
+  | 'repo_activity'
   | 'indicateurs'
   | 'risques'
   | 'synthese'

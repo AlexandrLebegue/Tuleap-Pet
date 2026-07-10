@@ -123,9 +123,6 @@ function findFieldByLabel(
 }
 
 const ACCEPTANCE_PATTERNS = [/crit[eè]re/, /acceptance/, /accepta/, /definition of done/, /dod/]
-const I_WANT_PATTERNS = [/^i want/, /je veux/, /je souhaite/]
-const AS_A_PATTERNS = [/^as an?\b/, /en tant que/]
-const SO_THAT_PATTERNS = [/^so that/, /afin de|afin que/]
 
 /**
  * Champs déjà rendus ailleurs ou purement techniques : jamais répétés dans
@@ -149,19 +146,17 @@ const EXCLUDED_STORY_FIELDS = [
   /^soumis par$/,
   /cross reference/,
   /^references$|^références$/,
-  /^attachments?$/,
-  /^i want to?$/,
-  /^so that$/,
-  /^as an?$/,
-  /^en tant que$/,
-  /^je veux$/,
-  /^afin de$/
+  /^attachments?$/
 ]
 
 /** Traductions FR des labels de champs Tuleap courants (anglais → français). */
 const FIELD_LABEL_FR: Record<string, string> = {
   'assigned to': 'Assigné à',
   assignee: 'Assigné à',
+  'i want to': 'Je veux',
+  'so that': 'Afin de',
+  'as a': 'En tant que',
+  'as an': 'En tant que',
   'story points': 'Points',
   'initial effort': 'Effort initial',
   'remaining effort': 'Effort restant',
@@ -266,35 +261,6 @@ function taskStats(ctx: EnrichedContext, usId: number): TaskStats {
   const children = childIds.map((id) => byId.get(id)).filter((a): a is ArtifactDetail => !!a)
   const buckets = bucketArtifacts(children)
   return { total: childIds.length, done: buckets.done.length }
-}
-
-/**
- * Citation « user story » mise en avant : privilégie les champs structurés
- * (As a / I want to / So that), sinon repère la formulation dans la
- * description. Le « je veux » est mis en gras.
- */
-export function buildStoryQuote(story: ArtifactDetail): string | null {
-  const iWant = findFieldByLabel(story, I_WANT_PATTERNS)
-  if (iWant) {
-    const asA = findFieldByLabel(story, AS_A_PATTERNS)
-    const soThat = findFieldByLabel(story, SO_THAT_PATTERNS)
-    const parts: string[] = []
-    if (asA) parts.push(`En tant que ${asA.text.replace(/^en tant que\s*/i, '')}`)
-    parts.push(
-      `<em>je veux ${iWant.text.replace(/^(i want to?|je veux|je souhaite)\s*/i, '')}</em>`
-    )
-    if (soThat) parts.push(`afin de ${soThat.text.replace(/^(so that|afin de|afin que)\s*/i, '')}`)
-    return parts.join(', ')
-  }
-  const desc = story.description ? stripHtml(story.description) : ''
-  const m = desc.match(
-    /(en tant qu[e'’][^,.]{2,80}[,.]?\s*)?(je veux|je souhaite|i want to?)\s([^.]{4,160})(\.|$)/i
-  )
-  if (m) {
-    const asA = (m[1] ?? '').trim()
-    return `${asA ? `${asA.replace(/[,.]\s*$/, '')}, ` : ''}<em>je veux ${m[3]?.trim() ?? ''}</em>`
-  }
-  return null
 }
 
 function branchStateLabel(b: {
@@ -411,14 +377,9 @@ function buildOneStorySlide(story: ArtifactDetail, ctx: EnrichedContext): string
   // ── Colonne gauche : le récit de l'US ──────────────────────────────────
   const left: string[] = []
 
-  const quote = buildStoryQuote(story)
-  if (quote) {
-    left.push(`<div class="us-quote">${quote}</div>`)
-  }
-
+  // Texte de l'US tel quel, sans reformulation.
   const description = story.description ? stripHtml(story.description) : null
-  // La description n'est répétée que si elle apporte plus que la citation.
-  if (description && (!quote || description.length > quote.length + 40)) {
+  if (description) {
     left.push(`## Description\n\n${description.slice(0, 340)}`)
   }
 

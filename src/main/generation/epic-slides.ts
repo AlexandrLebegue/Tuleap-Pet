@@ -1,6 +1,6 @@
 import { bucketArtifacts } from '../prompts/sprint-review'
 import type { EnrichedContext, EpicInfo } from './enricher'
-import { esc, statusTag, refBadgesHtml, extractEffortChips, buildStoryQuote } from './us-slides'
+import { esc, statusTag, refBadgesHtml, extractEffortChips } from './us-slides'
 
 const EPIC_STORIES_CAP = 8
 
@@ -30,12 +30,10 @@ function buildOneEpicSlide(epic: EpicInfo, ctx: EnrichedContext): string {
   const pct = total > 0 ? Math.round((done / total) * 100) : 0
 
   const detail = epic.detail
-  const quote = buildStoryQuote(detail)
   const description = detail.description ? stripHtml(detail.description) : null
 
   const introBlocks: string[] = []
-  if (quote) introBlocks.push(`<div class="us-quote">${quote}</div>`)
-  if (description && (!quote || description.length > quote.length + 40)) {
+  if (description) {
     introBlocks.push(description.slice(0, 300))
   }
   const effortChips = extractEffortChips(detail)

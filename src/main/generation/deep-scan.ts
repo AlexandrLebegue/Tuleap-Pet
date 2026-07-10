@@ -4,7 +4,7 @@
  * Chargé dynamiquement par l'enricher uniquement quand l'option « une slide
  * par user story » est cochée — ce module tire electron-store via la config.
  */
-import type { CodeBranchInfo } from '@shared/types'
+import type { CodeBranchInfo, RepoSprintStats } from '@shared/types'
 import { getConfig } from '../store/config'
 import { resolveCloneUrl } from '../tuleap/clone-url'
 import { injectGitCredentials } from '../jobs/git-credentials'
@@ -18,6 +18,8 @@ export type DeepScanResult = {
   warnings: string[]
   /** Commits par dépôt depuis `sinceDate` (début de sprint). */
   commitsByRepo: { repoName: string; commits: number }[]
+  /** Stats détaillées par dépôt (branches actives, fichiers, lignes, auteurs). */
+  repoSprintStats: RepoSprintStats[]
 }
 
 export async function deepScanBranches(
@@ -31,7 +33,8 @@ export async function deepScanBranches(
     branchesScanned: 0,
     clonedRepos: 0,
     warnings: [],
-    commitsByRepo: []
+    commitsByRepo: [],
+    repoSprintStats: []
   }
 
   if (!tempClonePath) {
@@ -64,6 +67,9 @@ export async function deepScanBranches(
       result.clonedRepos++
       if (scan.commitsSince !== null) {
         result.commitsByRepo.push({ repoName, commits: scan.commitsSince })
+      }
+      if (scan.sprintStats !== null) {
+        result.repoSprintStats.push(scan.sprintStats)
       }
     } catch (err) {
       result.warnings.push(

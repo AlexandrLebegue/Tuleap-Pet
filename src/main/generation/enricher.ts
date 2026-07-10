@@ -294,6 +294,7 @@ async function scanCodeActivity(
   let branchesScanned = 0
   let scanMethod: 'api' | 'clone' = 'api'
   let commitsByRepo: { repoName: string; commits: number }[] | undefined
+  let repoSprintStats: SprintCodeActivity['repoSprintStats']
   const branches: CodeBranchInfo[] = []
 
   // Scan profond : clone de chaque dépôt (ahead/behind, dernier commit exact,
@@ -310,6 +311,7 @@ async function scanCodeActivity(
         branchesScanned = deep.branchesScanned
         scanMethod = 'clone'
         commitsByRepo = deep.commitsByRepo
+        repoSprintStats = deep.repoSprintStats
       }
     } catch (err) {
       warnings.push(
@@ -401,7 +403,8 @@ async function scanCodeActivity(
     pullRequests,
     warnings,
     scanMethod,
-    commitsByRepo
+    commitsByRepo,
+    repoSprintStats
   }
 }
 

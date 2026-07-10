@@ -3,7 +3,7 @@ marp: true
 theme: default
 paginate: true
 size: 16:9
-footer: 'Sprint Review — Sprint 24.07 — 2026-07-08'
+footer: 'Sprint Review — Sprint 24.07 — 2026-07-10'
 style: |
     @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;600;700&display=swap');
 
@@ -312,19 +312,186 @@ style: |
       margin: 4px 0;
     }
 
-    .us-quote {
-      border-left: 4px solid var(--color-accent);
-      background: linear-gradient(90deg, #ebf4ff 0%, #f7fafc 100%);
-      padding: 10px 14px;
-      margin: 6px 0;
-      font-size: 0.9em;
-      line-height: 1.4;
-      color: #2c5282;
-      border-radius: 0 6px 6px 0;
-      font-weight: 500;
+    .big-grid {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 10px;
+      margin: 6px 0 10px 0;
     }
 
-    .us-quote em { font-style: normal; font-weight: 700; color: var(--color-primary); }
+    .big-card {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 2px;
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-top: 4px solid var(--color-accent);
+      border-radius: 8px;
+      padding: 12px 8px 10px 8px;
+      text-align: center;
+    }
+
+    .big-card.is-primary {
+      background: linear-gradient(180deg, #ebf4ff 0%, #ffffff 70%);
+      border-top-color: var(--color-primary);
+    }
+
+    .big-icon { font-size: 1.3em; line-height: 1; }
+
+    .big-value {
+      font-size: 2.1em;
+      font-weight: 700;
+      color: var(--color-primary);
+      line-height: 1.05;
+      letter-spacing: -0.02em;
+      white-space: nowrap;
+    }
+
+    .big-label {
+      font-size: 0.62em;
+      color: var(--color-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-weight: 600;
+      line-height: 1.2;
+    }
+
+    .mindmap {
+      display: flex;
+      align-items: center;
+      gap: 0;
+      margin: 4px 0;
+      min-height: 0;
+      flex: 1;
+    }
+
+    .mm-root {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 2px;
+      background: var(--color-primary);
+      color: #ffffff;
+      border-radius: 14px;
+      padding: 18px 22px;
+      flex-shrink: 0;
+      box-shadow: 0 4px 12px rgba(26, 54, 93, 0.25);
+      z-index: 1;
+    }
+
+    .mm-root-icon { font-size: 1.5em; line-height: 1; }
+
+    .mm-root-name {
+      font-weight: 700;
+      font-size: 0.95em;
+      max-width: 180px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .mm-root-meta { font-size: 0.62em; opacity: 0.8; text-transform: uppercase; letter-spacing: 0.04em; }
+
+    .mm-links {
+      width: 36px;
+      align-self: stretch;
+      flex-shrink: 0;
+      background:
+        linear-gradient(to right, transparent calc(50% - 1px), #cbd5e0 calc(50% - 1px), #cbd5e0 calc(50% + 1px), transparent calc(50% + 1px));
+      position: relative;
+    }
+
+    .mm-links::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 50%;
+      width: 50%;
+      height: 2px;
+      background: #cbd5e0;
+    }
+
+    .mm-nodes {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      flex: 1;
+      min-width: 0;
+    }
+
+    .mm-node {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-left: 3px solid var(--color-accent);
+      border-radius: 0 8px 8px 0;
+      padding: 5px 12px;
+      position: relative;
+      min-width: 0;
+    }
+
+    .mm-node::before {
+      content: '';
+      position: absolute;
+      left: -37px;
+      top: 50%;
+      width: 36px;
+      height: 2px;
+      background: #cbd5e0;
+    }
+
+    .mm-node.is-new     { border-left-color: #2f855a; }
+    .mm-node.is-default { border-left-color: var(--color-primary); }
+
+    .mm-count {
+      font-size: 1.25em;
+      font-weight: 700;
+      color: var(--color-primary);
+      min-width: 34px;
+      text-align: center;
+      flex-shrink: 0;
+    }
+
+    .mm-branch-info {
+      display: flex;
+      flex-direction: column;
+      line-height: 1.2;
+      min-width: 0;
+    }
+
+    .mm-branch-name {
+      font-family: ui-monospace, monospace;
+      font-size: 0.72em;
+      font-weight: 600;
+      color: #2d3748;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .mm-branch-meta {
+      font-size: 0.62em;
+      color: var(--color-muted);
+    }
+
+    .mm-badge {
+      display: inline-block;
+      background: #c6f6d5;
+      color: #276749;
+      border-radius: 999px;
+      padding: 0 7px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      font-size: 0.92em;
+    }
+
+    .mm-badge.is-def { background: #bee3f8; color: #2b6cb0; }
 
     .effort-bar {
       display: flex;
@@ -959,7 +1126,7 @@ style: |
 </div>
 
 <div class="slide-footer">
-<small>Données Tuleap extraites le 2026-07-08 — 🌿 branche liée · 🔀 pull request en cours</small>
+<small>Données Tuleap extraites le 2026-07-10 — 🌿 branche liée · 🔀 pull request en cours</small>
 </div>
 
 ---
@@ -1004,7 +1171,7 @@ Supprimer le papier du processus d’audit : génération, export et archivage n
 </div>
 
 <div class="slide-footer">
-<small>Epic #1100 — avancement basé sur les 2 US de ce sprint · données Tuleap du 2026-07-08</small>
+<small>Epic #1100 — avancement basé sur les 2 US de ce sprint · données Tuleap du 2026-07-10</small>
 </div>
 
 ---
@@ -1178,7 +1345,9 @@ Supprimer le papier du processus d’audit : génération, export et archivage n
 <div class="columns">
 <div class="col">
 
-<div class="us-quote">En tant qu’auditeur, <em>je veux exporter mes rapports en PDF afin de les archiver</em></div>
+## Description
+
+En tant qu’auditeur, je veux exporter mes rapports en PDF afin de les archiver.
 
 ## Critères d'acceptance
 
@@ -1228,7 +1397,7 @@ Supprimer le papier du processus d’audit : génération, export et archivage n
 </div>
 
 <div class="slide-footer">
-<small>US #1201 — données Tuleap du 2026-07-08</small>
+<small>US #1201 — données Tuleap du 2026-07-10</small>
 </div>
 
 ---
@@ -1267,7 +1436,7 @@ Supprimer le papier du processus d’audit : génération, export et archivage n
 </div>
 
 <div class="slide-footer">
-<small>US #1202 — données Tuleap du 2026-07-08</small>
+<small>US #1202 — données Tuleap du 2026-07-10</small>
 </div>
 
 ---
@@ -1303,7 +1472,7 @@ Supprimer le papier du processus d’audit : génération, export et archivage n
 </div>
 
 <div class="slide-footer">
-<small>US #1203 — données Tuleap du 2026-07-08</small>
+<small>US #1203 — données Tuleap du 2026-07-10</small>
 </div>
 
 ---
@@ -1321,7 +1490,7 @@ Supprimer le papier du processus d’audit : génération, export et archivage n
 </div>
 
 <div class="slide-footer">
-<small>US #1204 — données Tuleap du 2026-07-08</small>
+<small>US #1204 — données Tuleap du 2026-07-10</small>
 </div>
 
 ---
@@ -1373,7 +1542,81 @@ Supprimer le papier du processus d’audit : génération, export et archivage n
 </div>
 
 <div class="slide-footer">
-<small>Données Git Tuleap extraites le 2026-07-08 (scan par clone : état ↑avance ↓retard vs branche par défaut) — généré automatiquement, sans IA</small>
+<small>Données Git Tuleap extraites le 2026-07-10 (scan par clone : état ↑avance ↓retard vs branche par défaut) — généré automatiquement, sans IA</small>
+</div>
+
+---
+
+# 🧑‍💻 Dépôt webapp — activité du sprint
+
+<div class="slide-body">
+
+<div class="big-grid">
+<div class="big-card is-primary">
+<span class="big-icon">🧱</span>
+<span class="big-value">42</span>
+<span class="big-label">Commits</span>
+</div>
+<div class="big-card">
+<span class="big-icon">🌿</span>
+<span class="big-value">3</span>
+<span class="big-label">Branches actives · 2 nouvelles</span>
+</div>
+<div class="big-card">
+<span class="big-icon">📄</span>
+<span class="big-value">87</span>
+<span class="big-label">Fichiers modifiés</span>
+</div>
+<div class="big-card">
+<span class="big-icon">➕➖</span>
+<span class="big-value">+4,2k / −1,2k</span>
+<span class="big-label">Lignes ajoutées / retirées</span>
+</div>
+<div class="big-card">
+<span class="big-icon">👥</span>
+<span class="big-value">4</span>
+<span class="big-label">Contributeurs</span>
+</div>
+</div>
+
+## Branches du sprint
+
+<div class="mindmap">
+<div class="mm-root">
+<span class="mm-root-icon">📚</span>
+<span class="mm-root-name">webapp</span>
+<span class="mm-root-meta">3 branches actives</span>
+</div>
+<div class="mm-links"></div>
+<div class="mm-nodes">
+<div class="mm-node is-default">
+<span class="mm-count">25</span>
+<span class="mm-branch-info">
+<span class="mm-branch-name">main</span>
+<span class="mm-branch-meta">commits · 2026-07-05 <span class="mm-badge is-def">défaut</span></span>
+</span>
+</div>
+<div class="mm-node is-new">
+<span class="mm-count">12</span>
+<span class="mm-branch-info">
+<span class="mm-branch-name">feature/1201-export-pdf</span>
+<span class="mm-branch-meta">commits · 2026-07-04 <span class="mm-badge">nouvelle</span></span>
+</span>
+</div>
+<div class="mm-node is-new">
+<span class="mm-count">5</span>
+<span class="mm-branch-info">
+<span class="mm-branch-name">fix/1203-dashboard-crash</span>
+<span class="mm-branch-meta">commits · 2026-07-05 <span class="mm-badge">nouvelle</span></span>
+</span>
+</div>
+</div>
+</div>
+
+</div>
+
+<div class="slide-footer">
+<small>Dépôt webapp — commits depuis le 2026-06-23, toutes branches · calculé sur clone local, sans IA</small>
 </div>
 
 ---

@@ -446,7 +446,40 @@ deepScanMock.mockImplementation(async () => ({
   branchesScanned: 4,
   clonedRepos: 1,
   warnings: [],
-  commitsByRepo: [{ repoName: 'webapp', commits: 42 }]
+  commitsByRepo: [{ repoName: 'webapp', commits: 42 }],
+  repoSprintStats: [
+    {
+      repoName: 'webapp',
+      commits: 42,
+      activeBranches: [
+        {
+          name: 'main',
+          commits: 25,
+          lastCommitDate: '2026-07-05T10:00:00+02:00',
+          isNew: false,
+          isDefault: true
+        },
+        {
+          name: 'feature/1201-export-pdf',
+          commits: 12,
+          lastCommitDate: '2026-07-04T15:58:00+02:00',
+          isNew: true,
+          isDefault: false
+        },
+        {
+          name: 'fix/1203-dashboard-crash',
+          commits: 5,
+          lastCommitDate: '2026-07-05T09:10:00+02:00',
+          isNew: true,
+          isDefault: false
+        }
+      ],
+      filesChanged: 87,
+      additions: 4210,
+      deletions: 1180,
+      authors: 4
+    }
+  ]
 }))
 
 vi.mock('../src/main/generation/deep-scan', () => ({
@@ -971,6 +1004,7 @@ describe('runSprintReviewPipeline (bout en bout, LLM mocké)', () => {
       'livrables',
       'avancement',
       'code_activity',
+      'repo_activity',
       'indicateurs',
       'risques',
       'synthese'
@@ -1002,8 +1036,9 @@ describe('runSprintReviewPipeline (bout en bout, LLM mocké)', () => {
     expect(result.markdown).toContain('`feature/1201-export-pdf` → `main`')
     expect(result.markdown).toContain('Export PDF des rapports (art #1201)')
     expect(result.markdown).toContain('fix(dashboard): guard sur cache vide')
-    // Pas de slides par US sans l'option
+    // Pas de slides par US ni d'activité dépôt sans l'option (pas de clone)
     expect(result.markdown).not.toContain('# 📘 US #')
+    expect(result.markdown).not.toContain('# 🧑‍💻 Dépôt')
     // 9 appels LLM (1 synthèse + 8 slides) : les slides déterministes n'en font pas
     expect(llmCalls).toHaveLength(9)
 
@@ -1087,6 +1122,7 @@ describe('runSprintReviewPipeline (storySlides: true, clone mocké)', () => {
       'avancement',
       'us_story',
       'code_activity',
+      'repo_activity',
       'indicateurs',
       'risques',
       'synthese'
@@ -1099,11 +1135,12 @@ describe('runSprintReviewPipeline (storySlides: true, clone mocké)', () => {
     expect(result.markdown).toContain('# 📘 US #1204 — US — Notifications e-mail configurables')
     expect((result.markdown.match(/# 📘 US #/g) ?? []).length).toBe(4)
 
-    // Contenu de la slide US #1201 : citation « je veux » mise en avant,
-    // critères d'acceptance, effort en heures, badges de références,
-    // tâches, branche avec état, PR
-    expect(result.markdown).toMatch(
-      /<div class="us-quote">En tant qu[’']auditeur, <em>je veux exporter mes rapports en PDF afin de les archiver<\/em><\/div>/
+    // Contenu de la slide US #1201 : texte de l'US tel quel (aucune
+    // reformulation « je veux »), critères d'acceptance, effort en heures,
+    // badges de références, tâches, branche avec état, PR
+    expect(result.markdown).not.toContain('us-quote')
+    expect(result.markdown).toContain(
+      '## Description\n\nEn tant qu’auditeur, je veux exporter mes rapports en PDF afin de les archiver.'
     )
     expect(result.markdown).toContain("## Critères d'acceptance")
     expect(result.markdown).toContain('Le PDF respecte le gabarit officiel')
@@ -1135,6 +1172,20 @@ describe('runSprintReviewPipeline (storySlides: true, clone mocké)', () => {
     expect(result.markdown).toContain('<span class="tag tag-orange">↑3 ↓1</span>')
     expect(result.markdown).toContain('<span class="tag tag-green">Fusionnée / à jour</span>')
     expect(result.markdown).toContain('scan par clone')
+
+    // Slide « activité dépôt » : gros chiffres + mind map des branches
+    expect(result.markdown).toContain('# 🧑‍💻 Dépôt webapp — activité du sprint')
+    expect(result.markdown).toContain('<span class="big-value">42</span>')
+    expect(result.markdown).toContain('<span class="big-value">87</span>')
+    expect(result.markdown).toContain('<span class="big-value">+4,2k / −1,2k</span>')
+    expect(result.markdown).toContain('Branches actives · 2 nouvelles')
+    expect(result.markdown).toContain('class="mindmap"')
+    expect(result.markdown).toContain('<span class="mm-root-name">webapp</span>')
+    expect(result.markdown).toMatch(
+      /<div class="mm-node is-new">\s*<span class="mm-count">12<\/span>\s*<span class="mm-branch-info">\s*<span class="mm-branch-name">feature\/1201-export-pdf<\/span>/
+    )
+    expect(result.markdown).toContain('<span class="mm-badge">nouvelle</span>')
+    expect(result.markdown).toContain('<span class="mm-badge is-def">défaut</span>')
 
     // Toujours 9 appels LLM : les slides US sont déterministes
     expect(llmCalls).toHaveLength(9)
