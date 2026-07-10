@@ -456,6 +456,8 @@ export type GenerationOptions = {
    * par clone local de tous les dépôts Git du projet (ahead/behind).
    */
   storySlides?: boolean
+  /** Thème visuel du deck : clair (défaut) ou sombre. */
+  theme?: 'light' | 'dark'
 }
 
 // ---- Chat (Phase 2) ----

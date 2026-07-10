@@ -231,6 +231,7 @@ const generation = {
     source: GenerationSource
     language?: 'fr' | 'en'
     storySlides?: boolean
+    theme?: 'light' | 'dark'
   }): Promise<GenerationResult> => ipcRenderer.invoke('generation:generate-sprint-review', args),
   listTrackerArtifacts: (trackerId: number): Promise<ArtifactSummary[]> =>
     ipcRenderer.invoke('generation:list-tracker-artifacts', trackerId),

@@ -53,7 +53,7 @@ function buildOneEpicSlide(epic: EpicInfo, ctx: EnrichedContext): string {
       : ''
 
   const gauge = `<div class="gauge-card">
-<div class="gauge-head"><span class="gauge-title">📈 Avancement dans ce sprint</span><span class="gauge-value">${pct}<span class="gauge-unit">%</span></span></div>
+<div class="gauge-head"><span class="gauge-title">Avancement dans ce sprint</span><span class="gauge-value">${pct}<span class="gauge-unit">%</span></span></div>
 <div class="gauge-bar"><div class="gauge-bar-fill ${widthClass(pct)}"></div></div>
 <div class="gauge-meta"><span>${done} terminée${done > 1 ? 's' : ''} / ${total} US</span><strong>${buckets.inProgress.length} en cours · ${buckets.todo.length} à venir</strong></div>
 </div>`
@@ -74,9 +74,11 @@ function buildOneEpicSlide(epic: EpicInfo, ctx: EnrichedContext): string {
     ...(refsHtml ? [`## Références\n\n${refsHtml}`] : [])
   ]
 
-  return `# 🏔️ Epic #${detail.id} — ${esc(detail.title || '(sans titre)').slice(0, 65)}
+  return `# Epic #${detail.id} — ${esc(detail.title || '(sans titre)').slice(0, 65)}
 
 <div class="slide-body">
+
+<div class="kicker">Epic</div>
 
 <div class="columns">
 <div class="col">

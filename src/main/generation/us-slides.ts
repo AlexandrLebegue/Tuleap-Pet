@@ -280,34 +280,22 @@ function branchStateLabel(b: {
 
 function recapStatBar(stories: ArtifactSummary[]): string {
   const buckets = bucketArtifacts(stories)
-  return `<div class="stat-bar">
-<div class="stat-item">
-<span class="stat-icon">📦</span>
-<span class="stat-text">
-<span class="stat-value">${stories.length}</span>
-<span class="stat-label">User stories</span>
-</span>
+  return `<div class="big-grid cols-4">
+<div class="big-card is-primary">
+<span class="big-value">${stories.length}</span>
+<span class="big-label">User stories</span>
 </div>
-<div class="stat-item">
-<span class="stat-icon">✅</span>
-<span class="stat-text">
-<span class="stat-value">${buckets.done.length}</span>
-<span class="stat-label">Terminées</span>
-</span>
+<div class="big-card">
+<span class="big-value">${buckets.done.length}</span>
+<span class="big-label">Terminées</span>
 </div>
-<div class="stat-item">
-<span class="stat-icon">🔄</span>
-<span class="stat-text">
-<span class="stat-value">${buckets.inProgress.length}</span>
-<span class="stat-label">En cours</span>
-</span>
+<div class="big-card">
+<span class="big-value">${buckets.inProgress.length}</span>
+<span class="big-label">En cours</span>
 </div>
-<div class="stat-item">
-<span class="stat-icon">⏳</span>
-<span class="stat-text">
-<span class="stat-value">${buckets.todo.length}</span>
-<span class="stat-label">À venir</span>
-</span>
+<div class="big-card">
+<span class="big-value">${buckets.todo.length}</span>
+<span class="big-label">À venir</span>
 </div>
 </div>`
 }
@@ -333,7 +321,13 @@ export function buildUsRecapSlides(ctx: EnrichedContext): string[] {
     const tasks = stats.total > 0 ? `${stats.done}/${stats.total}` : '—'
     const hasBranch = ctx.codeActivity.branches.some((b) => b.artifactIds.includes(s.id))
     const hasPr = ctx.codeActivity.pullRequests.some((p) => p.artifactIds.includes(s.id))
-    const code = [hasBranch ? '🌿' : null, hasPr ? '🔀' : null].filter(Boolean).join(' ') || '—'
+    const code =
+      [
+        hasBranch ? '<span class="tag tag-green">br</span>' : null,
+        hasPr ? '<span class="tag tag-orange">PR</span>' : null
+      ]
+        .filter(Boolean)
+        .join(' ') || '—'
     return `| #${s.id} | ${title} | ${statusTag(status)} | ${description} | ${tasks} | ${code} |`
   })
 
@@ -346,9 +340,11 @@ export function buildUsRecapSlides(ctx: EnrichedContext): string[] {
   return pages.map((pageRows, pageIndex) => {
     const pageSuffix = pages.length > 1 ? ` (${pageIndex + 1}/${pages.length})` : ''
     const statBar = pageIndex === 0 ? `\n${recapStatBar(stories)}\n` : ''
-    return `# 📋 Récapitulatif des user stories${pageSuffix}
+    return `# Récapitulatif des user stories${pageSuffix}
 
 <div class="slide-body">
+
+<div class="kicker">Backlog du sprint</div>
 ${statBar}
 | US | Titre | Statut | Description | Tâches | Code |
 |---|---|---|---|---|---|
@@ -357,7 +353,7 @@ ${pageRows.join('\n')}
 </div>
 
 <div class="slide-footer">
-<small>Données Tuleap extraites le ${ctx.generatedAt} — 🌿 branche liée · 🔀 pull request en cours</small>
+<small>Données Tuleap du ${ctx.generatedAt} · br = branche liée · PR = pull request en cours</small>
 </div>`
   })
 }
@@ -412,6 +408,8 @@ function wrapStorySlide(
   return `${density}${storyHeader(story, titleSuffix)}
 
 <div class="slide-body">
+
+<div class="kicker">User story</div>
 
 ${body}
 
@@ -512,12 +510,12 @@ function buildOneStorySlide(story: ArtifactDetail, ctx: EnrichedContext): string
       ? ` · « ${esc(b.lastCommitTitle.slice(0, 45))} » (${shortDate(b.lastCommitDate) ?? 'N/D'})`
       : ''
     codeLines.push(
-      `- 🌿 \`${esc(b.branchName)}\` (${esc(b.repoName)})${branchStateLabel(b)}${commit}`
+      `- **Branche** \`${esc(b.branchName)}\` (${esc(b.repoName)})${branchStateLabel(b)}${commit}`
     )
   }
   for (const p of prs.slice(0, 3)) {
     codeLines.push(
-      `- 🔀 PR #${p.id} « ${esc(p.title.slice(0, 45))} » — ${esc(p.sourceBranch)} → ${esc(p.targetBranch)}${p.creator ? ` · ${esc(p.creator)}` : ''}`
+      `- **PR #${p.id}** « ${esc(p.title.slice(0, 45))} » — ${esc(p.sourceBranch)} → ${esc(p.targetBranch)}${p.creator ? ` · ${esc(p.creator)}` : ''}`
     )
   }
   if (codeLines.length > 0) {

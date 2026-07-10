@@ -74,6 +74,8 @@ function Generation(): React.JSX.Element {
   const slideWarnings = useGeneration((s) => s.slideWarnings)
   const storySlides = useGeneration((s) => s.storySlides)
   const setStorySlides = useGeneration((s) => s.setStorySlides)
+  const darkTheme = useGeneration((s) => s.darkTheme)
+  const setDarkTheme = useGeneration((s) => s.setDarkTheme)
 
   // Progress
   const currentProgressLabel = useGeneration((s) => s.currentProgressLabel)
@@ -460,6 +462,22 @@ function Generation(): React.JSX.Element {
                 Description, critères d&apos;acceptance, tâches, branches et pull requests. Clone
                 tous les dépôts Git du projet pour un état exact des branches (plus lent, nécessite
                 le dossier temporaire des réglages).
+              </span>
+            </span>
+          </label>
+          <label className="flex cursor-pointer items-start gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={darkTheme}
+              onChange={(e) => setDarkTheme(e.target.checked)}
+              disabled={isGenerating}
+              className="mt-0.5 h-4 w-4 flex-shrink-0"
+            />
+            <span>
+              Thème sombre
+              <span className="block text-xs text-muted-foreground">
+                Deck en fond sombre (fond clair par défaut). Le style reste identique, seules les
+                couleurs changent.
               </span>
             </span>
           </label>

@@ -532,9 +532,11 @@ La story SSO (#1202) est terminée et recettée. L'export PDF (#1201) est bien a
 - PR #77 ouverte depuis le 2026-07-03, revue à planifier.`
 
 const CANNED_SLIDES: Record<string, string> = {
-  slide_titre: `# 🚀 Sprint Review — Sprint 24.07
+  slide_titre: `# Sprint Review — Sprint 24.07
 
 <div class="slide-body">
+
+<div class="kicker">Portail Audit</div>
 
 ## Portail Audit
 
@@ -547,9 +549,11 @@ const CANNED_SLIDES: Record<string, string> = {
 <div class="slide-footer">
 <small>Présentation générée le 2026-07-08 — Données Tuleap</small>
 </div>`,
-  slide_contexte: `# 🧭 Contexte & objectifs
+  slide_contexte: `# Sprint 24.07 — Contexte & Objectif
 
 <div class="slide-body">
+
+<div class="kicker">Cadrage</div>
 
 ## Objectif du sprint
 
@@ -567,9 +571,11 @@ const CANNED_SLIDES: Record<string, string> = {
 <div class="slide-footer">
 <small>Données au 2026-07-08</small>
 </div>`,
-  slide_equipe: `# 👥 Équipe & Activité
+  slide_equipe: `# Équipe & Activité
 
 <div class="slide-body">
+
+<div class="kicker">Équipe</div>
 
 <div class="columns">
 <div class="col">
@@ -608,9 +614,11 @@ const CANNED_SLIDES: Record<string, string> = {
 <div class="slide-footer">
 <small>Données au 2026-07-08</small>
 </div>`,
-  slide_livrables: `# 📦 Livrables & Planning
+  slide_livrables: `# Livrables & Planning
 
 <div class="slide-body">
+
+<div class="kicker">Livraison</div>
 
 <div class="columns">
 <div class="col">
@@ -639,39 +647,32 @@ const CANNED_SLIDES: Record<string, string> = {
 <div class="slide-footer">
 <small>Données au 2026-07-08</small>
 </div>`,
-  slide_avancement: `# 📈 Avancement des travaux
+  slide_avancement: `# Avancement des travaux
 
 <div class="slide-body">
 
-<div class="stat-bar">
-<div class="stat-item">
-<span class="stat-icon">📦</span>
-<span class="stat-text">
-<span class="stat-value">4</span>
-<span class="stat-label">Total items</span>
-</span>
+<div class="kicker">Exécution</div>
+
+<div class="big-grid cols-3">
+<div class="big-card">
+<span class="big-value">4</span>
+<span class="big-label">Total items</span>
 </div>
-<div class="stat-item">
-<span class="stat-icon">📈</span>
-<span class="stat-text">
-<span class="stat-value">25<span class="stat-unit">%</span></span>
-<span class="stat-label">Avancement</span>
-</span>
+<div class="big-card">
+<span class="big-value">25<span class="stat-unit">%</span></span>
+<span class="big-label">Avancement</span>
 </div>
-<div class="stat-item">
-<span class="stat-icon">📍</span>
-<span class="stat-text">
-<span class="stat-value">En cours de livraison</span>
-<span class="stat-label">Phase</span>
-</span>
+<div class="big-card">
+<span class="big-value">En cours de livraison</span>
+<span class="big-label">Phase</span>
 </div>
 </div>
 
 <div class="task-section">
-<div class="task-section-head"><h2>✅ Terminés</h2><span class="task-section-meta">1 item</span></div>
+<div class="task-section-head"><h2>Terminés</h2><span class="task-section-meta">1 item</span></div>
 <div class="task-grid">
 <div class="task-card is-done">
-<div class="task-card-head"><span class="task-card-type">📘</span><span class="task-card-title">Authentification SSO (SAML)</span></div>
+<div class="task-card-head"><span class="task-card-title">Authentification SSO (SAML)</span></div>
 <div class="task-card-meta"><span class="tag tag-green">Terminé</span><span class="task-card-owner"><span class="task-card-avatar">BD</span></span></div>
 <div class="task-card-bar"><div class="task-card-bar-fill w-100"></div></div>
 <div class="task-card-effort"><span>#1202</span><strong>100%</strong></div>
@@ -680,16 +681,16 @@ const CANNED_SLIDES: Record<string, string> = {
 </div>
 
 <div class="task-section">
-<div class="task-section-head"><h2>🔄 En cours</h2><span class="task-section-meta">2 items</span></div>
+<div class="task-section-head"><h2>En cours</h2><span class="task-section-meta">2 items</span></div>
 <div class="task-grid">
 <div class="task-card is-encours">
-<div class="task-card-head"><span class="task-card-type">📘</span><span class="task-card-title">Export PDF des rapports d'audit</span></div>
+<div class="task-card-head"><span class="task-card-title">Export PDF des rapports d'audit</span></div>
 <div class="task-card-meta"><span class="tag tag-orange">En cours</span><span class="task-card-owner"><span class="task-card-avatar">AM</span></span></div>
 <div class="task-card-bar"><div class="task-card-bar-fill w-50"></div></div>
 <div class="task-card-effort"><span>#1201</span><strong>50%</strong></div>
 </div>
 <div class="task-card is-encours">
-<div class="task-card-head"><span class="task-card-type">🐞</span><span class="task-card-title">Crash à l'ouverture du dashboard</span></div>
+<div class="task-card-head"><span class="task-card-title">Crash à l'ouverture du dashboard</span></div>
 <div class="task-card-meta"><span class="tag tag-orange">En cours</span><span class="task-card-owner"><span class="task-card-avatar">CP</span></span></div>
 <div class="task-card-bar"><div class="task-card-bar-fill w-50"></div></div>
 <div class="task-card-effort"><span>#1203</span><strong>50%</strong></div>
@@ -698,10 +699,10 @@ const CANNED_SLIDES: Record<string, string> = {
 </div>
 
 <div class="task-section">
-<div class="task-section-head"><h2>⏳ À venir</h2><span class="task-section-meta">1 item</span></div>
+<div class="task-section-head"><h2>À venir</h2><span class="task-section-meta">1 item</span></div>
 <div class="task-grid">
 <div class="task-card is-avenir">
-<div class="task-card-head"><span class="task-card-type">📘</span><span class="task-card-title">Notifications e-mail configurables</span></div>
+<div class="task-card-head"><span class="task-card-title">Notifications e-mail configurables</span></div>
 <div class="task-card-meta"><span class="tag tag-blue">À venir</span><span class="task-card-owner"><span class="task-card-avatar">AM</span></span></div>
 <div class="task-card-bar"><div class="task-card-bar-fill w-0"></div></div>
 <div class="task-card-effort"><span>#1204</span><strong>0%</strong></div>
@@ -714,12 +715,14 @@ const CANNED_SLIDES: Record<string, string> = {
 <div class="slide-footer">
 <small>Données TULEAP extraites le 2026-07-08</small>
 </div>`,
-  slide_indicateurs: `# 📊 Indicateurs du sprint
+  slide_indicateurs: `# Indicateurs clés du sprint
 
 <div class="slide-body">
 
+<div class="kicker">Pilotage</div>
+
 <div class="gauge-card">
-<div class="gauge-head"><span class="gauge-title">📈 Avancement global</span><span class="gauge-value">25<span class="gauge-unit">%</span></span></div>
+<div class="gauge-head"><span class="gauge-title">Avancement global</span><span class="gauge-value">25<span class="gauge-unit">%</span></span></div>
 <div class="gauge-bar"><div class="gauge-bar-fill w-25"></div></div>
 <div class="gauge-meta"><span>1 terminé / 4 items</span><strong>2 en cours</strong></div>
 </div>
@@ -733,9 +736,11 @@ const CANNED_SLIDES: Record<string, string> = {
 <div class="slide-footer">
 <small>Données au 2026-07-08</small>
 </div>`,
-  slide_risques: `# ⚠️ Risques & Contraintes
+  slide_risques: `# Risques & Contraintes
 
 <div class="slide-body">
+
+<div class="kicker">Vigilance</div>
 
 <div class="columns">
 <div class="col">
@@ -770,9 +775,11 @@ const CANNED_SLIDES: Record<string, string> = {
 <div class="slide-footer">
 <small>Données au 2026-07-08</small>
 </div>`,
-  slide_synthese: `# 🎯 Synthèse du sprint
+  slide_synthese: `# Synthèse du sprint
 
 <div class="slide-body">
+
+<div class="kicker">Conclusion</div>
 
 <div class="columns">
 <div class="col">
@@ -1070,16 +1077,16 @@ describe('runSprintReviewPipeline (bout en bout, LLM mocké)', () => {
 
     // Le slide récapitulatif des US est présent, déterministe, avec statut,
     // description, compteur de tâches et indicateurs code.
-    expect(result.markdown).toContain('# 📋 Récapitulatif des user stories')
+    expect(result.markdown).toContain('# Récapitulatif des user stories')
     expect(result.markdown).toMatch(
-      /\| #1201 \| US — Export PDF des rapports d’audit \| <span class="tag tag-orange">En cours<\/span> \| En tant qu’auditeur[^|]*\| 1\/2 \| 🌿 🔀 \|/
+      /\| #1201 \| US — Export PDF des rapports d’audit \| <span class="tag tag-orange">En cours<\/span> \| En tant qu’auditeur[^|]*\| 1\/2 \| <span class="tag tag-green">br<\/span> <span class="tag tag-orange">PR<\/span> \|/
     )
     expect(result.markdown).toMatch(
       /\| #1204 \| US — Notifications e-mail configurables \| <span class="tag tag-blue">À faire<\/span> \| — \| — \| — \|/
     )
 
     // Slide epic : avancement basé sur les US du sprint rattachées (0/2 terminées)
-    expect(result.markdown).toContain('# 🏔️ Epic #1100 — Epic — Dématérialisation des rapports')
+    expect(result.markdown).toContain('# Epic #1100 — Epic — Dématérialisation des rapports')
     expect(result.markdown).toContain('Avancement dans ce sprint')
     expect(result.markdown).toContain('0 terminée / 2 US')
     expect(result.markdown).toMatch(
@@ -1090,7 +1097,7 @@ describe('runSprintReviewPipeline (bout en bout, LLM mocké)', () => {
     expect(result.markdown).toContain('Activité des dépôts non mesurée')
 
     // Le slide code_activity est présent, généré sans LLM, avec les vraies données
-    expect(result.markdown).toContain('# 🔀 Activité code — Branches & Pull Requests')
+    expect(result.markdown).toContain('# Branches & pull requests')
     expect(result.markdown).toContain('`feature/1201-export-pdf` → `main`')
     expect(result.markdown).toContain('Export PDF des rapports (art #1201)')
     expect(result.markdown).toContain('fix(dashboard): guard sur cache vide')
@@ -1212,8 +1219,10 @@ describe('runSprintReviewPipeline (storySlides: true, clone mocké)', () => {
     expect(result.markdown).toContain('<span class="tag tag-green">← git #webapp/bbb222</span>')
     expect(result.markdown).toContain('## Tâches (1/2 terminées)')
     expect(result.markdown).toMatch(/\| #1210 \| Générer le PDF côté serveur/)
-    expect(result.markdown).toContain('🌿 `feature/1201-export-pdf` (webapp) — ↑3 ↓1 vs main')
-    expect(result.markdown).toContain('🔀 PR #77')
+    expect(result.markdown).toContain(
+      '**Branche** `feature/1201-export-pdf` (webapp) — ↑3 ↓1 vs main'
+    )
+    expect(result.markdown).toContain('**PR #77**')
     // Les sections vides ne s'affichent pas : pas de « Pas de description »
     expect(result.markdown).not.toContain('Pas de description')
     expect(result.markdown).not.toContain('Aucune tâche associée')
@@ -1291,6 +1300,39 @@ describe('runSprintReviewPipeline (storySlides: true, clone mocké)', () => {
   })
 })
 
+// ─── Thème sombre ────────────────────────────────────────────────────────────
+
+describe('runSprintReviewPipeline (thème sombre)', () => {
+  it('injecte la surcharge sombre dans le CSS du thème', async () => {
+    const result = await runSprintReviewPipeline(
+      {
+        source: { mode: 'sprint', milestoneId: MILESTONE_ID },
+        projectName: 'Portail Audit',
+        projectId: PROJECT_ID,
+        language: 'fr',
+        storySlides: true,
+        theme: 'dark'
+      },
+      () => {}
+    )
+    const frontmatterEnd = result.markdown.indexOf('---', 4)
+    const frontmatter = result.markdown.slice(0, frontmatterEnd)
+    // Palette sombre présente et postérieure à la palette claire (elle gagne)
+    expect(frontmatter).toContain('--c-bg: #0e1b2f;')
+    expect(frontmatter.indexOf('--c-bg: #0e1b2f;')).toBeGreaterThan(
+      frontmatter.indexOf('--c-bg: #ffffff;')
+    )
+    // Donut : palette sombre pour le gradient dynamique
+    expect(frontmatter).toContain('conic-gradient(#90cdf4 0.0% 100.0%)')
+
+    if (process.env.WRITE_EXAMPLE === '1') {
+      const outDir = resolve(__dirname, '../docs/examples')
+      mkdirSync(outDir, { recursive: true })
+      writeFileSync(resolve(outDir, 'sprint-review-dark-example.md'), result.markdown, 'utf8')
+    }
+  })
+})
+
 // ─── Sprints imbriqués ───────────────────────────────────────────────────────
 
 describe('listMilestonesWithChildren (sprints imbriqués)', () => {
@@ -1358,7 +1400,7 @@ describe('buildUsRecapSlides (pagination)', () => {
   it('tient sur une slide quand il y a peu de stories', () => {
     const slides = buildUsRecapSlides(makeCtx(5))
     expect(slides).toHaveLength(1)
-    expect(slides[0]).toContain('# 📋 Récapitulatif des user stories\n')
+    expect(slides[0]).toContain('# Récapitulatif des user stories\n')
   })
 
   it('coupe le tableau en plusieurs slides quand il déborde', () => {
@@ -1367,8 +1409,8 @@ describe('buildUsRecapSlides (pagination)', () => {
     expect(slides[0]).toContain('Récapitulatif des user stories (1/3)')
     expect(slides[2]).toContain('Récapitulatif des user stories (3/3)')
     // La stat-bar n'apparaît que sur la première slide
-    expect(slides[0]).toContain('stat-bar')
-    expect(slides[1]).not.toContain('stat-bar')
+    expect(slides[0]).toContain('big-grid')
+    expect(slides[1]).not.toContain('big-grid')
     // Toutes les stories sont présentes, réparties sur les pages
     const all = slides.join('\n')
     expect(all).toContain('| #100 |')

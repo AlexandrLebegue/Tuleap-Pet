@@ -26,6 +26,8 @@ export async function runSprintReviewPipeline(
     language: 'fr' | 'en'
     /** Slides détaillées par US + recherche de branches par clone des dépôts. */
     storySlides?: boolean
+    /** Thème visuel du deck (clair par défaut). */
+    theme?: 'light' | 'dark'
   },
   emitProgress: (e: SprintReviewProgressEvent) => void
 ): Promise<PipelineResult> {
@@ -37,7 +39,7 @@ export async function runSprintReviewPipeline(
     opts.projectId,
     opts.language,
     emitProgress,
-    { storySlides: opts.storySlides ?? false }
+    { storySlides: opts.storySlides ?? false, theme: opts.theme ?? 'light' }
   )
 
   emitProgress({ type: 'summarizing' })

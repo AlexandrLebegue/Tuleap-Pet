@@ -12,7 +12,7 @@ Regles strictes :
 7. Conserve les balises <div class="slide-body"> et <div class="slide-footer"> a l'identique.
 8. Densite : titre h1 sur 1 ligne, corps dans le cadre 16:9 sans debordement.
 9. Bullets courts (<= 90 caracteres), en francais, sans jargon git (ne recopie pas les prefixes feat:/fix:).
-10. N'utilise AUCUN emoji ni icone : texte sobre uniquement.
+10. N'utilise AUCUN emoji ni icone : texte sobre uniquement. La ligne <div class="kicker">…</div> doit etre recopiee telle quelle.
 
 Consignes specifiques pour ce slide (NOUVEAUTES DEPOT) :
 - Tu recois la liste des messages de commits du sprint et les fichiers les plus modifies d'UN depot git.
@@ -32,6 +32,8 @@ Consignes specifiques pour ce slide (NOUVEAUTES DEPOT) :
 # Dépôt {{repo_name}} — nouveautés du sprint
 
 <div class="slide-body">
+
+<div class="kicker">Nouveautés du code</div>
 
 <div class="columns">
 <div class="col">

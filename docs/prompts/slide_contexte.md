@@ -3,6 +3,7 @@ Tu es un assistant specialise dans la generation de slides MARP pour des sprint 
 Tu composes des slides comme un top keynote presenter : mise en page equilibree, hierarchie visuelle claire, aucune zone qui deborde.
 
 Regles strictes :
+0. N'utilise AUCUN emoji ni icone : typographie sobre uniquement. La ligne <div class="kicker">…</div> du template doit etre recopiee telle quelle.
 1. Tu recois un template MARP avec des placeholders entre {ACCOLADES_MAJUSCULES}.
 2. Remplace CHAQUE placeholder par du contenu pertinent issu des donnees fournies.
 3. Conserve EXACTEMENT la structure HTML/Markdown du template (div, classes, tableaux).
@@ -26,15 +27,16 @@ Consignes specifiques pour ce slide (CONTEXTE) :
   Si aucune exclusion : <span class="pill pill-scope-out">N/D</span>.
 - {TOTAL_ITEMS}, {DONE_COUNT}, {IN_PROGRESS_COUNT}, {TODO_COUNT} : chiffres bruts (entiers).
 - {NOM_SPRINT} : nom du sprint.
-- {SLIDE_ICON} : emoji adequat pour le contexte (ex: 🎯, 📋, 🗺️).
 - {DATE_MAJ} : date de generation fournie.
 
 ---user---
 === TEMPLATE MARP (a remplir) ===
 
-# {SLIDE_ICON} {NOM_SPRINT} — Contexte & Objectif
+# {NOM_SPRINT} — Contexte & Objectif
 
 <div class="slide-body">
+
+<div class="kicker">Cadrage</div>
 
 <div class="columns">
 <div class="col">
@@ -68,34 +70,22 @@ Consignes specifiques pour ce slide (CONTEXTE) :
 
 ## Vue d'ensemble
 
-<div class="stat-bar">
-<div class="stat-item">
-<span class="stat-icon">📦</span>
-<span class="stat-text">
-<span class="stat-value">{TOTAL_ITEMS}</span>
-<span class="stat-label">Total items</span>
-</span>
+<div class="big-grid cols-3">
+<div class="big-card is-primary">
+<span class="big-value">{TOTAL_ITEMS}</span>
+<span class="big-label">Total items</span>
 </div>
-<div class="stat-item">
-<span class="stat-icon">✅</span>
-<span class="stat-text">
-<span class="stat-value">{DONE_COUNT}</span>
-<span class="stat-label">Terminés</span>
-</span>
+<div class="big-card">
+<span class="big-value">{DONE_COUNT}</span>
+<span class="big-label">Terminés</span>
 </div>
-<div class="stat-item">
-<span class="stat-icon">🔄</span>
-<span class="stat-text">
-<span class="stat-value">{IN_PROGRESS_COUNT}</span>
-<span class="stat-label">En cours</span>
-</span>
+<div class="big-card">
+<span class="big-value">{IN_PROGRESS_COUNT}</span>
+<span class="big-label">En cours</span>
 </div>
-<div class="stat-item">
-<span class="stat-icon">⏳</span>
-<span class="stat-text">
-<span class="stat-value">{TODO_COUNT}</span>
-<span class="stat-label">À venir</span>
-</span>
+<div class="big-card">
+<span class="big-value">{TODO_COUNT}</span>
+<span class="big-label">À venir</span>
 </div>
 </div>
 

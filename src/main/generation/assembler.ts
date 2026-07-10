@@ -7,20 +7,46 @@ const MARP_CSS = `\
   @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;600;700&display=swap');
 
   :root {
-    --color-primary: #1a365d;
-    --color-accent: #2b6cb0;
+    /* Palette pilotée par le thème (clair par défaut, surchargée en sombre). */
+    --c-bg: #ffffff;
+    --c-solid: #ffffff;
+    --c-fg: #2d3748;
+    --c-fg-soft: #4a5568;
+    --c-heading: #1a365d;
+    --c-accent: #2b6cb0;
+    --c-muted: #718096;
+    --c-border: #e2e8f0;
+    --c-border2: #cbd5e0;
+    --c-soft: #f7fafc;
+    --c-soft2: #edf2f7;
+    --c-card: #ffffff;
+    --c-thead-bg: #1a365d;
+    --c-thead-fg: #ffffff;
+    --c-warn-soft: #fff5eb;
+    --tag-green-bg: #c6f6d5;
+    --tag-green-fg: #276749;
+    --tag-orange-bg: #feebc8;
+    --tag-orange-fg: #c05621;
+    --tag-red-bg: #fed7d7;
+    --tag-red-fg: #c53030;
+    --tag-blue-bg: #bee3f8;
+    --tag-blue-fg: #2c5f8f;
+
+    /* Alias historiques utilisés dans le reste du thème. */
+    --color-primary: var(--c-heading);
+    --color-accent: var(--c-accent);
     --color-success: #276749;
     --color-warning: #c05621;
     --color-danger: #c53030;
-    --color-light: #edf2f7;
-    --color-muted: #718096;
+    --color-light: var(--c-soft2);
+    --color-muted: var(--c-muted);
   }
 
   section {
     font-family: 'IBM Plex Sans', sans-serif;
     font-size: 22px;
-    background: #ffffff;
-    color: #2d3748;
+    background: var(--c-bg);
+    color: var(--c-fg);
     padding: 0;
     line-height: 1.3;
     display: grid;
@@ -32,12 +58,24 @@ const MARP_CSS = `\
 
   section > h1 {
     margin: 0;
-    padding: 22px 48px 10px 48px;
-    color: var(--color-primary);
+    padding: 24px 48px 12px 48px;
+    color: var(--c-heading);
     font-weight: 700;
-    font-size: 1.5em;
-    border-bottom: 3px solid var(--color-accent);
-    background: #ffffff;
+    font-size: 1.42em;
+    letter-spacing: -0.015em;
+    border-bottom: 1px solid var(--c-border);
+    background:
+      linear-gradient(90deg, var(--c-accent), var(--c-accent)) no-repeat 48px 100% / 64px 3px;
+  }
+
+  .kicker,
+  .repo-kicker {
+    font-size: 0.56em;
+    text-transform: uppercase;
+    letter-spacing: 0.24em;
+    color: var(--c-accent);
+    font-weight: 700;
+    margin: -2px 0 4px 0;
   }
 
   section::after {
@@ -61,8 +99,8 @@ const MARP_CSS = `\
   }
 
   th {
-    background: var(--color-primary);
-    color: white;
+    background: var(--c-thead-bg);
+    color: var(--c-thead-fg);
     padding: 5px 10px;
     text-align: left;
     font-weight: 600;
@@ -70,11 +108,11 @@ const MARP_CSS = `\
 
   td {
     padding: 4px 10px;
-    border-bottom: 1px solid #e2e8f0;
+    border-bottom: 1px solid var(--c-border);
   }
 
   tr:nth-child(even) {
-    background: #f7fafc;
+    background: var(--c-soft);
   }
 
   .tag {
@@ -85,10 +123,10 @@ const MARP_CSS = `\
     font-weight: 600;
   }
 
-  .tag-green { background: #c6f6d5; color: #276749; }
-  .tag-orange { background: #feebc8; color: #c05621; }
-  .tag-red { background: #fed7d7; color: #c53030; }
-  .tag-blue { background: #bee3f8; color: #2b6cb0; }
+  .tag-green { background: var(--tag-green-bg); color: var(--tag-green-fg); }
+  .tag-orange { background: var(--tag-orange-bg); color: var(--tag-orange-fg); }
+  .tag-red { background: var(--tag-red-bg); color: var(--tag-red-fg); }
+  .tag-blue { background: var(--tag-blue-bg); color: var(--tag-blue-fg); }
 
   .pill {
     display: inline-block;
@@ -141,8 +179,8 @@ const MARP_CSS = `\
     align-items: center;
     gap: 10px;
     padding: 8px 10px;
-    background: #ffffff;
-    border: 1px solid #e2e8f0;
+    background: var(--c-card);
+    border: 1px solid var(--c-border);
     border-radius: 6px;
   }
 
@@ -198,8 +236,8 @@ const MARP_CSS = `\
   }
 
   .gov-card {
-    background: #ffffff;
-    border: 1px solid #e2e8f0;
+    background: var(--c-card);
+    border: 1px solid var(--c-border);
     border-left: 3px solid var(--color-accent);
     border-radius: 0 6px 6px 0;
     padding: 8px 12px;
@@ -228,11 +266,11 @@ const MARP_CSS = `\
     gap: 2px;
   }
 
-  .gov-meta strong { color: #2d3748; font-weight: 600; }
+  .gov-meta strong { color: var(--c-fg); font-weight: 600; }
 
   .gov-empty {
-    background: #f7fafc;
-    border: 1px dashed #cbd5e0;
+    background: var(--c-soft);
+    border: 1px dashed var(--c-border2);
     border-radius: 6px;
     padding: 18px 14px;
     text-align: center;
@@ -277,7 +315,7 @@ const MARP_CSS = `\
     width: 150px;
     height: 150px;
     border-radius: 50%;
-    background: #edf2f7;
+    background: var(--c-soft2);
   }
 
   .pie-hole {
@@ -288,7 +326,7 @@ const MARP_CSS = `\
     width: 92px;
     height: 92px;
     border-radius: 50%;
-    background: #ffffff;
+    background: var(--c-solid);
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -317,7 +355,7 @@ const MARP_CSS = `\
     flex-direction: column;
     gap: 6px;
     font-size: 0.76em;
-    color: #2d3748;
+    color: var(--c-fg);
     min-width: 0;
   }
 
@@ -338,7 +376,7 @@ const MARP_CSS = `\
     border-radius: 3px;
     display: inline-block;
     flex-shrink: 0;
-    background: #cbd5e0;
+    background: var(--c-border2);
   }
 
   .pie-c0 { background: #1a365d; }
@@ -365,11 +403,45 @@ const MARP_CSS = `\
     margin: 8px 0 14px 0;
   }
 
+  .big-grid.cols-3 { grid-template-columns: repeat(3, 1fr); }
+  .big-grid.cols-4 { grid-template-columns: repeat(4, 1fr); }
+
+  /* Slide de titre : hero centré (classes uniquement, jamais de style inline). */
+  .title-hero {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    gap: 22px;
+    text-align: center;
+  }
+
+  .title-project {
+    font-size: 1.3em;
+    font-weight: 700;
+    color: var(--c-heading);
+    letter-spacing: -0.01em;
+  }
+
+  .title-metrics {
+    width: 72%;
+    margin: 0 auto;
+  }
+
+  .title-metrics .big-card { align-items: center; }
+
+  .title-dates {
+    font-size: 0.82em;
+    color: var(--c-muted);
+    letter-spacing: 0.02em;
+  }
+
   .big-card {
     display: flex;
     flex-direction: column;
     gap: 3px;
-    border-top: 1px solid #cbd5e0;
+    border-top: 1px solid var(--c-border2);
     padding: 10px 0 2px 0;
   }
 
@@ -381,7 +453,7 @@ const MARP_CSS = `\
   .big-value {
     font-size: 2.5em;
     font-weight: 300;
-    color: #2d3748;
+    color: var(--c-fg);
     line-height: 1;
     letter-spacing: -0.03em;
     white-space: nowrap;
@@ -571,8 +643,8 @@ const MARP_CSS = `\
     display: inline-flex;
     align-items: baseline;
     gap: 5px;
-    background: #ffffff;
-    border: 1px solid #e2e8f0;
+    background: var(--c-card);
+    border: 1px solid var(--c-border);
     border-radius: 6px;
     padding: 5px 10px;
     font-size: 0.72em;
@@ -582,8 +654,8 @@ const MARP_CSS = `\
   .effort-chip strong { font-size: 1.25em; color: var(--color-primary); font-weight: 700; }
 
   .gauge-card {
-    background: #ffffff;
-    border: 1px solid #e2e8f0;
+    background: var(--c-card);
+    border: 1px solid var(--c-border);
     border-radius: 6px;
     padding: 10px 14px;
     margin: 4px 0;
@@ -621,7 +693,7 @@ const MARP_CSS = `\
 
   .gauge-bar {
     height: 6px;
-    background: #edf2f7;
+    background: var(--c-soft2);
     border-radius: 999px;
     overflow: hidden;
     margin: 4px 0;
@@ -635,7 +707,7 @@ const MARP_CSS = `\
 
   .gauge-stack {
     height: 12px;
-    background: #edf2f7;
+    background: var(--c-soft2);
     border-radius: 999px;
     overflow: hidden;
     margin: 6px 0 8px 0;
@@ -652,7 +724,7 @@ const MARP_CSS = `\
   }
   .gauge-seg.is-engage   { background: #1a365d; }
   .gauge-seg.is-planifie { background: #2b6cb0; }
-  .gauge-seg.is-reserve  { background: #cbd5e0; }
+  .gauge-seg.is-reserve  { background: var(--c-border2); }
 
   .w-0{width:0%}.w-1{width:1%}.w-2{width:2%}.w-3{width:3%}.w-4{width:4%}.w-5{width:5%}.w-6{width:6%}.w-7{width:7%}.w-8{width:8%}.w-9{width:9%}.w-10{width:10%}
   .w-11{width:11%}.w-12{width:12%}.w-13{width:13%}.w-14{width:14%}.w-15{width:15%}.w-16{width:16%}.w-17{width:17%}.w-18{width:18%}.w-19{width:19%}.w-20{width:20%}
@@ -689,9 +761,9 @@ const MARP_CSS = `\
 
   .gauge-legend-dot.is-engage   { background: #1a365d; }
   .gauge-legend-dot.is-planifie { background: #2b6cb0; }
-  .gauge-legend-dot.is-reserve  { background: #cbd5e0; }
+  .gauge-legend-dot.is-reserve  { background: var(--c-border2); }
 
-  .gauge-legend strong { color: #2d3748; font-weight: 700; }
+  .gauge-legend strong { color: var(--c-fg); font-weight: 700; }
 
   .gauge-meta {
     display: flex;
@@ -700,7 +772,7 @@ const MARP_CSS = `\
     color: var(--color-muted);
   }
 
-  .gauge-meta strong { color: #2d3748; font-weight: 600; }
+  .gauge-meta strong { color: var(--c-fg); font-weight: 600; }
 
   .timeline {
     display: flex;
@@ -718,7 +790,7 @@ const MARP_CSS = `\
     right: 10px;
     top: 8px;
     height: 2px;
-    background: #e2e8f0;
+    background: var(--c-border);
     z-index: 0;
   }
 
@@ -738,14 +810,14 @@ const MARP_CSS = `\
     height: 10px;
     border-radius: 50%;
     background: var(--color-accent);
-    border: 2px solid #ffffff;
+    border: 2px solid var(--c-solid);
     box-shadow: 0 0 0 2px var(--color-accent);
     margin-bottom: 4px;
   }
 
   .timeline-step.is-empty::before {
-    background: #ffffff;
-    box-shadow: 0 0 0 2px #cbd5e0;
+    background: var(--c-card);
+    box-shadow: 0 0 0 2px var(--c-border2);
   }
 
   .timeline-label {
@@ -772,7 +844,7 @@ const MARP_CSS = `\
   .meteo-row {
     padding: 6px 12px;
     border-left: 3px solid var(--color-accent);
-    background: #f7fafc;
+    background: var(--c-soft);
     border-radius: 0 6px 6px 0;
   }
 
@@ -802,12 +874,12 @@ const MARP_CSS = `\
     letter-spacing: 0.04em;
   }
 
-  .meteo-row.is-ok      .meteo-status { background: #c6f6d5; color: #276749; }
-  .meteo-row.is-warning .meteo-status { background: #feebc8; color: #9c4221; }
-  .meteo-row.is-danger  .meteo-status { background: #fed7d7; color: #9b2c2c; }
+  .meteo-row.is-ok      .meteo-status { background: var(--tag-green-bg); color: var(--tag-green-fg); }
+  .meteo-row.is-warning .meteo-status { background: var(--tag-orange-bg); color: var(--tag-orange-fg); }
+  .meteo-row.is-danger  .meteo-status { background: var(--tag-red-bg); color: var(--tag-red-fg); }
 
   .meteo-comment {
-    color: #4a5568;
+    color: var(--c-fg-soft);
     font-size: 0.74em;
     line-height: 1.3;
     margin-top: 1px;
@@ -825,11 +897,11 @@ const MARP_CSS = `\
   .ecarts-list li {
     position: relative;
     padding: 5px 10px 5px 28px;
-    background: #fff5eb;
+    background: var(--c-warn-soft);
     border-radius: 4px;
     font-size: 0.76em;
     line-height: 1.35;
-    color: #2d3748;
+    color: var(--c-fg);
   }
 
   .ecarts-list li::before {
@@ -867,7 +939,7 @@ const MARP_CSS = `\
     top: 22%;
     bottom: 22%;
     width: 1px;
-    background: #cbd5e0;
+    background: var(--c-border2);
   }
 
   .stat-bar .stat-icon { font-size: 1.4em; line-height: 1; }
@@ -904,7 +976,7 @@ const MARP_CSS = `\
     gap: 12px;
     margin: 4px 0 4px 0;
     padding-bottom: 3px;
-    border-bottom: 1px solid #e2e8f0;
+    border-bottom: 1px solid var(--c-border);
   }
 
   .task-section-head h2 {
@@ -932,8 +1004,8 @@ const MARP_CSS = `\
     flex-direction: column;
     gap: 4px;
     padding: 8px 10px;
-    background: #ffffff;
-    border: 1px solid #e2e8f0;
+    background: var(--c-card);
+    border: 1px solid var(--c-border);
     border-left: 3px solid var(--color-accent);
     border-radius: 0 5px 5px 0;
     font-size: 0.72em;
@@ -998,7 +1070,7 @@ const MARP_CSS = `\
 
   .task-card-bar {
     height: 5px;
-    background: #e2e8f0;
+    background: var(--c-border);
     border-radius: 3px;
     overflow: hidden;
     font-size: 0;
@@ -1068,7 +1140,7 @@ const MARP_CSS = `\
   .slide-footer {
     position: relative;
     padding: 8px 48px 14px 48px;
-    border-top: 1px solid #e2e8f0;
+    border-top: 1px solid var(--c-border);
     color: var(--color-muted);
     font-size: 12px;
   }
@@ -1094,11 +1166,11 @@ const MARP_CSS = `\
 
   blockquote {
     border-left: 4px solid var(--color-accent);
-    background: #f7fafc;
+    background: var(--c-soft);
     padding: 8px 14px;
     margin: 6px 0;
     font-size: 0.85em;
-    color: #2d3748;
+    color: var(--c-fg);
   }
 
   p { margin: 4px 0; }
@@ -1106,13 +1178,61 @@ const MARP_CSS = `\
   li { margin: 2px 0; }
 `
 
+/** Surcharge « thème sombre » : redéfinit la palette, le reste du CSS suit. */
+const DARK_CSS = `\
+  :root {
+    --c-bg: #0e1b2f;
+    --c-solid: #0e1b2f;
+    --c-fg: #d6e0ee;
+    --c-fg-soft: #b9c7da;
+    --c-heading: #eef4fb;
+    --c-accent: #7cb1e6;
+    --c-muted: #8ba1bc;
+    --c-border: rgba(255, 255, 255, 0.13);
+    --c-border2: rgba(255, 255, 255, 0.28);
+    --c-soft: rgba(255, 255, 255, 0.05);
+    --c-soft2: rgba(255, 255, 255, 0.09);
+    --c-card: #152840;
+    --c-thead-bg: #274769;
+    --c-thead-fg: #eaf2fb;
+    --c-warn-soft: rgba(237, 137, 54, 0.14);
+    --tag-green-bg: rgba(104, 211, 145, 0.16);
+    --tag-green-fg: #9ae6b4;
+    --tag-orange-bg: rgba(246, 173, 85, 0.16);
+    --tag-orange-fg: #fbd38d;
+    --tag-red-bg: rgba(252, 129, 129, 0.16);
+    --tag-red-fg: #feb2b2;
+    --tag-blue-bg: rgba(99, 179, 237, 0.16);
+    --tag-blue-fg: #90cdf4;
+  }
+
+  section {
+    background: linear-gradient(160deg, #0c1830 0%, #12233e 100%);
+  }
+
+  .gauge-seg.is-engage, .gauge-legend-dot.is-engage { background: #90cdf4; }
+  .gauge-seg.is-planifie, .gauge-legend-dot.is-planifie { background: #4299e1; }
+  .gauge-seg.is-reserve, .gauge-legend-dot.is-reserve { background: rgba(255, 255, 255, 0.25); }
+  .gauge-bar-fill { background: linear-gradient(90deg, #4299e1, #90cdf4); }
+  .task-card-bar-fill { background: #4299e1; }
+  .pie-c0 { background: #90cdf4; }
+  .pie-c1 { background: #4299e1; }
+  .pie-c2 { background: #2b6cb0; }
+  .pie-c3 { background: #68d391; }
+  .pie-c4 { background: #f6ad55; }
+  .pie-c5 { background: #b794f4; }
+  .pie-c6 { background: #a0aec0; }
+  .slide-footer::after { background: linear-gradient(90deg, #2b6cb0, #63b3ed); }
+`
+
 function buildFrontmatter(ctx: EnrichedContext): string {
   const footer = `Sprint Review — ${ctx.label} — ${ctx.generatedAt}`
   // Règles dynamiques calculées depuis les données du deck (ex : gradient du
   // donut commits par dépôt) — le CSS du thème n'est pas soumis à la
   // sanitisation HTML de Marp, contrairement aux attributs style inline.
-  const dynamicCss = buildCommitPieCss(ctx.codeActivity)
-  const css = dynamicCss ? `${MARP_CSS}\n  ${dynamicCss}\n` : MARP_CSS
+  const dynamicCss = buildCommitPieCss(ctx.codeActivity, ctx.theme)
+  const themed = ctx.theme === 'dark' ? `${MARP_CSS}\n${DARK_CSS}` : MARP_CSS
+  const css = dynamicCss ? `${themed}\n  ${dynamicCss}\n` : themed
   return `---
 marp: true
 theme: default

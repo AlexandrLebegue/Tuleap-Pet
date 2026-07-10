@@ -81,31 +81,24 @@ export function buildCodeActivitySlide(
       ? `\n<small>… et ${branches.length - MAX_BRANCH_ROWS} autre(s) branche(s).</small>`
       : ''
 
-  return `# 🔀 Activité code — Branches & Pull Requests
+  return `# Branches & pull requests
 
 <div class="slide-body">
 
-<div class="stat-bar">
-<div class="stat-item">
-<span class="stat-icon">📚</span>
-<span class="stat-text">
-<span class="stat-value">${activity.reposScanned}</span>
-<span class="stat-label">Dépôts scannés</span>
-</span>
+<div class="kicker">Activité code</div>
+
+<div class="big-grid cols-3">
+<div class="big-card is-primary">
+<span class="big-value">${pullRequests.length}</span>
+<span class="big-label">PR en cours</span>
 </div>
-<div class="stat-item">
-<span class="stat-icon">🌿</span>
-<span class="stat-text">
-<span class="stat-value">${branches.length}</span>
-<span class="stat-label">Branches liées</span>
-</span>
+<div class="big-card">
+<span class="big-value">${branches.length}</span>
+<span class="big-label">Branches liées au sprint</span>
 </div>
-<div class="stat-item">
-<span class="stat-icon">🔀</span>
-<span class="stat-text">
-<span class="stat-value">${pullRequests.length}</span>
-<span class="stat-label">PR en cours</span>
-</span>
+<div class="big-card">
+<span class="big-value">${activity.reposScanned}</span>
+<span class="big-label">Dépôts scannés</span>
 </div>
 </div>
 
@@ -129,6 +122,6 @@ ${branchOverflow}
 </div>
 
 <div class="slide-footer">
-<small>Données Git Tuleap extraites le ${generatedAt}${showState ? ' (scan par clone : état ↑avance ↓retard vs branche par défaut)' : ''} — généré automatiquement, sans IA</small>
+<small>Données Git Tuleap du ${generatedAt}${showState ? ' · scan par clone : ↑avance ↓retard vs branche par défaut' : ''}</small>
 </div>`
 }

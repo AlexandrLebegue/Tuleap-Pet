@@ -48,6 +48,8 @@ type Store = {
   slideWarnings: { slide: SprintReviewSlideType; warning: string }[]
   /** Option : une slide détaillée par user story (clone des dépôts Git). */
   storySlides: boolean
+  /** Option : deck en thème sombre. */
+  darkTheme: boolean
 
   // --- Progress ---
   pipelineProgress: SprintReviewProgressEvent[]
@@ -75,6 +77,7 @@ type Store = {
   setDateFrom: (date: string | null) => void
   setDateTo: (date: string | null) => void
   setStorySlides: (value: boolean) => void
+  setDarkTheme: (value: boolean) => void
   generate: (language?: 'fr' | 'en') => Promise<void>
   setMarkdown: (markdown: string) => void
   refreshPreview: () => Promise<void>
@@ -166,6 +169,7 @@ export const useGeneration = create<Store>((set, get) => ({
   usage: null,
   slideWarnings: [],
   storySlides: false,
+  darkTheme: false,
 
   // Progress
   pipelineProgress: [],
@@ -279,6 +283,8 @@ export const useGeneration = create<Store>((set, get) => ({
 
   setStorySlides: (value: boolean) => set({ storySlides: value }),
 
+  setDarkTheme: (value: boolean) => set({ darkTheme: value }),
+
   setDateFrom: (date: string | null) => {
     const { dateTo, trackerArtifacts } = get()
     const from = date
@@ -302,7 +308,8 @@ export const useGeneration = create<Store>((set, get) => ({
       selectedArtifactIds,
       customLabel,
       selectedTrackerLabel,
-      storySlides
+      storySlides,
+      darkTheme
     } = get()
 
     let source: GenerationSource | null = null
@@ -357,7 +364,12 @@ export const useGeneration = create<Store>((set, get) => ({
     })
 
     try {
-      const result = await api.generation.generateSprintReview({ source, language, storySlides })
+      const result = await api.generation.generateSprintReview({
+        source,
+        language,
+        storySlides,
+        theme: darkTheme ? 'dark' : 'light'
+      })
       unsubscribe()
       set({
         markdown: result.markdown,

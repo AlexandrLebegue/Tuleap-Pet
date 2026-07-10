@@ -1,6 +1,6 @@
 import type { SprintCodeActivity } from '@shared/types'
 
-/** Palette du donut (déclinaison sobre du thème) — synchronisée avec .pie-c0…c6. */
+/** Palettes du donut — synchronisées avec les classes .pie-c0…c6 du thème. */
 export const PIE_COLORS = [
   '#1a365d',
   '#2b6cb0',
@@ -9,6 +9,16 @@ export const PIE_COLORS = [
   '#dd6b20',
   '#805ad5',
   '#718096'
+]
+/** Variante sombre (mêmes indices que la surcharge .pie-cN du thème sombre). */
+export const PIE_COLORS_DARK = [
+  '#90cdf4',
+  '#4299e1',
+  '#2b6cb0',
+  '#68d391',
+  '#f6ad55',
+  '#b794f4',
+  '#a0aec0'
 ]
 
 const MAX_SLICES = 6
@@ -49,16 +59,20 @@ function computeSlices(activity: SprintCodeActivity): { slices: Slice[]; total: 
  * du thème passe intact de la préview à l'export PPTX — le gradient dynamique
  * vit donc dans le thème, et le HTML ne porte que des classes.
  */
-export function buildCommitPieCss(activity: SprintCodeActivity): string {
+export function buildCommitPieCss(
+  activity: SprintCodeActivity,
+  theme: 'light' | 'dark' = 'light'
+): string {
   const { slices, total } = computeSlices(activity)
   if (slices.length === 0 || total === 0) return ''
+  const palette = theme === 'dark' ? PIE_COLORS_DARK : PIE_COLORS
   const stops: string[] = []
   let acc = 0
   slices.forEach((s, i) => {
     const from = (acc / total) * 100
     acc += s.commits
     const to = (acc / total) * 100
-    stops.push(`${PIE_COLORS[i % PIE_COLORS.length]} ${from.toFixed(1)}% ${to.toFixed(1)}%`)
+    stops.push(`${palette[i % palette.length]} ${from.toFixed(1)}% ${to.toFixed(1)}%`)
   })
   return `.pie-chart { background: conic-gradient(${stops.join(', ')}); }`
 }

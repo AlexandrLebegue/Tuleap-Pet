@@ -1178,6 +1178,52 @@ style: |
     ul, ol { margin: 4px 0; padding-left: 20px; }
     li { margin: 2px 0; }
 
+    :root {
+      --c-bg: #0e1b2f;
+      --c-solid: #0e1b2f;
+      --c-fg: #d6e0ee;
+      --c-fg-soft: #b9c7da;
+      --c-heading: #eef4fb;
+      --c-accent: #7cb1e6;
+      --c-muted: #8ba1bc;
+      --c-border: rgba(255, 255, 255, 0.13);
+      --c-border2: rgba(255, 255, 255, 0.28);
+      --c-soft: rgba(255, 255, 255, 0.05);
+      --c-soft2: rgba(255, 255, 255, 0.09);
+      --c-card: #152840;
+      --c-thead-bg: #274769;
+      --c-thead-fg: #eaf2fb;
+      --c-warn-soft: rgba(237, 137, 54, 0.14);
+      --tag-green-bg: rgba(104, 211, 145, 0.16);
+      --tag-green-fg: #9ae6b4;
+      --tag-orange-bg: rgba(246, 173, 85, 0.16);
+      --tag-orange-fg: #fbd38d;
+      --tag-red-bg: rgba(252, 129, 129, 0.16);
+      --tag-red-fg: #feb2b2;
+      --tag-blue-bg: rgba(99, 179, 237, 0.16);
+      --tag-blue-fg: #90cdf4;
+    }
+
+    section {
+      background: linear-gradient(160deg, #0c1830 0%, #12233e 100%);
+    }
+
+    .gauge-seg.is-engage, .gauge-legend-dot.is-engage { background: #90cdf4; }
+    .gauge-seg.is-planifie, .gauge-legend-dot.is-planifie { background: #4299e1; }
+    .gauge-seg.is-reserve, .gauge-legend-dot.is-reserve { background: rgba(255, 255, 255, 0.25); }
+    .gauge-bar-fill { background: linear-gradient(90deg, #4299e1, #90cdf4); }
+    .task-card-bar-fill { background: #4299e1; }
+    .pie-c0 { background: #90cdf4; }
+    .pie-c1 { background: #4299e1; }
+    .pie-c2 { background: #2b6cb0; }
+    .pie-c3 { background: #68d391; }
+    .pie-c4 { background: #f6ad55; }
+    .pie-c5 { background: #b794f4; }
+    .pie-c6 { background: #a0aec0; }
+    .slide-footer::after { background: linear-gradient(90deg, #2b6cb0, #63b3ed); }
+
+    .pie-chart { background: conic-gradient(#90cdf4 0.0% 100.0%); }
+
 ---
 
 # Sprint Review — Sprint 24.07
@@ -1335,10 +1381,20 @@ Supprimer le papier du processus d’audit : génération, export et archivage n
 
 ## Activité des dépôts
 
-<div class="gov-empty">
-<span class="gov-empty-icon">◔</span>
-<span>Activité des dépôts non mesurée</span>
-<span class="gov-empty-hint">Activez « une slide par user story » pour compter les commits du sprint</span>
+<div class="pie-wrap">
+<div class="pie-figure">
+<div class="pie-chart"></div>
+<div class="pie-hole"><span class="pie-total">42</span><span class="pie-total-label">commits</span></div>
+</div>
+<div class="pie-legend">
+<span class="pie-legend-item"><span class="pie-dot pie-c0"></span>webapp — <strong>42</strong> commits (100%)</span>
+</div>
+</div>
+<div class="pie-caption">Commits par dépôt depuis le 2026-06-23 — toutes branches</div>
+
+<div class="effort-bar">
+<span class="effort-chip"><strong>2</strong> branches créées</span>
+<span class="effort-chip"><strong>+4,2k</strong> lignes implémentées</span>
 </div>
 
 </div>
@@ -1469,6 +1525,173 @@ Supprimer le papier du processus d’audit : génération, export et archivage n
 
 ---
 
+<!-- _class: dense -->
+
+# US #1201 — US — Export PDF des rapports d’audit
+
+<div class="slide-body">
+
+<div class="kicker">User story</div>
+
+<div class="columns">
+<div class="col">
+
+## Description
+
+En tant qu’auditeur, je veux exporter mes rapports en PDF afin de les archiver.
+
+## Critères d'acceptance
+
+- Le PDF respecte le gabarit officiel
+- Export en moins de 10 secondes
+
+<div class="effort-bar">
+<span class="effort-chip"><strong>8</strong> pts · Points</span>
+<span class="effort-chip"><strong>12</strong> h · Effort restant</span>
+</div>
+
+- **Assigné à :** Alice Martin
+
+## Références
+
+<div class="ref-badges">
+<span class="tag tag-orange">→ pr #77</span>
+<span class="tag tag-green">← git #webapp/bbb222</span>
+</div>
+
+</div>
+<div class="col">
+
+## Tâches (1/2 terminées)
+
+| # | Tâche | Statut |
+|---|---|---|
+| #1210 | Générer le PDF côté serveur (lib wkhtmltopdf) | <span class="tag tag-green">Terminé</span> |
+| #1211 | Page de prévisualisation avant export | <span class="tag tag-orange">En cours</span> |
+
+## Code
+
+- **Branche** `feature/1201-export-pdf` (webapp) — ↑3 ↓1 vs main · « feat(export): page de prévisualisation PDF » (2026-07-04)
+- **PR #77** « Export PDF des rapports (art #1201) » — feature/1201-export-pdf → main · David Roux
+
+<div class="kpi-card">
+<strong>Statut :</strong> <span class="tag tag-orange">En cours</span> · <strong>Dernière activité :</strong> 2026-07-04 par Alice Martin · <strong>Créée par :</strong> Alice Martin
+</div>
+
+<blockquote>
+« PDF serveur OK, reste la prévisualisation — PR ouverte pour revue. »
+</blockquote>
+
+</div>
+</div>
+
+</div>
+
+<div class="slide-footer">
+<small>US #1201 — données Tuleap du 2026-07-10</small>
+</div>
+
+---
+
+# US #1202 — US — Authentification SSO (SAML)
+
+<div class="slide-body">
+
+<div class="kicker">User story</div>
+
+<div class="columns">
+<div class="col">
+
+<div class="effort-bar">
+<span class="effort-chip"><strong>5</strong> pts · Points</span>
+</div>
+
+</div>
+<div class="col">
+
+## Tâches (1/1 terminées)
+
+| # | Tâche | Statut |
+|---|---|---|
+| #1212 | Configurer le connecteur SAML côté IdP | <span class="tag tag-green">Terminé</span> |
+
+<div class="kpi-card">
+<strong>Statut :</strong> <span class="tag tag-green">Terminé</span> · <strong>Dernière activité :</strong> 2026-07-02 par Bob Durand · <strong>Créée par :</strong> Bob Durand
+</div>
+
+<blockquote>
+« Recette validée en préprod, story fermée. »
+</blockquote>
+
+</div>
+</div>
+
+</div>
+
+<div class="slide-footer">
+<small>US #1202 — données Tuleap du 2026-07-10</small>
+</div>
+
+---
+
+# US #1203 — Bug — Crash à l’ouverture du dashboard
+
+<div class="slide-body">
+
+<div class="kicker">User story</div>
+
+<div class="columns">
+<div class="col">
+
+- **Sévérité :** Critique
+
+</div>
+<div class="col">
+
+## Code
+
+- **Branche** `fix/1203-dashboard-crash` (webapp) — fusionnée / à jour · « fix(dashboard): guard sur cache vide » (2026-07-05)
+- **PR #78** « Correctif crash dashboard » — fix/1203-dashboard-crash → main · Chloé Petit
+
+<div class="kpi-card">
+<strong>Statut :</strong> <span class="tag tag-orange">En cours</span> · <strong>Dernière activité :</strong> 2026-07-05 par Chloé Petit · <strong>Créée par :</strong> Chloé Petit
+</div>
+
+<blockquote>
+« Reproduit uniquement avec le cache vide — correctif en cours sur fix/1203. »
+</blockquote>
+
+</div>
+</div>
+
+</div>
+
+<div class="slide-footer">
+<small>US #1203 — données Tuleap du 2026-07-10</small>
+</div>
+
+---
+
+# US #1204 — US — Notifications e-mail configurables
+
+<div class="slide-body">
+
+<div class="kicker">User story</div>
+
+
+
+<div class="kpi-card">
+<strong>Statut :</strong> <span class="tag tag-blue">À faire</span> · <strong>Dernière modification :</strong> 2026-06-22 · <strong>Créée par :</strong> Alice Martin
+</div>
+
+</div>
+
+<div class="slide-footer">
+<small>US #1204 — données Tuleap du 2026-07-10</small>
+</div>
+
+---
+
 # Branches & pull requests
 
 <div class="slide-body">
@@ -1500,16 +1723,113 @@ Supprimer le papier du processus d’audit : génération, export et archivage n
 
 ## Branches actives liées au sprint
 
-| Branche | Artefacts | Dernier commit | Auteur, date |
-|---|---|---|---|
-| `feature/1201-export-pdf` | #1201 | feat(export): page de prévisualisation PDF | David Roux, 2026-07-04 |
-| `fix/1203-dashboard-crash` | #1203 | fix(dashboard): guard sur cache vide | Chloé Petit, 2026-07-05 |
+| Branche | Artefacts | Dernier commit | Auteur, date | État |
+|---|---|---|---|---|
+| `feature/1201-export-pdf` | #1201 | feat(export): page de prévisualisation PDF | David Roux, 2026-07-04 | <span class="tag tag-orange">↑3 ↓1</span> |
+| `fix/1203-dashboard-crash` | #1203 | fix(dashboard): guard sur cache vide | Chloé Petit, 2026-07-05 | <span class="tag tag-green">Fusionnée / à jour</span> |
 
 
 </div>
 
 <div class="slide-footer">
-<small>Données Git Tuleap du 2026-07-10</small>
+<small>Données Git Tuleap du 2026-07-10 · scan par clone : ↑avance ↓retard vs branche par défaut</small>
+</div>
+
+---
+
+<!-- _class: repo -->
+
+# webapp
+
+<div class="slide-body">
+
+<div class="repo-kicker">Activité du dépôt · depuis le 2026-06-23</div>
+
+<div class="big-grid">
+<div class="big-card is-primary">
+<span class="big-value">42</span>
+<span class="big-label">Commits</span>
+</div>
+<div class="big-card">
+<span class="big-value">3</span>
+<span class="big-label">Branches actives · 2 nouvelles</span>
+</div>
+<div class="big-card">
+<span class="big-value">87</span>
+<span class="big-label">Fichiers modifiés</span>
+</div>
+<div class="big-card">
+<span class="big-value">+4,2k −1,2k</span>
+<span class="big-label">Lignes ajoutées / retirées</span>
+</div>
+<div class="big-card">
+<span class="big-value">4</span>
+<span class="big-label">Contributeurs</span>
+</div>
+</div>
+
+## Commits par branche
+
+<div class="bars">
+<div class="bar-row">
+<span class="bar-name">main <span class="bar-badge is-def">défaut</span></span>
+<span class="bar-track"><span class="bar-fill w-100"></span></span>
+<span class="bar-value">25</span>
+</div>
+<div class="bar-row">
+<span class="bar-name">feature/1201-export-pdf <span class="bar-badge">nouvelle</span></span>
+<span class="bar-track"><span class="bar-fill is-new w-48"></span></span>
+<span class="bar-value">12</span>
+</div>
+<div class="bar-row">
+<span class="bar-name">fix/1203-dashboard-crash <span class="bar-badge">nouvelle</span></span>
+<span class="bar-track"><span class="bar-fill is-new w-20"></span></span>
+<span class="bar-value">5</span>
+</div>
+</div>
+
+</div>
+
+<div class="slide-footer">
+<small>Dépôt webapp · toutes branches · analyse du clone local</small>
+</div>
+
+---
+
+<!-- _class: repo -->
+
+# Dépôt webapp — nouveautés du sprint
+
+<div class="slide-body">
+
+<div class="columns">
+<div class="col">
+
+## Nouvelles fonctionnalités
+
+- Prévisualisation des rapports PDF avant export
+- Génération des PDF côté serveur
+
+</div>
+<div class="col">
+
+## Correctifs & améliorations
+
+- Crash du dashboard corrigé (cache vide)
+- Dépendances mises à jour
+
+</div>
+</div>
+
+## Zones du code les plus actives
+
+- `src/pdf/` — moteur de génération PDF largement remanié
+- `src/dashboard/` — robustesse du cache
+
+</div>
+
+<div class="slide-footer">
+<small>Dépôt webapp · analyse des 42 commits du sprint · données au 2026-07-08</small>
 </div>
 
 ---

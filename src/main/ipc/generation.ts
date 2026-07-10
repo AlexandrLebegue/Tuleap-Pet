@@ -132,10 +132,11 @@ export function registerGenerationHandlers(): void {
       if (!args || typeof args !== 'object') {
         throw new Error('Arguments invalides.')
       }
-      const { source, language, storySlides } = args as {
+      const { source, language, storySlides, theme } = args as {
         source?: GenerationSource
         language?: 'fr' | 'en'
         storySlides?: boolean
+        theme?: 'light' | 'dark'
       }
 
       if (!source || typeof source !== 'object' || !('mode' in source)) {
@@ -186,7 +187,8 @@ export function registerGenerationHandlers(): void {
           projectName: project.label,
           projectId,
           language: resolvedLanguage,
-          storySlides: storySlides === true
+          storySlides: storySlides === true,
+          theme: theme === 'dark' ? 'dark' : 'light'
         },
         emitProgress
       )

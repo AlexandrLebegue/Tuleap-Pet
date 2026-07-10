@@ -8,20 +8,46 @@ style: |
     @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;600;700&display=swap');
 
     :root {
-      --color-primary: #1a365d;
-      --color-accent: #2b6cb0;
+      /* Palette pilotée par le thème (clair par défaut, surchargée en sombre). */
+      --c-bg: #ffffff;
+      --c-solid: #ffffff;
+      --c-fg: #2d3748;
+      --c-fg-soft: #4a5568;
+      --c-heading: #1a365d;
+      --c-accent: #2b6cb0;
+      --c-muted: #718096;
+      --c-border: #e2e8f0;
+      --c-border2: #cbd5e0;
+      --c-soft: #f7fafc;
+      --c-soft2: #edf2f7;
+      --c-card: #ffffff;
+      --c-thead-bg: #1a365d;
+      --c-thead-fg: #ffffff;
+      --c-warn-soft: #fff5eb;
+      --tag-green-bg: #c6f6d5;
+      --tag-green-fg: #276749;
+      --tag-orange-bg: #feebc8;
+      --tag-orange-fg: #c05621;
+      --tag-red-bg: #fed7d7;
+      --tag-red-fg: #c53030;
+      --tag-blue-bg: #bee3f8;
+      --tag-blue-fg: #2c5f8f;
+
+      /* Alias historiques utilisés dans le reste du thème. */
+      --color-primary: var(--c-heading);
+      --color-accent: var(--c-accent);
       --color-success: #276749;
       --color-warning: #c05621;
       --color-danger: #c53030;
-      --color-light: #edf2f7;
-      --color-muted: #718096;
+      --color-light: var(--c-soft2);
+      --color-muted: var(--c-muted);
     }
 
     section {
       font-family: 'IBM Plex Sans', sans-serif;
       font-size: 22px;
-      background: #ffffff;
-      color: #2d3748;
+      background: var(--c-bg);
+      color: var(--c-fg);
       padding: 0;
       line-height: 1.3;
       display: grid;
@@ -33,12 +59,24 @@ style: |
 
     section > h1 {
       margin: 0;
-      padding: 22px 48px 10px 48px;
-      color: var(--color-primary);
+      padding: 24px 48px 12px 48px;
+      color: var(--c-heading);
       font-weight: 700;
-      font-size: 1.5em;
-      border-bottom: 3px solid var(--color-accent);
-      background: #ffffff;
+      font-size: 1.42em;
+      letter-spacing: -0.015em;
+      border-bottom: 1px solid var(--c-border);
+      background:
+        linear-gradient(90deg, var(--c-accent), var(--c-accent)) no-repeat 48px 100% / 64px 3px;
+    }
+
+    .kicker,
+    .repo-kicker {
+      font-size: 0.56em;
+      text-transform: uppercase;
+      letter-spacing: 0.24em;
+      color: var(--c-accent);
+      font-weight: 700;
+      margin: -2px 0 4px 0;
     }
 
     section::after {
@@ -62,8 +100,8 @@ style: |
     }
 
     th {
-      background: var(--color-primary);
-      color: white;
+      background: var(--c-thead-bg);
+      color: var(--c-thead-fg);
       padding: 5px 10px;
       text-align: left;
       font-weight: 600;
@@ -71,11 +109,11 @@ style: |
 
     td {
       padding: 4px 10px;
-      border-bottom: 1px solid #e2e8f0;
+      border-bottom: 1px solid var(--c-border);
     }
 
     tr:nth-child(even) {
-      background: #f7fafc;
+      background: var(--c-soft);
     }
 
     .tag {
@@ -86,10 +124,10 @@ style: |
       font-weight: 600;
     }
 
-    .tag-green { background: #c6f6d5; color: #276749; }
-    .tag-orange { background: #feebc8; color: #c05621; }
-    .tag-red { background: #fed7d7; color: #c53030; }
-    .tag-blue { background: #bee3f8; color: #2b6cb0; }
+    .tag-green { background: var(--tag-green-bg); color: var(--tag-green-fg); }
+    .tag-orange { background: var(--tag-orange-bg); color: var(--tag-orange-fg); }
+    .tag-red { background: var(--tag-red-bg); color: var(--tag-red-fg); }
+    .tag-blue { background: var(--tag-blue-bg); color: var(--tag-blue-fg); }
 
     .pill {
       display: inline-block;
@@ -142,8 +180,8 @@ style: |
       align-items: center;
       gap: 10px;
       padding: 8px 10px;
-      background: #ffffff;
-      border: 1px solid #e2e8f0;
+      background: var(--c-card);
+      border: 1px solid var(--c-border);
       border-radius: 6px;
     }
 
@@ -199,8 +237,8 @@ style: |
     }
 
     .gov-card {
-      background: #ffffff;
-      border: 1px solid #e2e8f0;
+      background: var(--c-card);
+      border: 1px solid var(--c-border);
       border-left: 3px solid var(--color-accent);
       border-radius: 0 6px 6px 0;
       padding: 8px 12px;
@@ -229,11 +267,11 @@ style: |
       gap: 2px;
     }
 
-    .gov-meta strong { color: #2d3748; font-weight: 600; }
+    .gov-meta strong { color: var(--c-fg); font-weight: 600; }
 
     .gov-empty {
-      background: #f7fafc;
-      border: 1px dashed #cbd5e0;
+      background: var(--c-soft);
+      border: 1px dashed var(--c-border2);
       border-radius: 6px;
       padding: 18px 14px;
       text-align: center;
@@ -278,7 +316,7 @@ style: |
       width: 150px;
       height: 150px;
       border-radius: 50%;
-      background: #edf2f7;
+      background: var(--c-soft2);
     }
 
     .pie-hole {
@@ -289,7 +327,7 @@ style: |
       width: 92px;
       height: 92px;
       border-radius: 50%;
-      background: #ffffff;
+      background: var(--c-solid);
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -318,7 +356,7 @@ style: |
       flex-direction: column;
       gap: 6px;
       font-size: 0.76em;
-      color: #2d3748;
+      color: var(--c-fg);
       min-width: 0;
     }
 
@@ -339,7 +377,7 @@ style: |
       border-radius: 3px;
       display: inline-block;
       flex-shrink: 0;
-      background: #cbd5e0;
+      background: var(--c-border2);
     }
 
     .pie-c0 { background: #1a365d; }
@@ -366,11 +404,45 @@ style: |
       margin: 8px 0 14px 0;
     }
 
+    .big-grid.cols-3 { grid-template-columns: repeat(3, 1fr); }
+    .big-grid.cols-4 { grid-template-columns: repeat(4, 1fr); }
+
+    /* Slide de titre : hero centré (classes uniquement, jamais de style inline). */
+    .title-hero {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      gap: 22px;
+      text-align: center;
+    }
+
+    .title-project {
+      font-size: 1.3em;
+      font-weight: 700;
+      color: var(--c-heading);
+      letter-spacing: -0.01em;
+    }
+
+    .title-metrics {
+      width: 72%;
+      margin: 0 auto;
+    }
+
+    .title-metrics .big-card { align-items: center; }
+
+    .title-dates {
+      font-size: 0.82em;
+      color: var(--c-muted);
+      letter-spacing: 0.02em;
+    }
+
     .big-card {
       display: flex;
       flex-direction: column;
       gap: 3px;
-      border-top: 1px solid #cbd5e0;
+      border-top: 1px solid var(--c-border2);
       padding: 10px 0 2px 0;
     }
 
@@ -382,7 +454,7 @@ style: |
     .big-value {
       font-size: 2.5em;
       font-weight: 300;
-      color: #2d3748;
+      color: var(--c-fg);
       line-height: 1;
       letter-spacing: -0.03em;
       white-space: nowrap;
@@ -572,8 +644,8 @@ style: |
       display: inline-flex;
       align-items: baseline;
       gap: 5px;
-      background: #ffffff;
-      border: 1px solid #e2e8f0;
+      background: var(--c-card);
+      border: 1px solid var(--c-border);
       border-radius: 6px;
       padding: 5px 10px;
       font-size: 0.72em;
@@ -583,8 +655,8 @@ style: |
     .effort-chip strong { font-size: 1.25em; color: var(--color-primary); font-weight: 700; }
 
     .gauge-card {
-      background: #ffffff;
-      border: 1px solid #e2e8f0;
+      background: var(--c-card);
+      border: 1px solid var(--c-border);
       border-radius: 6px;
       padding: 10px 14px;
       margin: 4px 0;
@@ -622,7 +694,7 @@ style: |
 
     .gauge-bar {
       height: 6px;
-      background: #edf2f7;
+      background: var(--c-soft2);
       border-radius: 999px;
       overflow: hidden;
       margin: 4px 0;
@@ -636,7 +708,7 @@ style: |
 
     .gauge-stack {
       height: 12px;
-      background: #edf2f7;
+      background: var(--c-soft2);
       border-radius: 999px;
       overflow: hidden;
       margin: 6px 0 8px 0;
@@ -653,7 +725,7 @@ style: |
     }
     .gauge-seg.is-engage   { background: #1a365d; }
     .gauge-seg.is-planifie { background: #2b6cb0; }
-    .gauge-seg.is-reserve  { background: #cbd5e0; }
+    .gauge-seg.is-reserve  { background: var(--c-border2); }
 
     .w-0{width:0%}.w-1{width:1%}.w-2{width:2%}.w-3{width:3%}.w-4{width:4%}.w-5{width:5%}.w-6{width:6%}.w-7{width:7%}.w-8{width:8%}.w-9{width:9%}.w-10{width:10%}
     .w-11{width:11%}.w-12{width:12%}.w-13{width:13%}.w-14{width:14%}.w-15{width:15%}.w-16{width:16%}.w-17{width:17%}.w-18{width:18%}.w-19{width:19%}.w-20{width:20%}
@@ -690,9 +762,9 @@ style: |
 
     .gauge-legend-dot.is-engage   { background: #1a365d; }
     .gauge-legend-dot.is-planifie { background: #2b6cb0; }
-    .gauge-legend-dot.is-reserve  { background: #cbd5e0; }
+    .gauge-legend-dot.is-reserve  { background: var(--c-border2); }
 
-    .gauge-legend strong { color: #2d3748; font-weight: 700; }
+    .gauge-legend strong { color: var(--c-fg); font-weight: 700; }
 
     .gauge-meta {
       display: flex;
@@ -701,7 +773,7 @@ style: |
       color: var(--color-muted);
     }
 
-    .gauge-meta strong { color: #2d3748; font-weight: 600; }
+    .gauge-meta strong { color: var(--c-fg); font-weight: 600; }
 
     .timeline {
       display: flex;
@@ -719,7 +791,7 @@ style: |
       right: 10px;
       top: 8px;
       height: 2px;
-      background: #e2e8f0;
+      background: var(--c-border);
       z-index: 0;
     }
 
@@ -739,14 +811,14 @@ style: |
       height: 10px;
       border-radius: 50%;
       background: var(--color-accent);
-      border: 2px solid #ffffff;
+      border: 2px solid var(--c-solid);
       box-shadow: 0 0 0 2px var(--color-accent);
       margin-bottom: 4px;
     }
 
     .timeline-step.is-empty::before {
-      background: #ffffff;
-      box-shadow: 0 0 0 2px #cbd5e0;
+      background: var(--c-card);
+      box-shadow: 0 0 0 2px var(--c-border2);
     }
 
     .timeline-label {
@@ -773,7 +845,7 @@ style: |
     .meteo-row {
       padding: 6px 12px;
       border-left: 3px solid var(--color-accent);
-      background: #f7fafc;
+      background: var(--c-soft);
       border-radius: 0 6px 6px 0;
     }
 
@@ -803,12 +875,12 @@ style: |
       letter-spacing: 0.04em;
     }
 
-    .meteo-row.is-ok      .meteo-status { background: #c6f6d5; color: #276749; }
-    .meteo-row.is-warning .meteo-status { background: #feebc8; color: #9c4221; }
-    .meteo-row.is-danger  .meteo-status { background: #fed7d7; color: #9b2c2c; }
+    .meteo-row.is-ok      .meteo-status { background: var(--tag-green-bg); color: var(--tag-green-fg); }
+    .meteo-row.is-warning .meteo-status { background: var(--tag-orange-bg); color: var(--tag-orange-fg); }
+    .meteo-row.is-danger  .meteo-status { background: var(--tag-red-bg); color: var(--tag-red-fg); }
 
     .meteo-comment {
-      color: #4a5568;
+      color: var(--c-fg-soft);
       font-size: 0.74em;
       line-height: 1.3;
       margin-top: 1px;
@@ -826,11 +898,11 @@ style: |
     .ecarts-list li {
       position: relative;
       padding: 5px 10px 5px 28px;
-      background: #fff5eb;
+      background: var(--c-warn-soft);
       border-radius: 4px;
       font-size: 0.76em;
       line-height: 1.35;
-      color: #2d3748;
+      color: var(--c-fg);
     }
 
     .ecarts-list li::before {
@@ -868,7 +940,7 @@ style: |
       top: 22%;
       bottom: 22%;
       width: 1px;
-      background: #cbd5e0;
+      background: var(--c-border2);
     }
 
     .stat-bar .stat-icon { font-size: 1.4em; line-height: 1; }
@@ -905,7 +977,7 @@ style: |
       gap: 12px;
       margin: 4px 0 4px 0;
       padding-bottom: 3px;
-      border-bottom: 1px solid #e2e8f0;
+      border-bottom: 1px solid var(--c-border);
     }
 
     .task-section-head h2 {
@@ -933,8 +1005,8 @@ style: |
       flex-direction: column;
       gap: 4px;
       padding: 8px 10px;
-      background: #ffffff;
-      border: 1px solid #e2e8f0;
+      background: var(--c-card);
+      border: 1px solid var(--c-border);
       border-left: 3px solid var(--color-accent);
       border-radius: 0 5px 5px 0;
       font-size: 0.72em;
@@ -999,7 +1071,7 @@ style: |
 
     .task-card-bar {
       height: 5px;
-      background: #e2e8f0;
+      background: var(--c-border);
       border-radius: 3px;
       overflow: hidden;
       font-size: 0;
@@ -1069,7 +1141,7 @@ style: |
     .slide-footer {
       position: relative;
       padding: 8px 48px 14px 48px;
-      border-top: 1px solid #e2e8f0;
+      border-top: 1px solid var(--c-border);
       color: var(--color-muted);
       font-size: 12px;
     }
@@ -1095,11 +1167,11 @@ style: |
 
     blockquote {
       border-left: 4px solid var(--color-accent);
-      background: #f7fafc;
+      background: var(--c-soft);
       padding: 8px 14px;
       margin: 6px 0;
       font-size: 0.85em;
-      color: #2d3748;
+      color: var(--c-fg);
     }
 
     p { margin: 4px 0; }
@@ -1110,9 +1182,11 @@ style: |
 
 ---
 
-# 🚀 Sprint Review — Sprint 24.07
+# Sprint Review — Sprint 24.07
 
 <div class="slide-body">
+
+<div class="kicker">Portail Audit</div>
 
 ## Portail Audit
 
@@ -1128,9 +1202,11 @@ style: |
 
 ---
 
-# 🧭 Contexte & objectifs
+# Sprint 24.07 — Contexte & Objectif
 
 <div class="slide-body">
+
+<div class="kicker">Cadrage</div>
 
 ## Objectif du sprint
 
@@ -1151,59 +1227,51 @@ style: |
 
 ---
 
-# 📋 Récapitulatif des user stories
+# Récapitulatif des user stories
 
 <div class="slide-body">
 
-<div class="stat-bar">
-<div class="stat-item">
-<span class="stat-icon">📦</span>
-<span class="stat-text">
-<span class="stat-value">4</span>
-<span class="stat-label">User stories</span>
-</span>
+<div class="kicker">Backlog du sprint</div>
+
+<div class="big-grid cols-4">
+<div class="big-card is-primary">
+<span class="big-value">4</span>
+<span class="big-label">User stories</span>
 </div>
-<div class="stat-item">
-<span class="stat-icon">✅</span>
-<span class="stat-text">
-<span class="stat-value">1</span>
-<span class="stat-label">Terminées</span>
-</span>
+<div class="big-card">
+<span class="big-value">1</span>
+<span class="big-label">Terminées</span>
 </div>
-<div class="stat-item">
-<span class="stat-icon">🔄</span>
-<span class="stat-text">
-<span class="stat-value">2</span>
-<span class="stat-label">En cours</span>
-</span>
+<div class="big-card">
+<span class="big-value">2</span>
+<span class="big-label">En cours</span>
 </div>
-<div class="stat-item">
-<span class="stat-icon">⏳</span>
-<span class="stat-text">
-<span class="stat-value">1</span>
-<span class="stat-label">À venir</span>
-</span>
+<div class="big-card">
+<span class="big-value">1</span>
+<span class="big-label">À venir</span>
 </div>
 </div>
 
 | US | Titre | Statut | Description | Tâches | Code |
 |---|---|---|---|---|---|
-| #1201 | US — Export PDF des rapports d’audit | <span class="tag tag-orange">En cours</span> | En tant qu’auditeur, je veux exporter mes rapports en PDF afin de les archiver. | 1/2 | 🌿 🔀 |
+| #1201 | US — Export PDF des rapports d’audit | <span class="tag tag-orange">En cours</span> | En tant qu’auditeur, je veux exporter mes rapports en PDF afin de les archiver. | 1/2 | <span class="tag tag-green">br</span> <span class="tag tag-orange">PR</span> |
 | #1202 | US — Authentification SSO (SAML) | <span class="tag tag-green">Terminé</span> | — | 1/1 | — |
-| #1203 | Bug — Crash à l’ouverture du dashboard | <span class="tag tag-orange">En cours</span> | — | — | 🌿 🔀 |
+| #1203 | Bug — Crash à l’ouverture du dashboard | <span class="tag tag-orange">En cours</span> | — | — | <span class="tag tag-green">br</span> <span class="tag tag-orange">PR</span> |
 | #1204 | US — Notifications e-mail configurables | <span class="tag tag-blue">À faire</span> | — | — | — |
 
 </div>
 
 <div class="slide-footer">
-<small>Données Tuleap extraites le 2026-07-10 — 🌿 branche liée · 🔀 pull request en cours</small>
+<small>Données Tuleap du 2026-07-10 · br = branche liée · PR = pull request en cours</small>
 </div>
 
 ---
 
-# 🏔️ Epic #1100 — Epic — Dématérialisation des rapports d’audit
+# Epic #1100 — Epic — Dématérialisation des rapports d’audit
 
 <div class="slide-body">
+
+<div class="kicker">Epic</div>
 
 <div class="columns">
 <div class="col">
@@ -1211,7 +1279,7 @@ style: |
 Supprimer le papier du processus d’audit : génération, export et archivage numérique des rapports.
 
 <div class="gauge-card">
-<div class="gauge-head"><span class="gauge-title">📈 Avancement dans ce sprint</span><span class="gauge-value">0<span class="gauge-unit">%</span></span></div>
+<div class="gauge-head"><span class="gauge-title">Avancement dans ce sprint</span><span class="gauge-value">0<span class="gauge-unit">%</span></span></div>
 <div class="gauge-bar"><div class="gauge-bar-fill w-0"></div></div>
 <div class="gauge-meta"><span>0 terminée / 2 US</span><strong>1 en cours · 1 à venir</strong></div>
 </div>
@@ -1246,9 +1314,11 @@ Supprimer le papier du processus d’audit : génération, export et archivage n
 
 ---
 
-# 👥 Équipe & Activité
+# Équipe & Activité
 
 <div class="slide-body">
+
+<div class="kicker">Équipe</div>
 
 <div class="columns">
 <div class="col">
@@ -1304,9 +1374,11 @@ Supprimer le papier du processus d’audit : génération, export et archivage n
 
 ---
 
-# 📦 Livrables & Planning
+# Livrables & Planning
 
 <div class="slide-body">
+
+<div class="kicker">Livraison</div>
 
 <div class="columns">
 <div class="col">
@@ -1338,39 +1410,32 @@ Supprimer le papier du processus d’audit : génération, export et archivage n
 
 ---
 
-# 📈 Avancement des travaux
+# Avancement des travaux
 
 <div class="slide-body">
 
-<div class="stat-bar">
-<div class="stat-item">
-<span class="stat-icon">📦</span>
-<span class="stat-text">
-<span class="stat-value">4</span>
-<span class="stat-label">Total items</span>
-</span>
+<div class="kicker">Exécution</div>
+
+<div class="big-grid cols-3">
+<div class="big-card">
+<span class="big-value">4</span>
+<span class="big-label">Total items</span>
 </div>
-<div class="stat-item">
-<span class="stat-icon">📈</span>
-<span class="stat-text">
-<span class="stat-value">25<span class="stat-unit">%</span></span>
-<span class="stat-label">Avancement</span>
-</span>
+<div class="big-card">
+<span class="big-value">25<span class="stat-unit">%</span></span>
+<span class="big-label">Avancement</span>
 </div>
-<div class="stat-item">
-<span class="stat-icon">📍</span>
-<span class="stat-text">
-<span class="stat-value">En cours de livraison</span>
-<span class="stat-label">Phase</span>
-</span>
+<div class="big-card">
+<span class="big-value">En cours de livraison</span>
+<span class="big-label">Phase</span>
 </div>
 </div>
 
 <div class="task-section">
-<div class="task-section-head"><h2>✅ Terminés</h2><span class="task-section-meta">1 item</span></div>
+<div class="task-section-head"><h2>Terminés</h2><span class="task-section-meta">1 item</span></div>
 <div class="task-grid">
 <div class="task-card is-done">
-<div class="task-card-head"><span class="task-card-type">📘</span><span class="task-card-title">Authentification SSO (SAML)</span></div>
+<div class="task-card-head"><span class="task-card-title">Authentification SSO (SAML)</span></div>
 <div class="task-card-meta"><span class="tag tag-green">Terminé</span><span class="task-card-owner"><span class="task-card-avatar">BD</span></span></div>
 <div class="task-card-bar"><div class="task-card-bar-fill w-100"></div></div>
 <div class="task-card-effort"><span>#1202</span><strong>100%</strong></div>
@@ -1379,16 +1444,16 @@ Supprimer le papier du processus d’audit : génération, export et archivage n
 </div>
 
 <div class="task-section">
-<div class="task-section-head"><h2>🔄 En cours</h2><span class="task-section-meta">2 items</span></div>
+<div class="task-section-head"><h2>En cours</h2><span class="task-section-meta">2 items</span></div>
 <div class="task-grid">
 <div class="task-card is-encours">
-<div class="task-card-head"><span class="task-card-type">📘</span><span class="task-card-title">Export PDF des rapports d'audit</span></div>
+<div class="task-card-head"><span class="task-card-title">Export PDF des rapports d'audit</span></div>
 <div class="task-card-meta"><span class="tag tag-orange">En cours</span><span class="task-card-owner"><span class="task-card-avatar">AM</span></span></div>
 <div class="task-card-bar"><div class="task-card-bar-fill w-50"></div></div>
 <div class="task-card-effort"><span>#1201</span><strong>50%</strong></div>
 </div>
 <div class="task-card is-encours">
-<div class="task-card-head"><span class="task-card-type">🐞</span><span class="task-card-title">Crash à l'ouverture du dashboard</span></div>
+<div class="task-card-head"><span class="task-card-title">Crash à l'ouverture du dashboard</span></div>
 <div class="task-card-meta"><span class="tag tag-orange">En cours</span><span class="task-card-owner"><span class="task-card-avatar">CP</span></span></div>
 <div class="task-card-bar"><div class="task-card-bar-fill w-50"></div></div>
 <div class="task-card-effort"><span>#1203</span><strong>50%</strong></div>
@@ -1397,10 +1462,10 @@ Supprimer le papier du processus d’audit : génération, export et archivage n
 </div>
 
 <div class="task-section">
-<div class="task-section-head"><h2>⏳ À venir</h2><span class="task-section-meta">1 item</span></div>
+<div class="task-section-head"><h2>À venir</h2><span class="task-section-meta">1 item</span></div>
 <div class="task-grid">
 <div class="task-card is-avenir">
-<div class="task-card-head"><span class="task-card-type">📘</span><span class="task-card-title">Notifications e-mail configurables</span></div>
+<div class="task-card-head"><span class="task-card-title">Notifications e-mail configurables</span></div>
 <div class="task-card-meta"><span class="tag tag-blue">À venir</span><span class="task-card-owner"><span class="task-card-avatar">AM</span></span></div>
 <div class="task-card-bar"><div class="task-card-bar-fill w-0"></div></div>
 <div class="task-card-effort"><span>#1204</span><strong>0%</strong></div>
@@ -1421,6 +1486,8 @@ Supprimer le papier du processus d’audit : génération, export et archivage n
 # US #1201 — US — Export PDF des rapports d’audit
 
 <div class="slide-body">
+
+<div class="kicker">User story</div>
 
 <div class="columns">
 <div class="col">
@@ -1460,8 +1527,8 @@ En tant qu’auditeur, je veux exporter mes rapports en PDF afin de les archiver
 
 ## Code
 
-- 🌿 `feature/1201-export-pdf` (webapp) — ↑3 ↓1 vs main · « feat(export): page de prévisualisation PDF » (2026-07-04)
-- 🔀 PR #77 « Export PDF des rapports (art #1201) » — feature/1201-export-pdf → main · David Roux
+- **Branche** `feature/1201-export-pdf` (webapp) — ↑3 ↓1 vs main · « feat(export): page de prévisualisation PDF » (2026-07-04)
+- **PR #77** « Export PDF des rapports (art #1201) » — feature/1201-export-pdf → main · David Roux
 
 <div class="kpi-card">
 <strong>Statut :</strong> <span class="tag tag-orange">En cours</span> · <strong>Dernière activité :</strong> 2026-07-04 par Alice Martin · <strong>Créée par :</strong> Alice Martin
@@ -1485,6 +1552,8 @@ En tant qu’auditeur, je veux exporter mes rapports en PDF afin de les archiver
 # US #1202 — US — Authentification SSO (SAML)
 
 <div class="slide-body">
+
+<div class="kicker">User story</div>
 
 <div class="columns">
 <div class="col">
@@ -1525,6 +1594,8 @@ En tant qu’auditeur, je veux exporter mes rapports en PDF afin de les archiver
 
 <div class="slide-body">
 
+<div class="kicker">User story</div>
+
 <div class="columns">
 <div class="col">
 
@@ -1535,8 +1606,8 @@ En tant qu’auditeur, je veux exporter mes rapports en PDF afin de les archiver
 
 ## Code
 
-- 🌿 `fix/1203-dashboard-crash` (webapp) — fusionnée / à jour · « fix(dashboard): guard sur cache vide » (2026-07-05)
-- 🔀 PR #78 « Correctif crash dashboard » — fix/1203-dashboard-crash → main · Chloé Petit
+- **Branche** `fix/1203-dashboard-crash` (webapp) — fusionnée / à jour · « fix(dashboard): guard sur cache vide » (2026-07-05)
+- **PR #78** « Correctif crash dashboard » — fix/1203-dashboard-crash → main · Chloé Petit
 
 <div class="kpi-card">
 <strong>Statut :</strong> <span class="tag tag-orange">En cours</span> · <strong>Dernière activité :</strong> 2026-07-05 par Chloé Petit · <strong>Créée par :</strong> Chloé Petit
@@ -1561,6 +1632,8 @@ En tant qu’auditeur, je veux exporter mes rapports en PDF afin de les archiver
 
 <div class="slide-body">
 
+<div class="kicker">User story</div>
+
 
 
 <div class="kpi-card">
@@ -1575,31 +1648,24 @@ En tant qu’auditeur, je veux exporter mes rapports en PDF afin de les archiver
 
 ---
 
-# 🔀 Activité code — Branches & Pull Requests
+# Branches & pull requests
 
 <div class="slide-body">
 
-<div class="stat-bar">
-<div class="stat-item">
-<span class="stat-icon">📚</span>
-<span class="stat-text">
-<span class="stat-value">1</span>
-<span class="stat-label">Dépôts scannés</span>
-</span>
+<div class="kicker">Activité code</div>
+
+<div class="big-grid cols-3">
+<div class="big-card is-primary">
+<span class="big-value">2</span>
+<span class="big-label">PR en cours</span>
 </div>
-<div class="stat-item">
-<span class="stat-icon">🌿</span>
-<span class="stat-text">
-<span class="stat-value">2</span>
-<span class="stat-label">Branches liées</span>
-</span>
+<div class="big-card">
+<span class="big-value">2</span>
+<span class="big-label">Branches liées au sprint</span>
 </div>
-<div class="stat-item">
-<span class="stat-icon">🔀</span>
-<span class="stat-text">
-<span class="stat-value">2</span>
-<span class="stat-label">PR en cours</span>
-</span>
+<div class="big-card">
+<span class="big-value">1</span>
+<span class="big-label">Dépôts scannés</span>
 </div>
 </div>
 
@@ -1622,7 +1688,7 @@ En tant qu’auditeur, je veux exporter mes rapports en PDF afin de les archiver
 </div>
 
 <div class="slide-footer">
-<small>Données Git Tuleap extraites le 2026-07-10 (scan par clone : état ↑avance ↓retard vs branche par défaut) — généré automatiquement, sans IA</small>
+<small>Données Git Tuleap du 2026-07-10 · scan par clone : ↑avance ↓retard vs branche par défaut</small>
 </div>
 
 ---
@@ -1724,12 +1790,14 @@ En tant qu’auditeur, je veux exporter mes rapports en PDF afin de les archiver
 
 ---
 
-# 📊 Indicateurs du sprint
+# Indicateurs clés du sprint
 
 <div class="slide-body">
 
+<div class="kicker">Pilotage</div>
+
 <div class="gauge-card">
-<div class="gauge-head"><span class="gauge-title">📈 Avancement global</span><span class="gauge-value">25<span class="gauge-unit">%</span></span></div>
+<div class="gauge-head"><span class="gauge-title">Avancement global</span><span class="gauge-value">25<span class="gauge-unit">%</span></span></div>
 <div class="gauge-bar"><div class="gauge-bar-fill w-25"></div></div>
 <div class="gauge-meta"><span>1 terminé / 4 items</span><strong>2 en cours</strong></div>
 </div>
@@ -1746,9 +1814,11 @@ En tant qu’auditeur, je veux exporter mes rapports en PDF afin de les archiver
 
 ---
 
-# ⚠️ Risques & Contraintes
+# Risques & Contraintes
 
 <div class="slide-body">
+
+<div class="kicker">Vigilance</div>
 
 <div class="columns">
 <div class="col">
@@ -1786,9 +1856,11 @@ En tant qu’auditeur, je veux exporter mes rapports en PDF afin de les archiver
 
 ---
 
-# 🎯 Synthèse du sprint
+# Synthèse du sprint
 
 <div class="slide-body">
+
+<div class="kicker">Conclusion</div>
 
 <div class="columns">
 <div class="col">

@@ -66,6 +66,8 @@ export type EnrichedContext = {
   epics: EpicInfo[]
   /** True quand l'utilisateur a demandé une slide détaillée par user story. */
   storySlides: boolean
+  /** Thème visuel du deck. */
+  theme: 'light' | 'dark'
   language: 'fr' | 'en'
   generatedAt: string
 }
@@ -414,9 +416,10 @@ export async function buildEnrichedContext(
   projectId: number,
   language: 'fr' | 'en',
   onProgress: (e: SprintReviewProgressEvent) => void,
-  options?: { storySlides?: boolean }
+  options?: { storySlides?: boolean; theme?: 'light' | 'dark' }
 ): Promise<EnrichedContext> {
   const storySlides = options?.storySlides ?? false
+  const theme = options?.theme ?? 'light'
   const client = await buildTuleapClient()
   let milestone: MilestoneSummary | null = null
   let artifacts: ArtifactSummary[] = []
@@ -541,6 +544,7 @@ export async function buildEnrichedContext(
     codeActivity,
     epics,
     storySlides,
+    theme,
     language,
     generatedAt: new Date().toISOString().slice(0, 10)
   }
