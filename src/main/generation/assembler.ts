@@ -1,6 +1,7 @@
 import type { SprintReviewSlideType } from '@shared/types'
 import type { SlideResult } from './slide-generator'
 import type { EnrichedContext } from './enricher'
+import { buildCommitPieCss } from './commit-pie'
 
 const MARP_CSS = `\
   @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;600;700&display=swap');
@@ -248,30 +249,74 @@ const MARP_CSS = `\
   .gov-empty-icon { font-size: 1.6em; opacity: 0.55; }
   .gov-empty-hint { font-size: 0.82em; opacity: 0.75; font-style: italic; }
 
-  .pie-wrap {
+  .ref-badges {
     display: flex;
-    align-items: center;
-    gap: 18px;
-    background: #ffffff;
-    border: 1px solid #e2e8f0;
-    border-radius: 6px;
-    padding: 12px 16px;
+    flex-wrap: wrap;
+    gap: 4px;
     margin: 4px 0;
   }
 
-  .pie-chart {
-    width: 130px;
-    height: 130px;
-    border-radius: 50%;
+  /* Donut « commits par dépôt » : le gradient est injecté dans ce thème par
+     l'assembleur (règle .pie-chart dynamique), le HTML ne porte que des classes. */
+  .pie-wrap {
+    display: flex;
+    align-items: center;
+    gap: 22px;
+    padding: 8px 4px;
+    margin: 4px 0;
+  }
+
+  .pie-figure {
+    position: relative;
+    width: 150px;
+    height: 150px;
     flex-shrink: 0;
-    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.06);
+  }
+
+  .pie-chart {
+    width: 150px;
+    height: 150px;
+    border-radius: 50%;
+    background: #edf2f7;
+  }
+
+  .pie-hole {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 92px;
+    height: 92px;
+    border-radius: 50%;
+    background: #ffffff;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    line-height: 1.05;
+  }
+
+  .pie-total {
+    font-size: 1.5em;
+    font-weight: 600;
+    color: var(--color-primary);
+    letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .pie-total-label {
+    font-size: 0.55em;
+    color: var(--color-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    font-weight: 600;
   }
 
   .pie-legend {
     display: flex;
     flex-direction: column;
-    gap: 5px;
-    font-size: 0.74em;
+    gap: 6px;
+    font-size: 0.76em;
     color: #2d3748;
     min-width: 0;
   }
@@ -279,7 +324,7 @@ const MARP_CSS = `\
   .pie-legend-item {
     display: inline-flex;
     align-items: center;
-    gap: 7px;
+    gap: 8px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -293,67 +338,68 @@ const MARP_CSS = `\
     border-radius: 3px;
     display: inline-block;
     flex-shrink: 0;
+    background: #cbd5e0;
   }
+
+  .pie-c0 { background: #1a365d; }
+  .pie-c1 { background: #2b6cb0; }
+  .pie-c2 { background: #63b3ed; }
+  .pie-c3 { background: #2f855a; }
+  .pie-c4 { background: #dd6b20; }
+  .pie-c5 { background: #805ad5; }
+  .pie-c6 { background: #718096; }
 
   .pie-caption {
-    font-size: 0.72em;
+    font-size: 0.68em;
     color: var(--color-muted);
     margin-top: 2px;
+    letter-spacing: 0.01em;
   }
 
-  .pie-caption strong { color: var(--color-primary); }
-
-  .ref-badges {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 4px;
-    margin: 4px 0;
-  }
-
+  /* Bandeau « gros chiffres » façon keynote : typographie nue, filets fins,
+     un seul accent de couleur sur la métrique principale. */
   .big-grid {
     display: grid;
     grid-template-columns: repeat(5, 1fr);
-    gap: 10px;
-    margin: 6px 0 10px 0;
+    gap: 0 26px;
+    margin: 8px 0 14px 0;
   }
 
   .big-card {
     display: flex;
     flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 2px;
-    background: #ffffff;
-    border: 1px solid #e2e8f0;
-    border-top: 4px solid var(--color-accent);
-    border-radius: 8px;
-    padding: 12px 8px 10px 8px;
-    text-align: center;
+    gap: 3px;
+    border-top: 1px solid #cbd5e0;
+    padding: 10px 0 2px 0;
   }
 
   .big-card.is-primary {
-    background: linear-gradient(180deg, #ebf4ff 0%, #ffffff 70%);
-    border-top-color: var(--color-primary);
+    border-top: 3px solid var(--color-primary);
+    padding-top: 8px;
   }
 
-  .big-icon { font-size: 1.3em; line-height: 1; }
-
   .big-value {
-    font-size: 2.1em;
-    font-weight: 700;
-    color: var(--color-primary);
-    line-height: 1.05;
-    letter-spacing: -0.02em;
+    font-size: 2.5em;
+    font-weight: 300;
+    color: #2d3748;
+    line-height: 1;
+    letter-spacing: -0.03em;
     white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .big-card.is-primary .big-value {
+    color: var(--color-primary);
+    font-weight: 600;
   }
 
   .big-label {
-    font-size: 0.62em;
+    font-size: 0.58em;
     color: var(--color-muted);
     text-transform: uppercase;
-    letter-spacing: 0.05em;
+    letter-spacing: 0.09em;
     font-weight: 600;
-    line-height: 1.2;
+    line-height: 1.25;
   }
 
   .mindmap {
@@ -370,28 +416,27 @@ const MARP_CSS = `\
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 2px;
+    gap: 4px;
     background: var(--color-primary);
     color: #ffffff;
-    border-radius: 14px;
-    padding: 18px 22px;
+    border-radius: 6px;
+    padding: 20px 26px;
     flex-shrink: 0;
-    box-shadow: 0 4px 12px rgba(26, 54, 93, 0.25);
     z-index: 1;
   }
 
-  .mm-root-icon { font-size: 1.5em; line-height: 1; }
-
   .mm-root-name {
-    font-weight: 700;
-    font-size: 0.95em;
-    max-width: 180px;
+    font-weight: 600;
+    font-size: 1.0em;
+    font-family: ui-monospace, monospace;
+    max-width: 200px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    letter-spacing: -0.01em;
   }
 
-  .mm-root-meta { font-size: 0.62em; opacity: 0.8; text-transform: uppercase; letter-spacing: 0.04em; }
+  .mm-root-meta { font-size: 0.6em; opacity: 0.7; text-transform: uppercase; letter-spacing: 0.09em; }
 
   .mm-links {
     width: 36px;
@@ -423,11 +468,10 @@ const MARP_CSS = `\
   .mm-node {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 12px;
     background: #ffffff;
-    border: 1px solid #e2e8f0;
-    border-left: 3px solid var(--color-accent);
-    border-radius: 0 8px 8px 0;
+    border-bottom: 1px solid #e2e8f0;
+    border-left: 2px solid #cbd5e0;
     padding: 5px 12px;
     position: relative;
     min-width: 0;
@@ -447,12 +491,13 @@ const MARP_CSS = `\
   .mm-node.is-default { border-left-color: var(--color-primary); }
 
   .mm-count {
-    font-size: 1.25em;
-    font-weight: 700;
+    font-size: 1.35em;
+    font-weight: 300;
     color: var(--color-primary);
-    min-width: 34px;
-    text-align: center;
+    min-width: 40px;
+    text-align: right;
     flex-shrink: 0;
+    font-variant-numeric: tabular-nums;
   }
 
   .mm-branch-info {
@@ -479,17 +524,17 @@ const MARP_CSS = `\
 
   .mm-badge {
     display: inline-block;
-    background: #c6f6d5;
-    color: #276749;
-    border-radius: 999px;
-    padding: 0 7px;
-    font-weight: 700;
+    border: 1px solid #2f855a;
+    color: #2f855a;
+    border-radius: 3px;
+    padding: 0 6px;
+    font-weight: 600;
     text-transform: uppercase;
-    letter-spacing: 0.04em;
-    font-size: 0.92em;
+    letter-spacing: 0.07em;
+    font-size: 0.88em;
   }
 
-  .mm-badge.is-def { background: #bee3f8; color: #2b6cb0; }
+  .mm-badge.is-def { border-color: #a0aec0; color: #718096; }
 
   .effort-bar {
     display: flex;
@@ -1039,6 +1084,11 @@ const MARP_CSS = `\
 
 function buildFrontmatter(ctx: EnrichedContext): string {
   const footer = `Sprint Review — ${ctx.label} — ${ctx.generatedAt}`
+  // Règles dynamiques calculées depuis les données du deck (ex : gradient du
+  // donut commits par dépôt) — le CSS du thème n'est pas soumis à la
+  // sanitisation HTML de Marp, contrairement aux attributs style inline.
+  const dynamicCss = buildCommitPieCss(ctx.codeActivity)
+  const css = dynamicCss ? `${MARP_CSS}\n  ${dynamicCss}\n` : MARP_CSS
   return `---
 marp: true
 theme: default
@@ -1046,7 +1096,8 @@ paginate: true
 size: 16:9
 footer: '${footer}'
 style: |
-${MARP_CSS.split('\n')
+${css
+  .split('\n')
   .map((l) => (l.trim() ? `  ${l}` : ''))
   .join('\n')}
 ---`

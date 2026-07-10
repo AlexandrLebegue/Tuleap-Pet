@@ -15,8 +15,12 @@ export type PreviewResult = {
  * Marp's CSS is inlined in <style> so no external requests are needed.
  */
 export function renderMarpPreview(markdown: string): PreviewResult {
+  // html non renseigné = allowlist par défaut de Marp Core : les balises de
+  // mise en page (div/span/table…) passent avec leurs classes, mais les
+  // attributs dangereux et <script>/<iframe> sont filtrés. C'est aussi le
+  // comportement de marp-cli à l'export PPTX (pas de --html) : la préview
+  // reste donc fidèle au rendu final.
   const marp = new Marp({
-    html: false, // never allow raw <script>/<iframe> from the model
     script: false,
     inlineSVG: true
   })
