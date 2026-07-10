@@ -267,7 +267,9 @@ export async function generateAllSlides(
             temperature: 0.2,
             maxOutputTokens: 1024
           })
-          const cleaned = stripFences(result.text)
+          // Directive de thème sombre ajoutée en code : la slide nouveautés
+          // partage le style « chapitre » de la slide d'activité du dépôt.
+          const cleaned = `<!-- _class: repo -->\n\n${stripFences(result.text)}`
           usages.push(result.usage)
           lastModel = result.model
           results.push({

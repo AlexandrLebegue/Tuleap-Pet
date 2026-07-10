@@ -3,14 +3,11 @@ import type { EnrichedContext } from './enricher'
 
 /** Nombre max de slides « activité dépôt » (un dépôt = une slide). */
 const REPO_SLIDES_CAP = 6
+/** Branches affichées dans le graphique en barres. */
+const BAR_BRANCH_CAP = 6
 
 function esc(text: string): string {
   return text.replace(/[<>&]/g, ' ').trim()
-}
-
-function shortDate(iso: string | null): string | null {
-  if (!iso) return null
-  return iso.slice(0, 10) || null
 }
 
 /** 12 345 → « 12,3k » pour que les gros chiffres restent lisibles. */
@@ -27,45 +24,48 @@ function bigCard(value: string, label: string, accent = ''): string {
 </div>`
 }
 
-/** Mind map sobre : le dépôt en racine, ses branches actives en éventail. */
-function mindMap(stats: RepoSprintStats): string {
-  const nodes = stats.activeBranches
+/**
+ * Graphique en barres « commits par branche » : longueurs relatives à la
+ * branche la plus active, via les classes de largeur w-0…w-100 du thème
+ * (aucun style inline — Marp les supprimerait).
+ */
+function branchBars(stats: RepoSprintStats): string {
+  const branches = [...stats.activeBranches]
+    .sort((a, b) => b.commits - a.commits)
+    .slice(0, BAR_BRANCH_CAP)
+  const max = Math.max(...branches.map((b) => b.commits), 1)
+
+  const rows = branches
     .map((b) => {
-      const cls = b.isNew ? ' is-new' : b.isDefault ? ' is-default' : ''
+      const pct = Math.max(4, Math.round((b.commits / max) * 100))
       const badge = b.isNew
-        ? '<span class="mm-badge">nouvelle</span>'
+        ? ' <span class="bar-badge">nouvelle</span>'
         : b.isDefault
-          ? '<span class="mm-badge is-def">défaut</span>'
+          ? ' <span class="bar-badge is-def">défaut</span>'
           : ''
-      const date = shortDate(b.lastCommitDate)
-      return `<div class="mm-node${cls}">
-<span class="mm-count">${b.commits}</span>
-<span class="mm-branch-info">
-<span class="mm-branch-name">${esc(b.name)}</span>
-<span class="mm-branch-meta">commit${b.commits > 1 ? 's' : ''}${date ? ` · ${date}` : ''} ${badge}</span>
-</span>
+      const fill = b.isNew ? 'bar-fill is-new' : 'bar-fill'
+      return `<div class="bar-row">
+<span class="bar-name">${esc(b.name)}${badge}</span>
+<span class="bar-track"><span class="${fill} w-${pct}"></span></span>
+<span class="bar-value">${b.commits}</span>
 </div>`
     })
     .join('\n')
 
-  return `<div class="mindmap">
-<div class="mm-root">
-<span class="mm-root-name">${esc(stats.repoName)}</span>
-<span class="mm-root-meta">${stats.activeBranches.length} branche${stats.activeBranches.length > 1 ? 's' : ''} active${stats.activeBranches.length > 1 ? 's' : ''}</span>
-</div>
-<div class="mm-links"></div>
-<div class="mm-nodes">
-${nodes}
-</div>
+  const overflow =
+    stats.activeBranches.length > BAR_BRANCH_CAP
+      ? `\n<div class="bar-more">… et ${stats.activeBranches.length - BAR_BRANCH_CAP} autre(s) branche(s) active(s)</div>`
+      : ''
+
+  return `<div class="bars">
+${rows}${overflow}
 </div>`
 }
 
 function buildOneRepoSlide(stats: RepoSprintStats, ctx: EnrichedContext): string {
-  const sinceLabel = ctx.milestone?.startDate
-    ? `depuis le ${ctx.milestone.startDate.slice(0, 10)}`
-    : 'sur la période du sprint'
+  const since = ctx.milestone?.startDate ? ctx.milestone.startDate.slice(0, 10) : null
   const newBranches = stats.activeBranches.filter((b) => b.isNew).length
-  const netLines = `+${compact(stats.additions)} / −${compact(stats.deletions)}`
+  const netLines = `+${compact(stats.additions)} −${compact(stats.deletions)}`
 
   const cards = [
     bigCard(compact(stats.commits), 'Commits', 'is-primary'),
@@ -80,38 +80,40 @@ function buildOneRepoSlide(stats: RepoSprintStats, ctx: EnrichedContext): string
     bigCard(String(stats.authors), `Contributeur${stats.authors > 1 ? 's' : ''}`)
   ]
 
-  const mm =
+  const branchesBlock =
     stats.activeBranches.length > 0
-      ? `## Branches du sprint
+      ? `## Commits par branche
 
-${mindMap(stats)}`
-      : `<div class="gov-empty">
-<span>Aucune branche active ${sinceLabel}</span>
-</div>`
+${branchBars(stats)}`
+      : `<div class="bar-more">Aucune branche active sur la période.</div>`
 
-  return `# Dépôt ${esc(stats.repoName)} — activité du sprint
+  return `<!-- _class: repo -->
+
+# ${esc(stats.repoName)}
 
 <div class="slide-body">
+
+<div class="repo-kicker">Activité du dépôt${since ? ` · depuis le ${since}` : ' · période du sprint'}</div>
 
 <div class="big-grid">
 ${cards.join('\n')}
 </div>
 
-${mm}
+${branchesBlock}
 
 </div>
 
 <div class="slide-footer">
-<small>Dépôt ${esc(stats.repoName)} · commits ${sinceLabel}, toutes branches · analyse du clone local</small>
+<small>Dépôt ${esc(stats.repoName)} · toutes branches · analyse du clone local</small>
 </div>`
 }
 
 /**
- * Slides « une par dépôt Git » : gros chiffres de l'activité depuis le début
- * du sprint (commits, branches actives et nouvelles, fichiers modifiés,
- * lignes, contributeurs) + mind map des branches actives avec leur nombre de
- * commits. Nécessite le scan par clone (option « une slide par user story »).
- * 100 % déterministe — aucun appel LLM.
+ * Slides « une par dépôt Git », en style chapitre sombre : gros chiffres de
+ * l'activité depuis le début du sprint (commits, branches actives et
+ * nouvelles, fichiers modifiés, lignes, contributeurs) + graphique en barres
+ * des commits par branche. Nécessite le scan par clone (option « une slide
+ * par user story »). 100 % déterministe — aucun appel LLM.
  */
 export function buildRepoActivitySlides(ctx: EnrichedContext): string[] {
   const stats = ctx.codeActivity.repoSprintStats ?? []

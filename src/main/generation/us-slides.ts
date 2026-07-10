@@ -364,7 +364,78 @@ ${pageRows.join('\n')}
 
 // ─── Slides détaillées par user story ────────────────────────────────────────
 
-function buildOneStorySlide(story: ArtifactDetail, ctx: EnrichedContext): string {
+/**
+ * Estimation grossière du « poids » visuel d'un bloc markdown/HTML : texte
+ * hors balises, plus un forfait par ligne (titres, puces, lignes de tableau
+ * prennent de la hauteur même courtes).
+ */
+function blockWeight(block: string): number {
+  const text = block.replace(/<[^>]+>/g, '')
+  const lines = block.split('\n').filter((l) => l.trim()).length
+  return text.length + lines * 24
+}
+
+/**
+ * Seuils de densité, calibrés sur la hauteur utile d'une colonne (~19 lignes
+ * en 22px) : au-delà, on réduit la taille de police, puis on scinde en deux
+ * slides. Le poids retenu est celui de la colonne la plus chargée — c'est
+ * elle qui déborde.
+ */
+const DENSE_WEIGHT = 800
+const XDENSE_WEIGHT = 1150
+const SPLIT_WEIGHT = 1400
+
+function storyHeader(story: ArtifactDetail, suffix = ''): string {
+  return `# US #${story.id} — ${esc(story.title || '(sans titre)').slice(0, 70)}${suffix}`
+}
+
+function storyFooter(story: ArtifactDetail, ctx: EnrichedContext): string {
+  return `<div class="slide-footer">
+<small>US #${story.id} — données Tuleap du ${ctx.generatedAt}</small>
+</div>`
+}
+
+/** Emballe des blocs dans une slide US, avec densité adaptée au contenu. */
+function wrapStorySlide(
+  story: ArtifactDetail,
+  ctx: EnrichedContext,
+  body: string,
+  weight: number,
+  titleSuffix = ''
+): string {
+  const density =
+    weight > XDENSE_WEIGHT
+      ? '<!-- _class: xdense -->\n\n'
+      : weight > DENSE_WEIGHT
+        ? '<!-- _class: dense -->\n\n'
+        : ''
+  return `${density}${storyHeader(story, titleSuffix)}
+
+<div class="slide-body">
+
+${body}
+
+</div>
+
+${storyFooter(story, ctx)}`
+}
+
+function twoColumns(left: string[], right: string[]): string {
+  return `<div class="columns">
+<div class="col">
+
+${left.join('\n\n')}
+
+</div>
+<div class="col">
+
+${right.join('\n\n')}
+
+</div>
+</div>`
+}
+
+function buildOneStorySlide(story: ArtifactDetail, ctx: EnrichedContext): string | string[] {
   const lastUpdate: ArtifactLastUpdate | undefined = ctx.lastUpdates.get(story.id)
   const codeActivity = ctx.codeActivity
   const byId = new Map(ctx.detailedArtifacts.map((a) => [a.id, a]))
@@ -469,34 +540,29 @@ function buildOneStorySlide(story: ArtifactDetail, ctx: EnrichedContext): string
     : ''
   right.push([metaCard, commentCard].filter(Boolean).join('\n\n'))
 
-  // ── Assemblage : deux colonnes si la droite a du contenu, sinon pleine largeur
-  const body =
-    right.length > 1 || tasks.length > 0 || codeLines.length > 0
-      ? `<div class="columns">
-<div class="col">
+  // ── Assemblage anti-débordement ─────────────────────────────────────────
+  // Le poids du contenu pilote le rendu : normal → densité réduite (classe
+  // dense/xdense) → scission en deux slides (récit / exécution) quand une
+  // seule ne suffirait pas, même en petit.
+  const hasRightContent = tasks.length > 0 || codeLines.length > 0
+  const leftWeight = left.reduce((sum, b) => sum + blockWeight(b), 0)
+  const rightWeight = right.reduce((sum, b) => sum + blockWeight(b), 0)
+  const totalWeight = Math.max(leftWeight, rightWeight)
 
-${left.join('\n\n')}
+  if (totalWeight > SPLIT_WEIGHT && hasRightContent) {
+    // Deux slides : le récit (description, critères, champs, références)
+    // puis l'exécution (tâches, code, activité), chacune avec sa densité.
+    return [
+      wrapStorySlide(story, ctx, left.join('\n\n'), leftWeight, ' · récit (1/2)'),
+      wrapStorySlide(story, ctx, right.join('\n\n'), rightWeight, ' · exécution (2/2)')
+    ]
+  }
 
-</div>
-<div class="col">
+  const body = hasRightContent
+    ? twoColumns(left, right)
+    : `${left.join('\n\n')}\n\n${right.join('\n\n')}`
 
-${right.join('\n\n')}
-
-</div>
-</div>`
-      : `${left.join('\n\n')}\n\n${right.join('\n\n')}`
-
-  return `# 📘 US #${story.id} — ${esc(story.title || '(sans titre)').slice(0, 70)}
-
-<div class="slide-body">
-
-${body}
-
-</div>
-
-<div class="slide-footer">
-<small>US #${story.id} — données Tuleap du ${ctx.generatedAt}</small>
-</div>`
+  return wrapStorySlide(story, ctx, body, totalWeight)
 }
 
 /**
@@ -515,5 +581,5 @@ export function buildUsStorySlides(ctx: EnrichedContext): string[] {
     .filter((a): a is ArtifactDetail => !!a)
     .slice(0, STORY_SLIDES_CAP)
 
-  return stories.map((s) => buildOneStorySlide(s, ctx))
+  return stories.flatMap((s) => buildOneStorySlide(s, ctx))
 }

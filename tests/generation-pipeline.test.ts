@@ -916,7 +916,7 @@ import {
 } from '../src/main/generation/enricher'
 import { formatCodeActivityBlock, formatRecentUpdatesBlock } from '../src/main/generation/utils'
 import { buildCodeActivitySlide } from '../src/main/generation/code-activity-slide'
-import { buildUsRecapSlides } from '../src/main/generation/us-slides'
+import { buildUsRecapSlides, buildUsStorySlides } from '../src/main/generation/us-slides'
 import { listMilestonesWithChildren } from '../src/main/tuleap/milestones'
 
 beforeEach(() => {
@@ -1096,8 +1096,8 @@ describe('runSprintReviewPipeline (bout en bout, LLM mocké)', () => {
     expect(result.markdown).toContain('fix(dashboard): guard sur cache vide')
     // Pas de slides par US, d'activité dépôt ni de nouveautés IA sans l'option
     // (le scan par clone n'a pas tourné : aucune stat de dépôt disponible)
-    expect(result.markdown).not.toContain('# 📘 US #')
-    expect(result.markdown).not.toContain('— activité du sprint')
+    expect(result.markdown).not.toContain('# US #')
+    expect(result.markdown).not.toContain('_class: repo')
     expect(result.markdown).not.toContain('nouveautés du sprint')
     // 9 appels LLM (1 synthèse + 8 slides) : les slides déterministes n'en font pas
     expect(llmCalls).toHaveLength(9)
@@ -1190,11 +1190,11 @@ describe('runSprintReviewPipeline (storySlides: true, clone mocké)', () => {
     ])
 
     // Une slide par US top-level (4 US, les tâches n'ont pas de slide)
-    expect(result.markdown).toContain('# 📘 US #1201 — US — Export PDF des rapports d’audit')
-    expect(result.markdown).toContain('# 📘 US #1202 — US — Authentification SSO (SAML)')
-    expect(result.markdown).toContain('# 📘 US #1203 — Bug — Crash à l’ouverture du dashboard')
-    expect(result.markdown).toContain('# 📘 US #1204 — US — Notifications e-mail configurables')
-    expect((result.markdown.match(/# 📘 US #/g) ?? []).length).toBe(4)
+    expect(result.markdown).toContain('# US #1201 — US — Export PDF des rapports d’audit')
+    expect(result.markdown).toContain('# US #1202 — US — Authentification SSO (SAML)')
+    expect(result.markdown).toContain('# US #1203 — Bug — Crash à l’ouverture du dashboard')
+    expect(result.markdown).toContain('# US #1204 — US — Notifications e-mail configurables')
+    expect((result.markdown.match(/# US #/g) ?? []).length).toBe(4)
 
     // Contenu de la slide US #1201 : texte de l'US tel quel (aucune
     // reformulation « je veux »), critères d'acceptance, effort en heures,
@@ -1257,19 +1257,23 @@ describe('runSprintReviewPipeline (storySlides: true, clone mocké)', () => {
     expect(newsPrompt).toContain('- src/pdf/render.ts (+1210/−80)')
     expect(newsPrompt).toContain('Commits sur la période : 42')
 
-    // Slide « activité dépôt » : gros chiffres + mind map des branches
-    expect(result.markdown).toContain('# Dépôt webapp — activité du sprint')
+    // Slide « activité dépôt » : chapitre sombre, gros chiffres + barres par branche
+    expect(result.markdown).toContain('<!-- _class: repo -->')
+    expect(result.markdown).toContain('# webapp')
+    expect(result.markdown).toContain('Activité du dépôt · depuis le 2026-06-23')
     expect(result.markdown).toContain('<span class="big-value">42</span>')
     expect(result.markdown).toContain('<span class="big-value">87</span>')
-    expect(result.markdown).toContain('<span class="big-value">+4,2k / −1,2k</span>')
+    expect(result.markdown).toContain('<span class="big-value">+4,2k −1,2k</span>')
     expect(result.markdown).toContain('Branches actives · 2 nouvelles')
-    expect(result.markdown).toContain('class="mindmap"')
-    expect(result.markdown).toContain('<span class="mm-root-name">webapp</span>')
+    // Barres proportionnelles au max (main 25 → 100 %, feature 12 → 48 %, fix 5 → 20 %)
+    expect(result.markdown).toContain('<span class="bar-fill w-100"></span>')
+    expect(result.markdown).toContain('<span class="bar-fill is-new w-48"></span>')
+    expect(result.markdown).toContain('<span class="bar-fill is-new w-20"></span>')
     expect(result.markdown).toMatch(
-      /<div class="mm-node is-new">\s*<span class="mm-count">12<\/span>\s*<span class="mm-branch-info">\s*<span class="mm-branch-name">feature\/1201-export-pdf<\/span>/
+      /<span class="bar-name">feature\/1201-export-pdf <span class="bar-badge">nouvelle<\/span><\/span>/
     )
-    expect(result.markdown).toContain('<span class="mm-badge">nouvelle</span>')
-    expect(result.markdown).toContain('<span class="mm-badge is-def">défaut</span>')
+    expect(result.markdown).toContain('<span class="bar-badge is-def">défaut</span>')
+    expect(result.markdown).toContain('<span class="bar-value">25</span>')
 
     // 10 appels LLM : 1 synthèse + 8 slides + 1 « nouveautés » par dépôt actif
     expect(llmCalls).toHaveLength(10)
@@ -1369,6 +1373,120 @@ describe('buildUsRecapSlides (pagination)', () => {
     const all = slides.join('\n')
     expect(all).toContain('| #100 |')
     expect(all).toContain('| #115 |')
+  })
+})
+
+// ─── Anti-débordement des slides US ──────────────────────────────────────────
+
+describe('buildUsStorySlides (anti-débordement)', () => {
+  function storyCtx(
+    descLength: number,
+    taskCount: number
+  ): Parameters<typeof buildUsStorySlides>[0] {
+    const desc = 'Texte de description particulièrement long. '.repeat(Math.ceil(descLength / 45))
+    const story = {
+      id: 500,
+      title: 'US volumineuse',
+      status: 'En cours',
+      uri: '',
+      htmlUrl: null,
+      submittedBy: 'Alice Martin',
+      submittedOn: null,
+      lastModified: null,
+      trackerId: 1,
+      description: desc.slice(0, descLength),
+      values: [
+        {
+          fieldId: 1,
+          label: "Critères d'acceptance",
+          type: 'text',
+          value: { value: '<ul>' + '<li>Un critère détaillé à vérifier</li>'.repeat(6) + '</ul>' }
+        }
+      ],
+      links: [],
+      crossReferences: []
+    }
+    const tasks = Array.from({ length: taskCount }, (_, i) => ({
+      id: 600 + i,
+      title: `Tâche numéro ${i + 1} avec un intitulé plutôt verbeux pour peser lourd`,
+      status: 'En cours',
+      uri: '',
+      htmlUrl: null,
+      submittedBy: null,
+      submittedOn: null,
+      lastModified: null,
+      trackerId: 1,
+      description: null,
+      values: [],
+      links: [],
+      crossReferences: []
+    }))
+    return {
+      projectName: 'P',
+      label: 'S',
+      trackerLabel: null,
+      milestone: null,
+      artifacts: [story],
+      detailedArtifacts: [story, ...tasks],
+      childArtifactIds: new Set(tasks.map((t) => t.id)),
+      childrenByParent: new Map([[500, tasks.map((t) => t.id)]]),
+      lastUpdates: new Map(),
+      codeActivity: {
+        reposScanned: 0,
+        branchesScanned: 0,
+        branches: [],
+        pullRequests: [],
+        warnings: []
+      },
+      epics: [],
+      storySlides: true,
+      language: 'fr' as const,
+      generatedAt: '2026-07-08'
+    }
+  }
+
+  it('slide compacte : ni densité réduite ni scission', () => {
+    const slides = buildUsStorySlides(storyCtx(120, 2))
+    expect(slides).toHaveLength(1)
+    expect(slides[0]).not.toContain('_class: dense')
+    expect(slides[0]).not.toContain('_class: xdense')
+  })
+
+  it('contenu chargé : réduit la taille de police via la classe dense', () => {
+    const slides = buildUsStorySlides(storyCtx(340, 6))
+    expect(slides).toHaveLength(1)
+    expect(slides[0]).toMatch(/_class: (x)?dense/)
+  })
+
+  it('contenu très long : scinde en deux slides récit / exécution', () => {
+    const ctx = storyCtx(340, 6)
+    // Gonfle la colonne exécution : branches et PRs rattachées à la story
+    ctx.codeActivity.branches = Array.from({ length: 3 }, (_, i) => ({
+      repoName: 'webapp',
+      branchName: `feature/500-branche-numero-${i}-avec-un-nom-tres-long`,
+      artifactIds: [500],
+      lastCommitTitle: 'feat: un commit avec un message assez détaillé pour peser',
+      lastCommitAuthor: 'Alice Martin',
+      lastCommitDate: '2026-07-04T10:00:00+02:00',
+      ahead: 3,
+      behind: 1,
+      baseBranch: 'main'
+    }))
+    ctx.lastUpdates.set(500, {
+      date: '2026-07-05T10:00:00+02:00',
+      author: 'Alice Martin',
+      comment:
+        'Un dernier commentaire de changeset relativement bavard pour alourdir la colonne droite.',
+      changesetCount: 4
+    })
+    const slides = buildUsStorySlides(ctx)
+    expect(slides).toHaveLength(2)
+    expect(slides[0]).toContain('· récit (1/2)')
+    expect(slides[1]).toContain('· exécution (2/2)')
+    // Le récit ne contient pas les tâches ; l'exécution ne contient pas la description
+    expect(slides[0]).not.toContain('## Tâches')
+    expect(slides[1]).toContain('## Tâches')
+    expect(slides[1]).not.toContain('## Description')
   })
 })
 

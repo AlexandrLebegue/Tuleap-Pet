@@ -402,139 +402,163 @@ const MARP_CSS = `\
     line-height: 1.25;
   }
 
-  .mindmap {
-    display: flex;
-    align-items: center;
-    gap: 0;
-    margin: 4px 0;
-    min-height: 0;
-    flex: 1;
+  /* ── Slides « dépôt Git » : chapitres sombres ─────────────────────────
+     Appliqué via la directive de classe « repo » posée sur la slide. */
+
+  section.repo {
+    background: linear-gradient(135deg, #0b1e38 0%, #1a365d 62%, #24507f 100%);
+    color: #e2e8f0;
   }
 
-  .mm-root {
+  section.repo::before {
+    content: '';
+    position: absolute;
+    right: -140px;
+    top: -140px;
+    width: 460px;
+    height: 460px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(99, 179, 237, 0.22) 0%, rgba(99, 179, 237, 0) 70%);
+    pointer-events: none;
+  }
+
+  section.repo::after { color: rgba(226, 232, 240, 0.55); }
+
+  section.repo > h1 {
+    background: transparent;
+    color: #ffffff;
+    border-bottom: none;
+    font-family: ui-monospace, monospace;
+    font-size: 1.7em;
+    letter-spacing: -0.01em;
+    padding-bottom: 0;
+  }
+
+  section.repo h2 {
+    color: #90cdf4;
+    text-transform: uppercase;
+    font-size: 0.72em;
+    letter-spacing: 0.14em;
+    font-weight: 600;
+    margin-top: 14px;
+  }
+
+  section.repo .slide-footer {
+    border-top: 1px solid rgba(226, 232, 240, 0.15);
+  }
+
+  section.repo .slide-footer small { color: rgba(226, 232, 240, 0.55); }
+
+  section.repo code {
+    background: rgba(255, 255, 255, 0.1);
+    color: #90cdf4;
+  }
+
+  section.repo ul, section.repo li { color: #dbe7f5; }
+
+  .repo-kicker {
+    font-size: 0.6em;
+    text-transform: uppercase;
+    letter-spacing: 0.22em;
+    color: #90cdf4;
+    font-weight: 600;
+    margin: -4px 0 4px 0;
+  }
+
+  section.repo .big-card { border-top: 1px solid rgba(226, 232, 240, 0.22); }
+  section.repo .big-card.is-primary { border-top: 3px solid #63b3ed; }
+  section.repo .big-value { color: #f7fafc; }
+  section.repo .big-card.is-primary .big-value { color: #90cdf4; }
+  section.repo .big-label { color: rgba(226, 232, 240, 0.6); }
+
+  /* Graphique en barres « commits par branche » (largeurs via w-0…w-100). */
+  .bars {
     display: flex;
     flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 4px;
-    background: var(--color-primary);
-    color: #ffffff;
-    border-radius: 6px;
-    padding: 20px 26px;
-    flex-shrink: 0;
-    z-index: 1;
+    gap: 11px;
+    margin-top: 8px;
   }
 
-  .mm-root-name {
-    font-weight: 600;
-    font-size: 1.0em;
+  .bar-row {
+    display: grid;
+    grid-template-columns: 300px 1fr 56px;
+    align-items: center;
+    gap: 16px;
+  }
+
+  .bar-name {
     font-family: ui-monospace, monospace;
-    max-width: 200px;
+    font-size: 0.7em;
+    color: #cbd5e0;
+    white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    white-space: nowrap;
-    letter-spacing: -0.01em;
-  }
-
-  .mm-root-meta { font-size: 0.6em; opacity: 0.7; text-transform: uppercase; letter-spacing: 0.09em; }
-
-  .mm-links {
-    width: 36px;
-    align-self: stretch;
-    flex-shrink: 0;
-    background:
-      linear-gradient(to right, transparent calc(50% - 1px), #cbd5e0 calc(50% - 1px), #cbd5e0 calc(50% + 1px), transparent calc(50% + 1px));
-    position: relative;
-  }
-
-  .mm-links::before {
-    content: '';
-    position: absolute;
-    left: 0;
-    top: 50%;
-    width: 50%;
-    height: 2px;
-    background: #cbd5e0;
-  }
-
-  .mm-nodes {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    flex: 1;
-    min-width: 0;
-  }
-
-  .mm-node {
-    display: flex;
+    display: inline-flex;
     align-items: center;
-    gap: 12px;
-    background: #ffffff;
-    border-bottom: 1px solid #e2e8f0;
-    border-left: 2px solid #cbd5e0;
-    padding: 5px 12px;
-    position: relative;
+    gap: 8px;
     min-width: 0;
   }
 
-  .mm-node::before {
-    content: '';
-    position: absolute;
-    left: -37px;
-    top: 50%;
-    width: 36px;
-    height: 2px;
-    background: #cbd5e0;
+  .bar-track {
+    display: block;
+    height: 13px;
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 999px;
+    overflow: hidden;
+    font-size: 0;
+    line-height: 0;
   }
 
-  .mm-node.is-new     { border-left-color: #2f855a; }
-  .mm-node.is-default { border-left-color: var(--color-primary); }
+  .bar-fill {
+    display: inline-block;
+    height: 100%;
+    border-radius: 999px;
+    vertical-align: top;
+    background: linear-gradient(90deg, #2b6cb0, #63b3ed);
+    box-shadow: 0 0 14px rgba(99, 179, 237, 0.35);
+  }
 
-  .mm-count {
-    font-size: 1.35em;
-    font-weight: 300;
-    color: var(--color-primary);
-    min-width: 40px;
+  .bar-fill.is-new {
+    background: linear-gradient(90deg, #2f855a, #68d391);
+    box-shadow: 0 0 14px rgba(104, 211, 145, 0.3);
+  }
+
+  .bar-value {
     text-align: right;
-    flex-shrink: 0;
+    font-weight: 600;
+    font-size: 1.05em;
+    color: #f7fafc;
     font-variant-numeric: tabular-nums;
   }
 
-  .mm-branch-info {
-    display: flex;
-    flex-direction: column;
-    line-height: 1.2;
-    min-width: 0;
-  }
-
-  .mm-branch-name {
-    font-family: ui-monospace, monospace;
-    font-size: 0.72em;
-    font-weight: 600;
-    color: #2d3748;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .mm-branch-meta {
-    font-size: 0.62em;
-    color: var(--color-muted);
-  }
-
-  .mm-badge {
+  .bar-badge {
     display: inline-block;
-    border: 1px solid #2f855a;
-    color: #2f855a;
+    border: 1px solid #68d391;
+    color: #9ae6b4;
     border-radius: 3px;
     padding: 0 6px;
     font-weight: 600;
     text-transform: uppercase;
-    letter-spacing: 0.07em;
-    font-size: 0.88em;
+    letter-spacing: 0.08em;
+    font-size: 0.82em;
+    flex-shrink: 0;
   }
 
-  .mm-badge.is-def { border-color: #a0aec0; color: #718096; }
+  .bar-badge.is-def {
+    border-color: rgba(226, 232, 240, 0.4);
+    color: rgba(226, 232, 240, 0.7);
+  }
+
+  .bar-more {
+    font-size: 0.66em;
+    color: rgba(226, 232, 240, 0.55);
+    font-style: italic;
+  }
+
+  /* Densité adaptative des slides US détaillées : le contenu long réduit la
+     taille de base pour rester dans le cadre 16:9. */
+  section.dense  { font-size: 18.5px; }
+  section.xdense { font-size: 16.5px; }
 
   .effort-bar {
     display: flex;
