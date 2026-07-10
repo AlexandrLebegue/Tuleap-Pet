@@ -404,6 +404,10 @@ export type RepoSprintStats = {
   deletions: number
   /** Auteurs distincts sur la période. */
   authors: number
+  /** Messages des commits du sprint (les plus récents d'abord, plafonné). */
+  commitLog: { title: string; author: string | null; date: string | null }[]
+  /** Fichiers les plus modifiés (par volume de lignes), plafonné. */
+  topFiles: { path: string; additions: number; deletions: number }[]
 }
 
 export type SprintReviewSlideType =
@@ -417,6 +421,7 @@ export type SprintReviewSlideType =
   | 'us_story'
   | 'code_activity'
   | 'repo_activity'
+  | 'repo_news'
   | 'indicateurs'
   | 'risques'
   | 'synthese'

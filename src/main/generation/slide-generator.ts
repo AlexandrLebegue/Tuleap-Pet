@@ -30,10 +30,19 @@ export type SlideResult =
  * générés en code (données Tuleap rendues telles quelles) : pas d'appel LLM,
  * donc pas de risque d'hallucination sur les US / branches / PRs. Un builder
  * peut retourner plusieurs slides (une par US), une seule, ou null (omis).
+ * `perRepo` : un appel LLM par dépôt Git actif (nouveautés du dépôt).
  */
 type SlideDefinition =
-  | { type: SprintReviewSlideType; promptKey: string; build?: undefined }
-  | { type: SprintReviewSlideType; build: (ctx: EnrichedContext) => string | string[] | null }
+  | { type: SprintReviewSlideType; promptKey: string; build?: undefined; perRepo?: undefined }
+  | {
+      type: SprintReviewSlideType
+      build: (ctx: EnrichedContext) => string | string[] | null
+      perRepo?: undefined
+    }
+  | { type: SprintReviewSlideType; perRepo: true; promptKey: string; build?: undefined }
+
+/** Max d'appels LLM « nouveautés » (un par dépôt actif). */
+const REPO_NEWS_CAP = 4
 
 function buildSlideDefinitions(ctx: EnrichedContext): SlideDefinition[] {
   const defs: SlideDefinition[] = [
@@ -51,6 +60,7 @@ function buildSlideDefinitions(ctx: EnrichedContext): SlideDefinition[] {
   defs.push(
     { type: 'code_activity', build: (c) => buildCodeActivitySlide(c.codeActivity, c.generatedAt) },
     { type: 'repo_activity', build: buildRepoActivitySlides },
+    { type: 'repo_news', perRepo: true, promptKey: 'slide_repo_nouveautes' },
     { type: 'indicateurs', promptKey: 'slide_indicateurs' },
     { type: 'risques', promptKey: 'slide_risques' },
     { type: 'synthese', promptKey: 'slide_synthese' }
@@ -155,6 +165,46 @@ function buildSlideVars(
   }
 }
 
+function formatDateOr(iso: string | null | undefined, fallback: string): string {
+  if (!iso) return fallback
+  return iso.slice(0, 10) || fallback
+}
+
+/** Variables du prompt « nouveautés du dépôt » pour un dépôt donné. */
+function buildRepoNewsVars(
+  stats: NonNullable<EnrichedContext['codeActivity']['repoSprintStats']>[number],
+  ctx: EnrichedContext
+): Record<string, string | number> {
+  const commitLogBlock =
+    stats.commitLog.length > 0
+      ? stats.commitLog
+          .map((c) => {
+            const date = c.date ? c.date.slice(0, 10) : ''
+            const author = c.author ? ` (${c.author})` : ''
+            return `- ${date ? `${date} — ` : ''}${c.title}${author}`
+          })
+          .join('\n')
+      : '_Aucun commit sur la période._'
+  const topFilesBlock =
+    stats.topFiles.length > 0
+      ? stats.topFiles.map((f) => `- ${f.path} (+${f.additions}/−${f.deletions})`).join('\n')
+      : '_Aucun fichier modifié._'
+  return {
+    project_name: ctx.projectName,
+    sprint_name: ctx.trackerLabel ? `${ctx.label} — ${ctx.trackerLabel}` : ctx.label,
+    sprint_start: formatDateOr(ctx.milestone?.startDate, 'inconnue'),
+    sprint_end: formatDateOr(ctx.milestone?.endDate, 'inconnue'),
+    repo_name: stats.repoName,
+    commit_count: stats.commits,
+    files_changed: stats.filesChanged,
+    additions: stats.additions,
+    deletions: stats.deletions,
+    commit_log_block: commitLogBlock,
+    top_files_block: topFilesBlock,
+    date: ctx.generatedAt
+  }
+}
+
 export async function generateAllSlides(
   provider: LlmProvider,
   ctx: EnrichedContext,
@@ -192,6 +242,46 @@ export async function generateAllSlides(
         results.push({ type, ok: false, error: message })
         onProgress({ type: 'slide_error', slide: type, index: i, total, error: message })
         continue
+      }
+      onProgress({ type: 'slide_done', slide: type, index: i, total })
+      continue
+    }
+
+    if (def.perRepo) {
+      // Un appel LLM par dépôt Git actif : l'IA lit les messages de commits
+      // et les fichiers modifiés pour raconter les nouveautés du dépôt.
+      const repos = (ctx.codeActivity.repoSprintStats ?? [])
+        .filter((s) => s.commits > 0 && s.commitLog.length > 0)
+        .sort((a, b) => b.commits - a.commits)
+        .slice(0, REPO_NEWS_CAP)
+      for (const repo of repos) {
+        try {
+          const tpl = getPrompt(def.promptKey)
+          const vars = buildRepoNewsVars(repo, ctx)
+          const userMessage = interpolate(tpl.userTemplate, vars)
+          const result = await provider.generate({
+            messages: [
+              { role: 'system', content: tpl.system },
+              { role: 'user', content: userMessage }
+            ],
+            temperature: 0.2,
+            maxOutputTokens: 1024
+          })
+          const cleaned = stripFences(result.text)
+          usages.push(result.usage)
+          lastModel = result.model
+          results.push({
+            type,
+            ok: true,
+            markdown: cleaned,
+            warnings: detectUnmatchedPlaceholders(cleaned)
+          })
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err)
+          usages.push(null)
+          results.push({ type, ok: false, error: `${repo.repoName} : ${message}` })
+          onProgress({ type: 'slide_error', slide: type, index: i, total, error: message })
+        }
       }
       onProgress({ type: 'slide_done', slide: type, index: i, total })
       continue

@@ -29,6 +29,10 @@ export type CloneScanResult = {
 
 /** Max de branches actives détaillées dans les stats sprint (mind map). */
 const ACTIVE_BRANCH_CAP = 8
+/** Max de messages de commits conservés (contexte IA « nouveautés du dépôt »). */
+const COMMIT_LOG_CAP = 60
+/** Max de fichiers « les plus modifiés » conservés. */
+const TOP_FILES_CAP = 20
 
 function parseDateMs(iso: string | null | undefined): number | null {
   if (!iso) return null
@@ -49,37 +53,65 @@ async function computeSprintStats(
   allBranches: { name: string; date: string | null }[],
   totalCommits: number
 ): Promise<RepoSprintStats> {
-  // Un seul `git log` pour fichiers / lignes / auteurs : chaque commit émet
-  // une ligne marqueur `@@auteur`, suivie de ses lignes numstat `add\tdel\tpath`.
+  // Un seul `git log` pour fichiers / lignes / auteurs / messages : chaque
+  // commit émet une ligne marqueur `@@date\x1fauteur\x1fsujet`, suivie de ses
+  // lignes numstat `add\tdel\tpath`.
   let filesChanged = 0
   let additions = 0
   let deletions = 0
   let authors = 0
+  const commitLog: RepoSprintStats['commitLog'] = []
+  const fileChurn = new Map<string, { additions: number; deletions: number }>()
   try {
     const raw = await git(
       dir,
-      ['log', '--all', `--since=${sinceDate}`, '--numstat', '--format=@@%an'],
+      [
+        'log',
+        '--all',
+        `--since=${sinceDate}`,
+        '--numstat',
+        `--format=@@%cI${UNIT_SEP}%an${UNIT_SEP}%s`
+      ],
       60_000
     )
     const files = new Set<string>()
     const authorSet = new Set<string>()
     for (const line of raw.split('\n')) {
       if (line.startsWith('@@')) {
-        const name = line.slice(2).trim()
-        if (name) authorSet.add(name)
+        const [date, name, subject] = line.slice(2).split(UNIT_SEP)
+        if (name) authorSet.add(name.trim())
+        if (subject && commitLog.length < COMMIT_LOG_CAP) {
+          commitLog.push({
+            title: subject.trim(),
+            author: name?.trim() || null,
+            date: date?.trim() || null
+          })
+        }
         continue
       }
       const m = line.match(/^(\d+|-)\t(\d+|-)\t(.+)$/)
       if (!m) continue
-      if (m[1] !== '-') additions += Number.parseInt(m[1] as string, 10)
-      if (m[2] !== '-') deletions += Number.parseInt(m[2] as string, 10)
-      files.add(m[3] as string)
+      const path = m[3] as string
+      const add = m[1] !== '-' ? Number.parseInt(m[1] as string, 10) : 0
+      const del = m[2] !== '-' ? Number.parseInt(m[2] as string, 10) : 0
+      additions += add
+      deletions += del
+      files.add(path)
+      const churn = fileChurn.get(path) ?? { additions: 0, deletions: 0 }
+      churn.additions += add
+      churn.deletions += del
+      fileChurn.set(path, churn)
     }
     filesChanged = files.size
     authors = authorSet.size
   } catch {
     // Dépôt vide : stats à zéro.
   }
+
+  const topFiles = [...fileChurn.entries()]
+    .sort((a, b) => b[1].additions + b[1].deletions - (a[1].additions + a[1].deletions))
+    .slice(0, TOP_FILES_CAP)
+    .map(([path, churn]) => ({ path, ...churn }))
 
   // Branches actives : dernier commit depuis le début du sprint.
   const sinceMs = parseDateMs(sinceDate) ?? 0
@@ -135,7 +167,9 @@ async function computeSprintStats(
     filesChanged,
     additions,
     deletions,
-    authors
+    authors,
+    commitLog,
+    topFiles
   }
 }
 

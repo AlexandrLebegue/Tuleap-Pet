@@ -1621,6 +1621,42 @@ En tant qu’auditeur, je veux exporter mes rapports en PDF afin de les archiver
 
 ---
 
+# ✨ Dépôt webapp — nouveautés du sprint
+
+<div class="slide-body">
+
+<div class="columns">
+<div class="col">
+
+## Nouvelles fonctionnalités
+
+- Prévisualisation des rapports PDF avant export
+- Génération des PDF côté serveur
+
+</div>
+<div class="col">
+
+## Correctifs & améliorations
+
+- Crash du dashboard corrigé (cache vide)
+- Dépendances mises à jour
+
+</div>
+</div>
+
+## Zones du code les plus actives
+
+- `src/pdf/` — moteur de génération PDF largement remanié
+- `src/dashboard/` — robustesse du cache
+
+</div>
+
+<div class="slide-footer">
+<small>Dépôt webapp — analyse IA des 42 commits du sprint · données au 2026-07-08</small>
+</div>
+
+---
+
 # 📊 Indicateurs du sprint
 
 <div class="slide-body">

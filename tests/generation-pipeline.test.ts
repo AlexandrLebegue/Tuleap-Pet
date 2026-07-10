@@ -477,7 +477,30 @@ deepScanMock.mockImplementation(async () => ({
       filesChanged: 87,
       additions: 4210,
       deletions: 1180,
-      authors: 4
+      authors: 4,
+      commitLog: [
+        {
+          title: 'feat(export): page de prévisualisation PDF',
+          author: 'David Roux',
+          date: '2026-07-04T15:58:00+02:00'
+        },
+        {
+          title: 'fix(dashboard): guard sur cache vide',
+          author: 'Chloé Petit',
+          date: '2026-07-05T09:10:00+02:00'
+        },
+        {
+          title: 'feat(pdf): génération serveur via wkhtmltopdf',
+          author: 'Alice Martin',
+          date: '2026-07-01T16:40:00+02:00'
+        },
+        { title: 'chore: bump deps', author: 'Bob Durand', date: '2026-06-25T10:00:00+02:00' }
+      ],
+      topFiles: [
+        { path: 'src/pdf/render.ts', additions: 1210, deletions: 80 },
+        { path: 'src/dashboard/cache.ts', additions: 240, deletions: 190 },
+        { path: 'package-lock.json', additions: 2100, deletions: 800 }
+      ]
     }
   ]
 }))
@@ -790,6 +813,39 @@ Sprint en phase de livraison. Prochaine étape : fusionner les PR #77 et #78. D�
 
 <div class="slide-footer">
 <small>Présentation générée le 2026-07-08 — Données Tuleap</small>
+</div>`,
+  slide_repo_nouveautes: `# ✨ Dépôt webapp — nouveautés du sprint
+
+<div class="slide-body">
+
+<div class="columns">
+<div class="col">
+
+## Nouvelles fonctionnalités
+
+- Prévisualisation des rapports PDF avant export
+- Génération des PDF côté serveur
+
+</div>
+<div class="col">
+
+## Correctifs & améliorations
+
+- Crash du dashboard corrigé (cache vide)
+- Dépendances mises à jour
+
+</div>
+</div>
+
+## Zones du code les plus actives
+
+- \`src/pdf/\` — moteur de génération PDF largement remanié
+- \`src/dashboard/\` — robustesse du cache
+
+</div>
+
+<div class="slide-footer">
+<small>Dépôt webapp — analyse IA des 42 commits du sprint · données au 2026-07-08</small>
 </div>`
 }
 
@@ -819,7 +875,8 @@ function cannedResponse(system: string, user: string): string {
     slide_avancement: '(AVANCEMENT',
     slide_indicateurs: '(INDICATEURS',
     slide_risques: '(RISQUES',
-    slide_synthese: '(SYNTHESE'
+    slide_synthese: '(SYNTHESE',
+    slide_repo_nouveautes: '(NOUVEAUTES DEPOT'
   }
   for (const [key, marker] of Object.entries(markers)) {
     if (system.includes(`Consignes specifiques pour ce slide ${marker}`)) {
@@ -1005,6 +1062,7 @@ describe('runSprintReviewPipeline (bout en bout, LLM mocké)', () => {
       'avancement',
       'code_activity',
       'repo_activity',
+      'repo_news',
       'indicateurs',
       'risques',
       'synthese'
@@ -1036,9 +1094,11 @@ describe('runSprintReviewPipeline (bout en bout, LLM mocké)', () => {
     expect(result.markdown).toContain('`feature/1201-export-pdf` → `main`')
     expect(result.markdown).toContain('Export PDF des rapports (art #1201)')
     expect(result.markdown).toContain('fix(dashboard): guard sur cache vide')
-    // Pas de slides par US ni d'activité dépôt sans l'option (pas de clone)
+    // Pas de slides par US, d'activité dépôt ni de nouveautés IA sans l'option
+    // (le scan par clone n'a pas tourné : aucune stat de dépôt disponible)
     expect(result.markdown).not.toContain('# 📘 US #')
     expect(result.markdown).not.toContain('# 🧑‍💻 Dépôt')
+    expect(result.markdown).not.toContain('nouveautés du sprint')
     // 9 appels LLM (1 synthèse + 8 slides) : les slides déterministes n'en font pas
     expect(llmCalls).toHaveLength(9)
 
@@ -1123,6 +1183,7 @@ describe('runSprintReviewPipeline (storySlides: true, clone mocké)', () => {
       'us_story',
       'code_activity',
       'repo_activity',
+      'repo_news',
       'indicateurs',
       'risques',
       'synthese'
@@ -1173,6 +1234,17 @@ describe('runSprintReviewPipeline (storySlides: true, clone mocké)', () => {
     expect(result.markdown).toContain('<span class="tag tag-green">Fusionnée / à jour</span>')
     expect(result.markdown).toContain('scan par clone')
 
+    // Slide « nouveautés du dépôt » : générée par IA depuis les git logs
+    expect(result.markdown).toContain('# ✨ Dépôt webapp — nouveautés du sprint')
+    expect(result.markdown).toContain('Prévisualisation des rapports PDF avant export')
+    // Le prompt IA reçoit les messages de commits et les fichiers modifiés
+    const newsPrompt = llmCalls
+      .map((c) => c.user)
+      .find((u) => u.includes('MESSAGES DES COMMITS DU SPRINT'))
+    expect(newsPrompt).toContain('feat(export): page de prévisualisation PDF (David Roux)')
+    expect(newsPrompt).toContain('- src/pdf/render.ts (+1210/−80)')
+    expect(newsPrompt).toContain('Commits sur la période : 42')
+
     // Slide « activité dépôt » : gros chiffres + mind map des branches
     expect(result.markdown).toContain('# 🧑‍💻 Dépôt webapp — activité du sprint')
     expect(result.markdown).toContain('<span class="big-value">42</span>')
@@ -1187,8 +1259,8 @@ describe('runSprintReviewPipeline (storySlides: true, clone mocké)', () => {
     expect(result.markdown).toContain('<span class="mm-badge">nouvelle</span>')
     expect(result.markdown).toContain('<span class="mm-badge is-def">défaut</span>')
 
-    // Toujours 9 appels LLM : les slides US sont déterministes
-    expect(llmCalls).toHaveLength(9)
+    // 10 appels LLM : 1 synthèse + 8 slides + 1 « nouveautés » par dépôt actif
+    expect(llmCalls).toHaveLength(10)
     expect(result.slideWarnings).toEqual([])
 
     if (process.env.WRITE_EXAMPLE === '1') {

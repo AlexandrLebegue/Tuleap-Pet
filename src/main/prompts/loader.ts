@@ -16,6 +16,7 @@ import slideAvancementSource from '../../../docs/prompts/slide_avancement.md?raw
 import slideIndicateursSource from '../../../docs/prompts/slide_indicateurs.md?raw'
 import slideRisquesSource from '../../../docs/prompts/slide_risques.md?raw'
 import slideSyntheseSource from '../../../docs/prompts/slide_synthese.md?raw'
+import slideRepoNouveautesSource from '../../../docs/prompts/slide_repo_nouveautes.md?raw'
 
 export type PromptTemplate = {
   /** Logical name (matches the file basename). */
@@ -68,7 +69,8 @@ const templates: Record<string, PromptTemplate> = {
   slide_avancement: buildTemplate('slide_avancement', slideAvancementSource),
   slide_indicateurs: buildTemplate('slide_indicateurs', slideIndicateursSource),
   slide_risques: buildTemplate('slide_risques', slideRisquesSource),
-  slide_synthese: buildTemplate('slide_synthese', slideSyntheseSource)
+  slide_synthese: buildTemplate('slide_synthese', slideSyntheseSource),
+  slide_repo_nouveautes: buildTemplate('slide_repo_nouveautes', slideRepoNouveautesSource)
 }
 
 export function getPrompt(name: string): PromptTemplate {
